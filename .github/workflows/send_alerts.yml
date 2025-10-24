@@ -1,0 +1,98 @@
+name: Send Alerts
+
+on:
+  workflow_run:
+    workflows:
+      - "Daily Brands Pipeline"
+      - "Daily CEO Pipeline"
+    types: [completed]
+  repository_dispatch:
+    types: [send_alerts]
+  workflow_dispatch:
+    inputs:
+      alert_send_mode:
+        description: "How to deliver: same_morning (default) or next_morning"
+        required: false
+        default: "same_morning"
+        type: choice
+        options: [same_morning, next_morning]
+      negative_threshold:
+        description: "Alert threshold (0.0 - 1.0). Leave blank to use default/vars."
+        required: false
+        type: string
+      cooldown_days:
+        description: "Cooldown in days. Leave blank to use default/vars."
+        required: false
+        type: string
+      soft_shift_hours:
+        description: "Treat runs before this ET hour as previous day. Leave blank to use default/vars."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: send-alerts
+  cancel-in-progress: false
+
+jobs:
+  send-alerts:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone
+          # Alert script likely reads recent data files to determine what to send
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            rosters/
+            data/processed_articles/
+            data/processed_serps/
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+          
+
+      - name: Ensure data directory for alert tracking
+        run: |
+          mkdir -p data/email_alerts
+
+      - name: Download last cooldown artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: send_alerts.yml         # your workflow file name
+          workflow_conclusion: success
+          branch: main
+          name: cooldown-state              # must match the upload name below
+          path: .
+          if_no_artifact_found: ignore
+
+      - name: Run alert sender
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          MAILGUN_FROM: ${{ secrets.MAILGUN_FROM }}
+          MAILGUN_TO: ${{ secrets.MAILGUN_TO }}
+          MAILGUN_REGION: ${{ secrets.MAILGUN_REGION }}
+          ALERT_SEND_MODE: ${{ github.event.inputs.alert_send_mode || vars.ALERT_SEND_MODE || 'same_morning' }}
+          NEGATIVE_THRESHOLD: ${{ github.event.inputs.negative_threshold || vars.NEGATIVE_THRESHOLD || '0.4' }}
+          ALERT_COOLDOWN_DAYS: ${{ github.event.inputs.cooldown_days || vars.ALERT_COOLDOWN_DAYS || '180' }}
+          SOFT_SHIFT_HOURS: ${{ github.event.inputs.soft_shift_hours || vars.SOFT_SHIFT_HOURS || '6' }}
+        run: |
+          python -m scripts.send_alerts
+          
+      - name: Upload cooldown state
+        if: success() && hashFiles('data/email_alerts/last_alert_dates.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cooldown-state
+          path: data/email_alerts/last_alert_dates.json
+          if-no-files-found: warn
+          retention-days: 365

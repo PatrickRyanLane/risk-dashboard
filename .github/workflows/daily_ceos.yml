@@ -1,0 +1,112 @@
+name: Daily CEO Pipeline
+
+on:
+  schedule:
+    - cron: "10 10 * * *"   # 10:10 UTC (one hour after brands at 09:10)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Run date in UTC (YYYY-MM-DD). Leave blank for today."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# Prevent overlapping runs
+concurrency:
+  group: daily-ceos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: '1'
+      TZ: America/New_York
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone - scripts only process today's data
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            rosters/
+            data/daily_counts
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Ensure folders (NEW STRUCTURE)
+        run: |
+          mkdir -p data/daily_counts
+          mkdir -p data/processed_articles
+          mkdir -p data/processed_serps
+          mkdir -p rosters
+
+      # Build today's articles → data/processed_articles/YYYY-MM-DD-ceo-articles-modal.csv
+      - name: Build daily CEO articles (Google News RSS)
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+          ARTICLES_MAX_PER_ALIAS: "25"
+          ARTICLES_SLEEP_SEC: "0.35"
+        run: |
+          DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          echo "Running news_articles_ceos.py for ${DATE_TO_RUN}"
+          ARTICLES_DATE="${DATE_TO_RUN}" python scripts/news_articles_ceos.py
+
+      # Normalize daily counts and write to:
+      # - data/processed_articles/{date}-ceo-articles-table.csv
+      # - data/daily_counts/ceo-articles-daily-counts-chart.csv
+      - name: Run daily CEO sentiment (counts)
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+        run: |
+          DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          echo "Running news_sentiment_ceos.py for ${DATE_TO_RUN}"
+          python scripts/news_sentiment_ceos.py --date "${DATE_TO_RUN}"
+
+      # Process CEO SERPs
+      # - data/processed_serps/{date}-ceo-serps-processed.csv
+      # - data/processed_serps/{date}-ceo-serps-rows.csv
+      # - data/daily_counts/ceo-serps-daily-counts-chart.csv
+      - name: Process CEO SERPs
+        shell: bash
+        env:
+          DATE_IN: ${{ github.event.inputs.date }}
+        run: |
+          set -euo pipefail
+          DATE="${DATE_IN:-$(date -u +%F)}"
+          ROW="data/processed_serps/${DATE}-ceo-serps-rows.csv"
+      
+          # Optional idempotence – skip if we already wrote this date
+          if [ -s "$ROW" ]; then
+            echo "SERP rows already exist for ${DATE}; skipping."
+            exit 0
+          fi
+      
+          echo "Processing CEO SERPs for ${DATE}"
+          python scripts/process_serps_ceos.py --date "${DATE}"
+
+      - name: Commit & push changes (if any)
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          # Use --sparse to allow adding files outside sparse-checkout definition
+          git add -A --sparse
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            DATE_TO_USE="${RUN_DATE:-$(date -u +%F)}"
+            git commit -m "chore(ceos): update CEO counts, articles & SERPs for ${DATE_TO_USE}"
+            git pull --rebase --autostash || true
+            git push
+          fi

@@ -1,0 +1,992 @@
+date,company,total,controlled,negative_serp,neutral_serp,positive_serp
+2025-09-30,3M,6,4,0,2,4
+2025-09-30,A O Smith,7,5,0,2,5
+2025-09-30,A-Mark Precious Metals,7,3,0,0,7
+2025-09-30,ABM Industries,7,2,0,5,2
+2025-09-30,ADT,7,3,0,4,3
+2025-09-30,AECOM,6,4,0,2,4
+2025-09-30,AES,10,7,0,1,9
+2025-09-30,AGCO,8,5,0,3,5
+2025-09-30,AGNC Investment,6,1,0,3,3
+2025-09-30,AIG,7,3,0,4,3
+2025-09-30,AMC Entertainment,9,5,0,1,8
+2025-09-30,AMC Networks,7,3,0,4,3
+2025-09-30,AMN Healthcare Services,7,2,0,5,2
+2025-09-30,APA,10,3,0,6,4
+2025-09-30,APi Group,6,3,0,3,3
+2025-09-30,ARKO,8,6,0,2,6
+2025-09-30,ASGN,97,9,1,69,27
+2025-09-30,AT&T,8,7,0,1,7
+2025-09-30,ATI Inc,7,4,0,3,4
+2025-09-30,AbbVie,5,3,0,2,3
+2025-09-30,Abbott Laboratories,7,1,0,6,1
+2025-09-30,Abercrombie & Fitch,7,5,0,2,5
+2025-09-30,Academy Sports and Outdoors,6,5,0,1,5
+2025-09-30,Acadia Healthcare,6,2,0,4,2
+2025-09-30,Ace Hardware,7,3,0,3,4
+2025-09-30,Acuity Inc,7,2,0,5,2
+2025-09-30,Adams Resources & Energy,7,2,0,1,6
+2025-09-30,AdaptHealth,7,6,0,0,7
+2025-09-30,Adobe,6,4,0,2,4
+2025-09-30,Advance Auto Parts,8,5,0,3,5
+2025-09-30,Advanced Drainage Systems,7,3,0,0,7
+2025-09-30,Advanced Micro Devices,5,2,0,1,4
+2025-09-30,Advantage Solutions,6,4,0,0,6
+2025-09-30,Aflac,7,5,0,2,5
+2025-09-30,Agilent Technologies,7,3,0,4,3
+2025-09-30,Agilon Health,7,2,0,4,3
+2025-09-30,Air Lease,6,1,0,5,1
+2025-09-30,Air Products & Chemicals,7,3,0,4,3
+2025-09-30,Airbnb,6,5,0,1,5
+2025-09-30,Akamai Technologies,7,4,0,3,4
+2025-09-30,Alaska Air,4,3,0,1,3
+2025-09-30,Albemarle Corporation,6,3,0,3,3
+2025-09-30,Albertsons,5,3,0,2,3
+2025-09-30,Alcoa Corporation,6,4,0,2,4
+2025-09-30,Alexandria Real Estate Equities,6,1,0,5,1
+2025-09-30,Alight Solutions,7,3,0,3,4
+2025-09-30,Align Technology,6,2,0,3,3
+2025-09-30,Allegiant Travel Company,7,3,0,4,3
+2025-09-30,Alliance Resource Partners,7,2,0,5,2
+2025-09-30,Alliant Energy,7,5,0,0,7
+2025-09-30,Allison Transmission,6,2,0,4,2
+2025-09-30,Allstate,7,5,1,1,5
+2025-09-30,Ally Financial,7,4,0,3,4
+2025-09-30,Alpha Metallurgical Resources,7,3,0,3,4
+2025-09-30,Alphabet,10,3,0,7,3
+2025-09-30,Altice USA,7,4,0,3,4
+2025-09-30,Altria,6,2,1,3,2
+2025-09-30,Amazon,7,4,0,3,4
+2025-09-30,Ameren,6,4,0,2,4
+2025-09-30,American Airlines,6,5,0,1,5
+2025-09-30,American Axle & Manufacturing,6,3,0,3,3
+2025-09-30,American Eagle Outfitters,7,4,0,3,4
+2025-09-30,American Electric Power,7,1,0,6,1
+2025-09-30,American Express,6,3,0,3,3
+2025-09-30,American Family Insurance,7,3,0,4,3
+2025-09-30,American Financial Group,7,2,0,4,3
+2025-09-30,American Tower,10,6,0,4,6
+2025-09-30,American Water Works,10,5,1,4,5
+2025-09-30,Americold Realty Trust,6,1,0,1,5
+2025-09-30,Ameriprise Financial,7,4,0,3,4
+2025-09-30,Ametek,7,4,0,3,4
+2025-09-30,Amgen,6,4,0,2,4
+2025-09-30,Amica Mutual Insurance,6,3,0,3,3
+2025-09-30,Amkor Technology,6,3,0,3,3
+2025-09-30,Amphenol,8,6,0,2,6
+2025-09-30,Analog Devices,5,3,0,2,3
+2025-09-30,Antero Resources,6,1,0,4,2
+2025-09-30,Anywhere Real Estate Inc,6,4,0,2,4
+2025-09-30,Apollo Global Management,6,3,0,2,4
+2025-09-30,AppLovin,6,2,0,4,2
+2025-09-30,Apple,7,2,0,4,3
+2025-09-30,Applied Industrial Technologies,6,2,0,4,2
+2025-09-30,Applied Materials,6,4,0,2,4
+2025-09-30,AptarGroup,7,1,0,6,1
+2025-09-30,Aramark,7,6,0,1,6
+2025-09-30,ArcBest,7,3,0,4,3
+2025-09-30,Arch Resources,9,2,0,5,4
+2025-09-30,Archer Daniels Midland,6,2,0,4,2
+2025-09-30,Ares Management,7,3,0,4,3
+2025-09-30,Arista Networks,7,3,0,4,3
+2025-09-30,Arrow Electronics,7,3,0,4,3
+2025-09-30,Arthur J Gallagher,6,2,0,3,3
+2025-09-30,Asbury Automotive Group,7,2,0,4,3
+2025-09-30,Assurant,7,5,0,2,5
+2025-09-30,Atkore,7,4,0,3,4
+2025-09-30,Atlassian,5,3,0,1,4
+2025-09-30,Atmos Energy,7,3,0,0,7
+2025-09-30,Auto-Owners Insurance,7,2,1,4,2
+2025-09-30,AutoNation,7,5,0,2,5
+2025-09-30,AutoZone,8,6,0,1,7
+2025-09-30,Autodesk,7,5,0,2,5
+2025-09-30,Autoliv,6,3,0,3,3
+2025-09-30,Automatic Data Processing,7,2,0,5,2
+2025-09-30,AvalonBay Communities,7,4,0,3,4
+2025-09-30,Avantor,6,3,0,3,3
+2025-09-30,Avery Dennison,5,4,0,1,4
+2025-09-30,Avient,7,3,0,4,3
+2025-09-30,Avis Budget,10,4,0,5,5
+2025-09-30,Avnet,7,4,0,3,4
+2025-09-30,BJ's Wholesale Club,6,3,1,2,3
+2025-09-30,BOK Financial,7,5,0,2,5
+2025-09-30,BWX Technologies,7,2,0,5,2
+2025-09-30,Baker Hughes,6,5,0,1,5
+2025-09-30,Ball Corporation,5,3,0,2,3
+2025-09-30,Bank of America,6,3,0,2,4
+2025-09-30,Bank of New York Mellon,7,1,0,6,1
+2025-09-30,Bath & Body Works,5,3,0,0,5
+2025-09-30,Baxter International,7,3,0,4,3
+2025-09-30,Becton Dickinson,7,3,0,4,3
+2025-09-30,Belden,6,4,0,2,4
+2025-09-30,Benchmark Electronics,6,2,0,4,2
+2025-09-30,Berkshire Hathaway,9,2,0,5,4
+2025-09-30,Berry Global,6,3,0,3,3
+2025-09-30,Best Buy,7,5,0,0,7
+2025-09-30,Bio-Rad Laboratories,6,2,0,4,2
+2025-09-30,Biogen,6,3,0,3,3
+2025-09-30,BlackRock,7,5,0,2,5
+2025-09-30,Blackstone,7,5,0,2,5
+2025-09-30,Bloomin Brands,6,3,0,2,4
+2025-09-30,BlueLinx,7,4,0,3,4
+2025-09-30,Boeing,5,4,0,1,4
+2025-09-30,Boise Cascade,7,4,0,3,4
+2025-09-30,Booking Holdings,6,2,0,3,3
+2025-09-30,Booz Allen Hamilton,7,3,0,4,3
+2025-09-30,BorgWarner,5,4,0,1,4
+2025-09-30,Boston Properties,1,0,1,0,0
+2025-09-30,Boston Scientific,7,5,0,2,5
+2025-09-30,Boyd Gaming,6,4,0,2,4
+2025-09-30,Bread Financial,7,4,0,3,4
+2025-09-30,BrightSpring Health Services,7,2,0,5,2
+2025-09-30,BrightView Holdings,7,2,0,5,2
+2025-09-30,Brighthouse Financial,7,4,0,3,4
+2025-09-30,Brinker International,6,2,0,3,3
+2025-09-30,Brinks Company,7,4,0,2,5
+2025-09-30,Bristol-Myers Squibb,6,2,0,4,2
+2025-09-30,Broadcom,5,2,0,3,2
+2025-09-30,Broadridge Financial Solutions,6,1,0,5,1
+2025-09-30,Brookdale Senior Living,7,5,0,2,5
+2025-09-30,Brown & Brown,7,4,0,3,4
+2025-09-30,Brown-Forman,6,2,0,4,2
+2025-09-30,Bruker,8,4,0,4,4
+2025-09-30,Brunswick,10,9,0,1,9
+2025-09-30,Builders FirstSource,7,3,0,4,3
+2025-09-30,Burlington Stores,6,4,0,1,5
+2025-09-30,CACI International,6,3,0,3,3
+2025-09-30,CBRE Group,6,3,0,3,3
+2025-09-30,CDW,8,6,0,2,6
+2025-09-30,CF Industries,5,2,0,3,2
+2025-09-30,CH Robinson Worldwide,7,3,0,3,4
+2025-09-30,CHS,7,5,0,2,5
+2025-09-30,CIncinnati Financial,7,2,0,5,2
+2025-09-30,CME Group,6,3,0,3,3
+2025-09-30,CMS Energy,8,4,0,0,8
+2025-09-30,CNO Financial Group,6,2,0,4,2
+2025-09-30,CNX Resources,6,1,0,5,1
+2025-09-30,CSX,6,3,0,3,3
+2025-09-30,CVS Health,7,2,0,4,3
+2025-09-30,Cabot Corporation,6,3,0,3,3
+2025-09-30,Cadence,9,8,0,1,8
+2025-09-30,Caesars Entertainment,5,2,0,0,5
+2025-09-30,Cal-Maine Foods,6,2,0,1,5
+2025-09-30,Caleres Inc,5,2,0,3,2
+2025-09-30,California Resources,5,1,0,4,1
+2025-09-30,Calumet,6,3,0,3,3
+2025-09-30,Campbell Soup,6,2,0,4,2
+2025-09-30,Camping World,6,2,0,2,4
+2025-09-30,Capital One,7,6,0,1,6
+2025-09-30,CarMax,5,3,1,1,3
+2025-09-30,Cardinal Health,6,4,0,2,4
+2025-09-30,Carlisle Companies,7,2,0,5,2
+2025-09-30,Carlyle Group,6,3,0,3,3
+2025-09-30,Carpenter Technology,7,2,0,5,2
+2025-09-30,Carrier Global,5,3,0,2,3
+2025-09-30,Carters Inc,7,3,0,4,3
+2025-09-30,Carvana,5,2,0,3,2
+2025-09-30,Caseys General Stores,5,1,0,4,1
+2025-09-30,Catalent,6,2,0,4,2
+2025-09-30,Caterpillar,8,2,0,5,3
+2025-09-30,Cboe Global Markets,6,3,0,3,3
+2025-09-30,Celanese,6,3,0,3,3
+2025-09-30,Cencora,8,3,1,3,4
+2025-09-30,Centene,6,4,0,2,4
+2025-09-30,CenterPoint Energy,7,4,0,0,7
+2025-09-30,Central Garden & Pet,7,3,0,4,3
+2025-09-30,Century Communities,6,3,0,3,3
+2025-09-30,ChampionX,7,2,0,5,2
+2025-09-30,Charles River Laboratories International,7,2,0,5,2
+2025-09-30,Charles Schwab,7,3,0,4,3
+2025-09-30,Chart Industries,6,4,0,2,4
+2025-09-30,Charter Communications,6,1,0,5,1
+2025-09-30,Cheesecake Factory,7,5,0,2,5
+2025-09-30,Chefs Warehouse,7,3,0,4,3
+2025-09-30,Chemours,6,3,0,3,3
+2025-09-30,Cheniere Energy,6,3,0,0,6
+2025-09-30,Chevron,6,4,0,2,4
+2025-09-30,Chewy,8,6,0,2,6
+2025-09-30,Chipotle Mexican Grill,4,3,0,1,3
+2025-09-30,Chord Energy,5,3,0,0,5
+2025-09-30,Church & Dwight,6,3,0,3,3
+2025-09-30,Ciena,6,3,0,3,3
+2025-09-30,Cigna,6,6,0,0,6
+2025-09-30,Cinemark,6,2,0,3,3
+2025-09-30,Cintas,5,4,0,1,4
+2025-09-30,Cisco Systems,7,2,0,5,2
+2025-09-30,Citigroup,6,1,0,5,1
+2025-09-30,Citizens Financial Group,7,3,0,4,3
+2025-09-30,Civitas Resources,6,3,0,2,4
+2025-09-30,Clean Harbors,7,3,0,1,6
+2025-09-30,Clear Channel Outdoor Hldgs,5,1,0,0,5
+2025-09-30,Cleveland-Cliffs,6,3,0,3,3
+2025-09-30,Clorox,7,5,0,2,5
+2025-09-30,Cognizant Technology Solutions,7,3,0,4,3
+2025-09-30,Coherent,6,4,0,2,4
+2025-09-30,Coinbase Global,10,5,0,5,5
+2025-09-30,Colgate-Palmolive,8,3,0,4,4
+2025-09-30,Columbia Banking System,10,4,0,6,4
+2025-09-30,Columbia Sportswear,6,4,0,2,4
+2025-09-30,Comcast,6,3,0,3,3
+2025-09-30,Comerica,5,3,0,2,3
+2025-09-30,Comfort Systems USA,7,2,0,0,7
+2025-09-30,CommScope,6,4,0,2,4
+2025-09-30,Commercial Metals,7,2,0,4,3
+2025-09-30,Community Health Systems,7,1,0,6,1
+2025-09-30,Compass Group,10,3,1,5,4
+2025-09-30,Conagra Brands,6,3,0,3,3
+2025-09-30,Concentrix,7,4,1,2,4
+2025-09-30,Conduent,7,3,0,4,3
+2025-09-30,ConocoPhillips,7,2,0,5,2
+2025-09-30,Consol Energy,8,1,0,0,8
+2025-09-30,Consolidated Edison,7,2,0,5,2
+2025-09-30,Constellation Brands,6,2,0,4,2
+2025-09-30,Constellation Energy,6,2,0,1,5
+2025-09-30,Continental Resources,6,2,0,4,2
+2025-09-30,Cooper Cos,7,1,0,6,1
+2025-09-30,Cooper-Standard,5,2,0,3,2
+2025-09-30,Copart,6,4,1,1,4
+2025-09-30,Core & Main,6,3,0,3,3
+2025-09-30,Corebridge Financial,7,2,0,5,2
+2025-09-30,Cornerstone Building Brands,7,4,0,3,4
+2025-09-30,Corning,8,5,0,3,5
+2025-09-30,Corpay,6,3,0,3,3
+2025-09-30,Corteva,7,5,0,2,5
+2025-09-30,Costco,7,4,0,3,4
+2025-09-30,Coterra Energy,7,2,0,1,6
+2025-09-30,Coty,6,3,0,3,3
+2025-09-30,Country Financial,7,4,0,3,4
+2025-09-30,Coupang,7,5,0,2,5
+2025-09-30,Cracker Barrel Old Country Store,5,2,0,3,2
+2025-09-30,Crocs,7,5,0,2,5
+2025-09-30,CrossAmerica Partners,7,1,0,6,1
+2025-09-30,CrowdStrike,5,2,0,3,2
+2025-09-30,Crown Castle,6,2,1,3,2
+2025-09-30,Crown Holdings,6,2,0,4,2
+2025-09-30,Cullen Frost Bankers,6,1,0,5,1
+2025-09-30,Cummins,7,3,0,4,3
+2025-09-30,Curtiss-Wright,8,3,0,4,4
+2025-09-30,DR Horton,5,3,0,2,3
+2025-09-30,DTE Energy,6,3,0,0,6
+2025-09-30,DXC Technology,7,4,0,3,4
+2025-09-30,DaVita,8,4,2,2,4
+2025-09-30,Dana Incorporated,6,3,0,3,3
+2025-09-30,Danaher,6,3,0,3,3
+2025-09-30,Darden Restaurants,6,1,0,4,2
+2025-09-30,Darling Ingredients,6,3,0,0,6
+2025-09-30,Deckers Outdoor,7,2,0,5,2
+2025-09-30,Deere,5,1,0,4,1
+2025-09-30,Delek US,7,3,0,4,3
+2025-09-30,Dell Technologies,8,4,0,4,4
+2025-09-30,Delta Air Lines,5,4,0,1,4
+2025-09-30,Dentsply Sirona,8,4,0,4,4
+2025-09-30,Designer Brands,10,1,0,8,2
+2025-09-30,Devon Energy,6,3,0,0,6
+2025-09-30,DexCom,9,5,0,4,5
+2025-09-30,Diamondback Energy,7,4,0,0,7
+2025-09-30,Dicks Sporting Goods,6,4,0,2,4
+2025-09-30,Diebold Nixdorf,7,5,0,2,5
+2025-09-30,Digital Realty Trust,6,2,0,1,5
+2025-09-30,Dillards,6,3,0,2,4
+2025-09-30,Discover Financial,8,3,1,4,3
+2025-09-30,DocuSign,7,5,0,2,5
+2025-09-30,Dollar General,8,4,0,4,4
+2025-09-30,Dollar Tree,6,3,0,3,3
+2025-09-30,Dominion Energy,7,6,0,0,7
+2025-09-30,Dominos Pizza Inc,10,4,0,6,4
+2025-09-30,Domtar,6,3,0,3,3
+2025-09-30,Donaldson Company,7,5,0,2,5
+2025-09-30,DoorDash,8,6,0,2,6
+2025-09-30,Dover Corporation,7,2,0,5,2
+2025-09-30,DraftKings,6,3,0,2,4
+2025-09-30,Dream Finders Homes,7,4,0,0,7
+2025-09-30,Dropbox,6,6,0,0,6
+2025-09-30,DuPont,7,5,0,2,5
+2025-09-30,Duke Energy,5,3,0,0,5
+2025-09-30,Dycom Industries,6,2,0,4,2
+2025-09-30,EMCOR Group,6,2,0,4,2
+2025-09-30,EOG Resources,6,2,0,4,2
+2025-09-30,EPAM Systems,6,3,0,3,3
+2025-09-30,EQT,9,6,0,3,6
+2025-09-30,ESAB,7,2,1,4,2
+2025-09-30,East West Bancorp,6,2,0,4,2
+2025-09-30,Eastman Chemical,8,4,0,4,4
+2025-09-30,Ebay,7,5,0,2,5
+2025-09-30,EchoStar,7,4,0,3,4
+2025-09-30,Ecolab,5,4,0,1,4
+2025-09-30,Edison International,8,1,0,6,2
+2025-09-30,Edward Jones,7,6,0,1,6
+2025-09-30,Edwards Lifesciences,6,2,0,4,2
+2025-09-30,Elanco Animal Health,7,5,0,2,5
+2025-09-30,Electronic Arts,5,2,0,3,2
+2025-09-30,Elevance Health,6,4,0,2,4
+2025-09-30,Eli Lilly,6,2,0,4,2
+2025-09-30,Emerson Electric,7,4,0,3,4
+2025-09-30,EnLink Midstream,7,3,0,3,4
+2025-09-30,Encompass Health,6,3,0,3,3
+2025-09-30,Endeavor Group,10,3,0,7,3
+2025-09-30,Endeavor Group Holdings,10,2,0,8,2
+2025-09-30,EnerSys,8,6,0,2,6
+2025-09-30,Energizer Holdings,6,2,0,0,6
+2025-09-30,Energy Transfer,6,3,0,0,6
+2025-09-30,Ensign Group,7,2,0,4,3
+2025-09-30,Entegris,6,4,0,2,4
+2025-09-30,Entergy,5,5,0,0,5
+2025-09-30,Enterprise Products Partners,7,2,0,5,2
+2025-09-30,Envista,10,7,0,3,7
+2025-09-30,Equifax,7,5,0,2,5
+2025-09-30,Equinix,5,2,0,3,2
+2025-09-30,Equitable Holdings,7,1,0,5,2
+2025-09-30,Equity Residential,7,4,0,3,4
+2025-09-30,Erie Insurance,7,6,0,1,6
+2025-09-30,Estée Lauder,6,2,0,3,3
+2025-09-30,Etsy,7,4,0,3,4
+2025-09-30,Euronet Worldwide,6,2,0,4,2
+2025-09-30,Evergy,7,4,1,2,4
+2025-09-30,Eversource Energy,7,5,0,0,7
+2025-09-30,Exact Sciences,6,4,0,2,4
+2025-09-30,Exelon,6,3,0,3,3
+2025-09-30,Expand Energy Corporation,6,2,0,0,6
+2025-09-30,Expedia,6,5,0,0,6
+2025-09-30,Expeditors International of Washington,7,2,0,5,2
+2025-09-30,Extra Space Storage,6,5,0,1,5
+2025-09-30,Exxon Mobil,6,2,0,3,3
+2025-09-30,F5,6,2,0,4,2
+2025-09-30,FM Global,7,1,0,5,2
+2025-09-30,FMC Corporation,7,3,0,4,3
+2025-09-30,FTI Consulting,7,2,0,5,2
+2025-09-30,Fannie Mae,5,1,0,4,1
+2025-09-30,Farmers Insurance Exchange,9,5,0,4,5
+2025-09-30,Fastenal,7,5,0,1,6
+2025-09-30,FedEx,6,5,0,1,5
+2025-09-30,Federated Mutual Insurance,7,1,0,6,1
+2025-09-30,Ferguson Enterprises,8,2,0,6,2
+2025-09-30,Fidelity National Financial,7,2,0,4,3
+2025-09-30,Fidelity National Information Services,7,1,0,6,1
+2025-09-30,Fifth Third Bancorp,7,5,0,2,5
+2025-09-30,First American Financial,7,2,0,5,2
+2025-09-30,First Citizens BancShares,6,1,0,5,1
+2025-09-30,First Horizon,7,4,0,3,4
+2025-09-30,First National of Nebraska,7,1,0,6,1
+2025-09-30,First Solar,6,2,0,4,2
+2025-09-30,FirstCash,7,4,0,3,4
+2025-09-30,FirstEnergy,5,3,0,2,3
+2025-09-30,Fiserv,8,5,0,3,5
+2025-09-30,Five Below,6,4,0,2,4
+2025-09-30,Flagstar Financial,7,2,0,5,2
+2025-09-30,Floor & Decor,6,3,0,3,3
+2025-09-30,Flowers Foods,5,3,0,2,3
+2025-09-30,Flowserve,10,6,0,3,7
+2025-09-30,Fluor,6,3,0,3,3
+2025-09-30,Foot Locker,7,6,0,1,6
+2025-09-30,Ford Motor,6,2,0,4,2
+2025-09-30,Fortinet,8,2,0,6,2
+2025-09-30,Fortive,6,2,0,4,2
+2025-09-30,Fortune Brands Innovations,7,2,0,5,2
+2025-09-30,Franklin Resources,8,2,0,6,2
+2025-09-30,Freddie Mac,4,1,0,3,1
+2025-09-30,Freeport-McMoRan,6,2,0,4,2
+2025-09-30,Frontier Airlines,6,4,0,2,4
+2025-09-30,Frontier Communications,6,3,0,2,4
+2025-09-30,G-III Apparel Group,5,2,0,3,2
+2025-09-30,GE HealthCare Technologies,7,2,0,5,2
+2025-09-30,GE Vernova,6,2,0,4,2
+2025-09-30,GMS,9,5,0,3,6
+2025-09-30,GXO Logistics,7,3,0,4,3
+2025-09-30,GameStop,6,2,0,4,2
+2025-09-30,Gannett,7,4,1,2,4
+2025-09-30,Garrett Motion Inc,7,3,0,4,3
+2025-09-30,Gartner,7,4,0,3,4
+2025-09-30,Gen Digital,7,4,0,3,4
+2025-09-30,Generac,7,5,0,2,5
+2025-09-30,General Dynamics,8,1,0,2,6
+2025-09-30,General Mills,5,3,0,2,3
+2025-09-30,General Motors,6,3,0,3,3
+2025-09-30,Genesis Energy,7,5,0,0,7
+2025-09-30,Genuine Parts,7,1,0,6,1
+2025-09-30,Genworth Financial,7,2,0,4,3
+2025-09-30,Gilead Sciences,6,4,0,2,4
+2025-09-30,Global Partners,6,2,0,3,3
+2025-09-30,Global Payments,6,2,0,4,2
+2025-09-30,Globe Life,7,4,0,3,4
+2025-09-30,GoDaddy,7,6,0,1,6
+2025-09-30,Goldman Sachs,5,2,0,2,3
+2025-09-30,Goodyear Tire & Rubber,7,2,0,5,2
+2025-09-30,Graham Holdings Company,6,2,0,4,2
+2025-09-30,Granite Construction,7,3,0,4,3
+2025-09-30,Graphic Packaging,6,2,0,4,2
+2025-09-30,Gray Television,7,2,0,5,2
+2025-09-30,Graybar Electric,7,3,0,4,3
+2025-09-30,Green Plains Inc,7,2,0,5,2
+2025-09-30,Greenbrier,95,31,4,46,45
+2025-09-30,Greif,6,3,0,3,3
+2025-09-30,Griffon Corporation,7,2,0,5,2
+2025-09-30,Grocery Outlet Holding,7,1,0,4,3
+2025-09-30,Group 1 Automotive,7,2,0,5,2
+2025-09-30,Guardian Life insurance,7,2,0,5,2
+2025-09-30,Guess Inc,6,3,0,3,3
+2025-09-30,GuideWell Mutual,8,2,0,6,2
+2025-09-30,HB Fuller,6,4,0,2,4
+2025-09-30,HCA Healthcare,8,3,1,4,3
+2025-09-30,HEICO,7,3,0,4,3
+2025-09-30,HF Sinclair,8,2,0,6,2
+2025-09-30,HP,6,5,0,1,5
+2025-09-30,Halliburton,7,4,0,3,4
+2025-09-30,Hanesbrands,6,4,0,2,4
+2025-09-30,Hanover Insurance Group,7,2,1,4,2
+2025-09-30,Harley-Davidson,7,3,0,3,4
+2025-09-30,Hasbro,5,4,0,1,4
+2025-09-30,Hawaiian Airlines Inc,7,5,0,2,5
+2025-09-30,Hawaiian Electric Industries,10,4,0,5,5
+2025-09-30,Helmerich & Payne,6,3,0,3,3
+2025-09-30,Henry Schein,6,4,0,2,4
+2025-09-30,Herc Rentals,7,3,0,3,4
+2025-09-30,Hershey,8,6,0,1,7
+2025-09-30,Hertz,7,4,1,2,4
+2025-09-30,Hewlett Packard Enterprise,5,2,0,3,2
+2025-09-30,Hillenbrand,6,2,0,4,2
+2025-09-30,Hilton Grand Vacations,7,5,0,0,7
+2025-09-30,Hilton Worldwide,9,7,0,2,7
+2025-09-30,Hologic,4,2,0,2,2
+2025-09-30,Home Depot,7,3,0,3,4
+2025-09-30,Honeywell,8,5,0,2,6
+2025-09-30,Hormel Foods,6,3,0,3,3
+2025-09-30,Host Hotels & Resorts,6,2,0,4,2
+2025-09-30,Hovnanian Enterprises,7,2,0,5,2
+2025-09-30,Howmet Aerospace,8,2,0,6,2
+2025-09-30,Hub Group,7,3,0,4,3
+2025-09-30,Hubbell,6,4,0,2,4
+2025-09-30,Humana,8,6,0,1,7
+2025-09-30,Huntington Bancshares,7,3,0,4,3
+2025-09-30,Huntington Ingalls Industries,5,2,0,3,2
+2025-09-30,Huntsman,6,2,1,3,2
+2025-09-30,Hyatt Hotels,8,3,0,2,6
+2025-09-30,Hyster-Yale,6,3,0,3,3
+2025-09-30,IAC,10,6,0,4,6
+2025-09-30,IBM,5,2,0,2,3
+2025-09-30,IDEX,7,5,0,2,5
+2025-09-30,IDEXX Laboratories,5,2,0,3,2
+2025-09-30,IQVIA,7,5,0,2,5
+2025-09-30,ITT,7,2,0,5,2
+2025-09-30,Icahn Enterprises,7,2,1,4,2
+2025-09-30,Illinois Tool Works,6,2,0,4,2
+2025-09-30,Illumina Inc,6,3,0,3,3
+2025-09-30,Incyte,8,5,0,3,5
+2025-09-30,Ingersoll Rand,8,6,0,2,6
+2025-09-30,Ingles Markets,6,3,0,3,3
+2025-09-30,Ingram Micro,16,8,0,8,8
+2025-09-30,Ingredion,4,3,0,1,3
+2025-09-30,Insight Enterprises,7,5,0,2,5
+2025-09-30,Insperity,7,5,0,1,6
+2025-09-30,Instacart,8,6,0,1,7
+2025-09-30,Installed Building Products,7,3,0,4,3
+2025-09-30,Intel,6,4,0,2,4
+2025-09-30,Interactive Brokers,5,2,0,3,2
+2025-09-30,Intercontinental Exchange,7,1,0,6,1
+2025-09-30,International Flavors & Fragrances,7,2,0,5,2
+2025-09-30,International Paper,5,3,0,2,3
+2025-09-30,Interpublic Group,6,3,0,3,3
+2025-09-30,Intuit,5,3,0,2,3
+2025-09-30,Intuitive Surgical,6,4,0,2,4
+2025-09-30,Iron Mountain,7,5,0,2,5
+2025-09-30,JB Hunt Transport Services,7,3,0,4,3
+2025-09-30,JELD-WEN Holding,7,4,0,3,4
+2025-09-30,JM Smucker,7,2,0,5,2
+2025-09-30,JPMorgan Chase,8,2,0,5,3
+2025-09-30,Jabil,7,4,0,3,4
+2025-09-30,Jackson Financial,7,2,0,5,2
+2025-09-30,Jacobs Solutions,7,3,0,4,3
+2025-09-30,Jefferies Financial,6,2,0,4,2
+2025-09-30,JetBlue Airways,7,3,0,4,3
+2025-09-30,Johnson & Johnson,7,4,0,3,4
+2025-09-30,Jones Lang LaSalle,7,3,0,4,3
+2025-09-30,Juniper Networks,10,6,0,4,6
+2025-09-30,KB Home,6,3,0,3,3
+2025-09-30,KBR,8,5,0,3,5
+2025-09-30,KKR & Co,5,2,0,3,2
+2025-09-30,KLA,8,5,0,3,5
+2025-09-30,Kaiser Aluminum,6,2,0,4,2
+2025-09-30,Kellanova,7,5,0,2,5
+2025-09-30,Kelly Services Inc,7,2,0,3,4
+2025-09-30,Kemper,8,8,0,0,8
+2025-09-30,Kenvue,7,3,0,4,3
+2025-09-30,Keurig Dr Pepper,7,2,0,5,2
+2025-09-30,KeyCorp,9,2,0,7,2
+2025-09-30,Keysight Technologies,7,3,0,4,3
+2025-09-30,Kimberly-Clark,8,3,0,5,3
+2025-09-30,Kinder Morgan,6,3,0,0,6
+2025-09-30,Kirby Corporation,8,2,0,6,2
+2025-09-30,Knife River Corporation,7,3,0,4,3
+2025-09-30,Knight Swift Transportation,7,2,0,5,2
+2025-09-30,Kohl's,7,5,0,2,5
+2025-09-30,Kontoor Brands,6,3,0,3,3
+2025-09-30,Korn Ferry,6,2,0,4,2
+2025-09-30,Kraft Heinz,7,4,0,3,4
+2025-09-30,Kroger,7,6,0,1,6
+2025-09-30,Kyndryl,6,5,0,1,5
+2025-09-30,L3Harris Technologies,5,3,0,2,3
+2025-09-30,LCI Industries,9,3,0,6,3
+2025-09-30,LIncoln National,7,2,0,5,2
+2025-09-30,LKQ,9,6,0,3,6
+2025-09-30,LPL Financial,7,3,0,4,3
+2025-09-30,Labcorp Holdings,7,1,0,6,1
+2025-09-30,Lam Research,5,2,0,3,2
+2025-09-30,Lamb Weston,5,3,0,2,3
+2025-09-30,Land O'Lakes,6,4,0,2,4
+2025-09-30,Landstar System,6,2,0,4,2
+2025-09-30,Las Vegas Sands,5,2,0,3,2
+2025-09-30,Lear Corporation,7,4,0,3,4
+2025-09-30,Leggett & Platt,8,2,0,6,2
+2025-09-30,Leidos,6,3,0,3,3
+2025-09-30,Lennar,6,3,1,2,3
+2025-09-30,Lennox International,9,4,0,4,5
+2025-09-30,Levi Strauss,10,4,0,5,5
+2025-09-30,Liberty Energy,7,3,0,0,7
+2025-09-30,Liberty Media,7,1,0,1,6
+2025-09-30,Liberty Mutual Insurance,7,5,0,1,6
+2025-09-30,Light & Wonder,6,2,0,4,2
+2025-09-30,Lincoln Electric,7,2,0,5,2
+2025-09-30,Lithia Motors,7,4,0,3,4
+2025-09-30,Live Nation Entertainment,7,4,0,1,6
+2025-09-30,Lockheed Martin,6,3,0,3,3
+2025-09-30,Loews,6,5,0,1,5
+2025-09-30,Louisiana-Pacific Corporation,7,3,0,4,3
+2025-09-30,Lowe's,8,6,0,1,7
+2025-09-30,Lululemon athletica,7,3,0,4,3
+2025-09-30,Lumen Technologies,7,5,0,2,5
+2025-09-30,Lyft,5,4,0,1,4
+2025-09-30,M&T Bank,7,6,0,1,6
+2025-09-30,M/I Homes,6,3,0,3,3
+2025-09-30,MDU Resources Group,7,2,0,5,2
+2025-09-30,MGM Resorts International,7,5,0,2,5
+2025-09-30,MKS Instruments,6,2,0,4,2
+2025-09-30,MRC Global,7,4,0,3,4
+2025-09-30,MSC Industrial Direct,7,4,0,3,4
+2025-09-30,MSCI,5,3,0,2,3
+2025-09-30,MYR Group,7,3,0,3,4
+2025-09-30,Macys,8,7,0,1,7
+2025-09-30,ManpowerGroup,7,4,0,2,5
+2025-09-30,Marathon Oil,9,4,0,4,5
+2025-09-30,Marathon Petroleum,5,1,0,4,1
+2025-09-30,Markel Group,7,2,0,5,2
+2025-09-30,Marriott International,6,4,0,2,4
+2025-09-30,Marriott Vacations Worldwide,7,4,0,3,4
+2025-09-30,Marsh & McLennan,7,3,1,3,3
+2025-09-30,Martin Marietta Materials,7,3,1,3,3
+2025-09-30,Marvell Technology,6,1,0,5,1
+2025-09-30,MasTec,7,4,0,3,4
+2025-09-30,Masco,7,3,0,4,3
+2025-09-30,Mass Mutual,7,5,0,2,5
+2025-09-30,MasterBrand,6,4,0,2,4
+2025-09-30,Mastercard,7,5,0,2,5
+2025-09-30,Matador Resources,7,4,0,3,4
+2025-09-30,Match Group,6,1,0,4,2
+2025-09-30,Mativ,7,2,0,5,2
+2025-09-30,Matson Inc,7,3,0,4,3
+2025-09-30,Mattel,6,4,0,2,4
+2025-09-30,Maximus,7,4,0,3,4
+2025-09-30,McCormick & Company,7,2,0,5,2
+2025-09-30,McDonalds,6,5,0,1,5
+2025-09-30,McKesson,5,3,0,2,3
+2025-09-30,Medical Mutual of Ohio,8,3,0,5,3
+2025-09-30,Merck,6,4,0,1,5
+2025-09-30,Mercury General,7,3,0,4,3
+2025-09-30,Meritage Homes,6,3,0,3,3
+2025-09-30,MetLife,8,6,0,2,6
+2025-09-30,Meta Platforms,9,2,0,6,3
+2025-09-30,Mettler-Toledo International,7,5,0,2,5
+2025-09-30,Microchip Technology,6,2,0,4,2
+2025-09-30,Micron Technology,6,3,0,3,3
+2025-09-30,Microsoft,6,1,0,4,2
+2025-09-30,Middleby,7,4,0,3,4
+2025-09-30,MillerKnoll,8,3,0,4,4
+2025-09-30,Moderna,7,3,0,4,3
+2025-09-30,ModivCare,7,5,0,2,5
+2025-09-30,Mohawk Industries,6,2,0,4,2
+2025-09-30,Molina Healthcare,7,3,0,4,3
+2025-09-30,Molson Coors Beverage,5,2,0,3,2
+2025-09-30,Mondelez,6,3,0,2,4
+2025-09-30,Monster Beverage,6,2,0,3,3
+2025-09-30,Moodys Corporation,9,6,0,3,6
+2025-09-30,Moog Inc,7,2,0,5,2
+2025-09-30,Morgan Stanley,6,2,0,4,2
+2025-09-30,Mosaic,10,7,0,3,7
+2025-09-30,Motorola Solutions,8,5,0,2,6
+2025-09-30,Mueller Industries,7,2,0,5,2
+2025-09-30,Murphy Oil,7,4,0,2,5
+2025-09-30,Murphy USA,7,4,1,2,4
+2025-09-30,Mutual of Omaha,6,3,0,3,3
+2025-09-30,NCR Atleos,6,4,0,2,4
+2025-09-30,NCR Voyix,8,4,0,4,4
+2025-09-30,NGL Energy Partners,7,3,0,0,7
+2025-09-30,NLV Financial,10,4,0,5,5
+2025-09-30,NOV,6,2,0,4,2
+2025-09-30,NRG Energy,6,3,0,0,6
+2025-09-30,NVR Inc,7,2,0,5,2
+2025-09-30,Nasdaq Inc,5,1,0,4,1
+2025-09-30,Nationwide Insurance,7,2,0,4,3
+2025-09-30,Navient,7,2,0,4,3
+2025-09-30,NetApp,4,3,0,1,3
+2025-09-30,Netflix,6,5,0,1,5
+2025-09-30,NeueHealth,7,2,0,5,2
+2025-09-30,New York Life Insurance,7,4,0,2,5
+2025-09-30,NewMarket Corporation,7,2,0,5,2
+2025-09-30,Newell Brands,7,3,0,4,3
+2025-09-30,Newmont,6,3,0,3,3
+2025-09-30,News Corp,6,3,0,3,3
+2025-09-30,Nexstar Media Group,5,3,0,2,3
+2025-09-30,NextEra Energy,7,3,0,0,7
+2025-09-30,NiSource,6,2,0,4,2
+2025-09-30,Nike,8,6,0,2,6
+2025-09-30,Nordson,7,3,0,4,3
+2025-09-30,Nordstrom,7,5,0,2,5
+2025-09-30,Norfolk Southern,6,3,0,3,3
+2025-09-30,Northern Trust,5,2,0,1,4
+2025-09-30,Northrop Grumman,6,3,0,2,4
+2025-09-30,Northwestern Mutual,7,4,0,2,5
+2025-09-30,Nucor,6,3,0,3,3
+2025-09-30,Nvidia,6,2,0,4,2
+2025-09-30,O'Reilly Automotive,6,3,0,2,4
+2025-09-30,O-I Glass,6,1,0,5,1
+2025-09-30,ODP Business Solutions,9,3,0,6,3
+2025-09-30,OGE Energy,7,3,0,2,5
+2025-09-30,ON Semiconductor,7,1,0,6,1
+2025-09-30,Occidental Petroleum,7,1,0,5,2
+2025-09-30,Old Dominion Freight Line,6,3,0,3,3
+2025-09-30,Old National Bancorp,5,2,0,3,2
+2025-09-30,Old Republic International,7,2,0,4,3
+2025-09-30,Olin,8,5,0,3,5
+2025-09-30,Omnicom Group,6,3,0,3,3
+2025-09-30,OneMain,6,3,0,2,4
+2025-09-30,Oneok,7,2,0,4,3
+2025-09-30,Opendoor Technologies,6,2,0,4,2
+2025-09-30,Option Care Health,7,4,0,1,6
+2025-09-30,Oracle,8,3,0,5,3
+2025-09-30,Organon,6,2,0,4,2
+2025-09-30,Oscar Health,6,2,0,4,2
+2025-09-30,Oshkosh Corporation,6,2,0,4,2
+2025-09-30,Otis Worldwide,7,2,0,5,2
+2025-09-30,Ovintiv,7,2,0,5,2
+2025-09-30,Owens & Minor,7,4,0,2,5
+2025-09-30,Owens Corning,5,3,0,2,3
+2025-09-30,PACS Group,6,1,1,3,2
+2025-09-30,PBF Energy,6,3,0,1,5
+2025-09-30,PC Connection Inc,7,2,0,5,2
+2025-09-30,PENN Entertainment,5,2,0,0,5
+2025-09-30,PG&E,7,6,0,1,6
+2025-09-30,PNC Financial Services,9,7,0,2,7
+2025-09-30,PPG Industries,6,3,0,3,3
+2025-09-30,PPL,7,6,0,1,6
+2025-09-30,PVH,7,3,0,4,3
+2025-09-30,Paccar,7,4,0,3,4
+2025-09-30,Pacific Life,7,3,0,3,4
+2025-09-30,Packaging Corp of America,7,3,0,4,3
+2025-09-30,Palo Alto Networks,6,3,0,2,4
+2025-09-30,Par Pacific,7,3,0,4,3
+2025-09-30,Paramount Global,6,3,0,3,3
+2025-09-30,Park Hotels & Resorts,7,2,0,5,2
+2025-09-30,Parker-Hannifin,7,2,0,5,2
+2025-09-30,Parsons Corporation,6,4,0,2,4
+2025-09-30,Patrick Industries,7,3,0,4,3
+2025-09-30,Patterson Companies Inc,7,2,0,5,2
+2025-09-30,Patterson-UTI Energy,7,4,0,1,6
+2025-09-30,PayPal,6,5,0,1,5
+2025-09-30,Paychex,7,3,0,4,3
+2025-09-30,Peabody Energy,6,2,0,0,6
+2025-09-30,Peloton Interactive,5,2,0,3,2
+2025-09-30,Penn Mutual Life Insurance,7,3,0,4,3
+2025-09-30,PennyMac Financial Services,7,2,0,5,2
+2025-09-30,Penske Automotive,7,1,0,6,1
+2025-09-30,PepsiCo,7,6,0,1,6
+2025-09-30,Performance Food,6,5,0,1,5
+2025-09-30,Permian Resources,7,2,0,4,3
+2025-09-30,Petco Health and Wellness,10,7,0,1,9
+2025-09-30,Peter Kiewit Sons',7,2,0,5,2
+2025-09-30,Pfizer,4,3,0,1,3
+2025-09-30,Philip Morris International,5,1,0,4,1
+2025-09-30,Phillips 66,7,5,0,2,5
+2025-09-30,Pinnacle West Capital,10,6,0,3,7
+2025-09-30,Pinterest,7,6,0,1,6
+2025-09-30,Pioneer Natural Resources,7,4,0,0,7
+2025-09-30,Pitney Bowes,8,6,1,1,6
+2025-09-30,Plains GP,7,2,0,5,2
+2025-09-30,Playtika Holding,7,1,0,6,1
+2025-09-30,Plexus,7,6,0,1,6
+2025-09-30,Polaris Inc,9,6,0,3,6
+2025-09-30,Pool Corporation,8,1,0,6,2
+2025-09-30,Popular Inc,7,2,0,0,7
+2025-09-30,Portland General Electric,7,4,0,3,4
+2025-09-30,Post Holdings,6,2,0,4,2
+2025-09-30,PrIncipal Financial,7,4,0,2,5
+2025-09-30,PriceSmart,7,5,0,2,5
+2025-09-30,Primerica,7,5,0,2,5
+2025-09-30,Primoris Services,5,2,0,3,2
+2025-09-30,ProFrac Holding,8,3,0,5,3
+2025-09-30,Procter & Gamble,7,2,0,4,3
+2025-09-30,Progressive Insurance,7,2,0,5,2
+2025-09-30,Prologis,6,3,0,3,3
+2025-09-30,Prudential Financial,7,4,0,3,4
+2025-09-30,Public Service Enterprise Group,7,4,0,3,4
+2025-09-30,Public Storage,6,5,0,1,5
+2025-09-30,Publix Super Markets,7,4,0,1,6
+2025-09-30,Puget Sound Energy,7,3,0,0,7
+2025-09-30,PulteGroup,5,2,0,3,2
+2025-09-30,Pure Storage,6,4,0,2,4
+2025-09-30,QVC Group,7,3,0,4,3
+2025-09-30,QXO Building Products,6,2,0,4,2
+2025-09-30,Qorvo,6,2,0,4,2
+2025-09-30,Qualcomm,5,1,0,4,1
+2025-09-30,Quanta Services,7,4,0,3,4
+2025-09-30,Quest Diagnostics,7,3,0,3,4
+2025-09-30,QuidelOrtho,6,3,0,3,3
+2025-09-30,REV Group,7,2,1,4,2
+2025-09-30,RPM International,6,2,0,4,2
+2025-09-30,RTX,5,3,0,2,3
+2025-09-30,RXO Inc,7,4,0,3,4
+2025-09-30,Rackspace Technology,5,3,0,2,3
+2025-09-30,Radius Recycling,7,2,0,5,2
+2025-09-30,Ralph Lauren,7,6,0,1,6
+2025-09-30,Range Resources,6,2,0,4,2
+2025-09-30,Raymond James Financial,7,3,0,4,3
+2025-09-30,Realty Income,6,2,0,4,2
+2025-09-30,Regal Rexnord,7,3,0,4,3
+2025-09-30,Regeneron Pharmaceuticals,7,2,0,5,2
+2025-09-30,Regions Financial,7,6,0,1,6
+2025-09-30,Reinsurance Group of America,7,3,0,4,3
+2025-09-30,Reliance Inc,7,3,0,4,3
+2025-09-30,Republic Services,7,3,0,1,6
+2025-09-30,ResMed,7,3,0,3,4
+2025-09-30,Resideo Technologies,8,6,0,2,6
+2025-09-30,Restoration Hardware,5,3,0,2,3
+2025-09-30,Revvity,6,4,0,2,4
+2025-09-30,Rite Aid,7,6,0,1,6
+2025-09-30,Rithm Capital,7,2,0,5,2
+2025-09-30,Rivian Automotive,7,2,0,5,2
+2025-09-30,Robert Half,7,6,0,1,6
+2025-09-30,Roblox,7,6,0,1,6
+2025-09-30,Rocket Companies,6,2,0,4,2
+2025-09-30,Rockwell Automation,8,6,0,2,6
+2025-09-30,Roku,7,5,0,2,5
+2025-09-30,Rollins Inc,7,2,0,5,2
+2025-09-30,Roper Technologies,7,2,0,5,2
+2025-09-30,Ross Stores,6,2,0,3,3
+2025-09-30,Rush Enterprises,7,2,0,5,2
+2025-09-30,Ryder System,7,5,0,2,5
+2025-09-30,Ryerson Holding,8,3,0,5,3
+2025-09-30,S&P Global,5,3,0,2,3
+2025-09-30,SBA Communications,6,2,0,4,2
+2025-09-30,SS&C Technologies,6,3,0,3,3
+2025-09-30,Sabre Corporation,7,2,1,4,2
+2025-09-30,Saia Inc,7,2,0,5,2
+2025-09-30,Salesforce,6,4,0,2,4
+2025-09-30,Sallie Mae,6,2,2,2,2
+2025-09-30,Sally Beauty,7,6,0,0,7
+2025-09-30,Sanmina,6,3,0,3,3
+2025-09-30,ScanSource,6,3,0,3,3
+2025-09-30,Schneider National,7,1,0,6,1
+2025-09-30,Science Applications International,7,1,0,6,1
+2025-09-30,Scotts Miracle-Gro,6,4,0,2,4
+2025-09-30,Seaboard,10,7,0,3,7
+2025-09-30,Sealed Air Corporation,7,2,0,5,2
+2025-09-30,Securian Financial,7,3,0,3,4
+2025-09-30,Select Medical Holdings,7,1,0,6,1
+2025-09-30,Selective Insurance Group,7,3,0,4,3
+2025-09-30,Sempra,6,3,0,3,3
+2025-09-30,Sentry Insurance Group,8,5,0,3,5
+2025-09-30,Service Corp International,7,2,1,4,2
+2025-09-30,ServiceNow,7,3,0,3,4
+2025-09-30,Sherwin-Williams,6,5,0,1,5
+2025-09-30,Shift4 Payments,7,2,0,5,2
+2025-09-30,Silgan,8,6,0,2,6
+2025-09-30,Simon Property Group,6,3,0,3,3
+2025-09-30,Sinclair,6,5,0,1,5
+2025-09-30,Sirius XM,7,5,0,2,5
+2025-09-30,SiteOne Landscape Supply,6,2,2,2,2
+2025-09-30,Skechers USA,8,5,0,2,6
+2025-09-30,SkyWest,5,2,0,3,2
+2025-09-30,Skyline Champion,9,1,0,3,6
+2025-09-30,Skyworks Solutions,6,3,0,3,3
+2025-09-30,Smurfit Westrock,8,4,0,4,4
+2025-09-30,Snap Inc,7,3,0,4,3
+2025-09-30,Snap-on,7,4,1,2,4
+2025-09-30,Snowflake Inc,7,2,0,4,3
+2025-09-30,Solventum,8,5,0,3,5
+2025-09-30,Sonic Automotive,7,2,0,4,3
+2025-09-30,Sonoco Products,6,4,0,2,4
+2025-09-30,Southern Company,7,5,0,2,5
+2025-09-30,Southwest Airlines,6,4,0,2,4
+2025-09-30,Southwest Gas Holdings,7,2,0,4,3
+2025-09-30,SpartanNash,6,3,0,3,3
+2025-09-30,Spectrum Brands,7,3,1,3,3
+2025-09-30,Spire Inc,7,2,0,5,2
+2025-09-30,Spirit AeroSystems,4,2,0,2,2
+2025-09-30,Spirit Airlines,7,3,1,3,3
+2025-09-30,Splunk,6,4,0,2,4
+2025-09-30,Sprouts Farmers Market,6,4,0,2,4
+2025-09-30,Stagwell,7,3,1,2,4
+2025-09-30,Stanley Black & Decker,6,3,0,3,3
+2025-09-30,Starbucks,5,4,0,1,4
+2025-09-30,State Farm Insurance,7,2,1,4,2
+2025-09-30,State Street,6,2,0,4,2
+2025-09-30,Steel Dynamics,5,3,0,0,5
+2025-09-30,Steelcase,7,5,0,2,5
+2025-09-30,Stericycle,7,3,0,4,3
+2025-09-30,Stifel Financial,7,2,0,5,2
+2025-09-30,StoneX Group,7,4,0,3,4
+2025-09-30,Stryker,6,4,0,2,4
+2025-09-30,Summit Materials,7,3,0,4,3
+2025-09-30,Sun Communities,7,5,0,2,5
+2025-09-30,Super Micro Computer,6,3,0,1,5
+2025-09-30,Surgery Partners,8,2,0,5,3
+2025-09-30,Sylvamo,6,5,0,1,5
+2025-09-30,Synchrony Financial,7,1,0,6,1
+2025-09-30,Synopsys,6,3,0,3,3
+2025-09-30,Synovus Financial,6,3,0,3,3
+2025-09-30,Sysco,7,6,0,1,6
+2025-09-30,T Rowe Price,7,6,0,0,7
+2025-09-30,TD Synnex,8,3,0,5,3
+2025-09-30,TEGNA,6,3,0,3,3
+2025-09-30,THOR Industries,6,2,0,4,2
+2025-09-30,TIAA,6,5,0,1,5
+2025-09-30,TJX,6,4,0,2,4
+2025-09-30,Take-Two Interactive Software,6,3,0,3,3
+2025-09-30,Talen Energy,5,2,0,0,5
+2025-09-30,Tapestry,10,5,0,5,5
+2025-09-30,Targa Resources,7,3,0,4,3
+2025-09-30,Target,6,4,0,2,4
+2025-09-30,Taylor Morrison Home,6,4,0,2,4
+2025-09-30,Teladoc Health,6,2,0,4,2
+2025-09-30,Teledyne Technologies,6,3,0,2,4
+2025-09-30,Teleflex,7,6,0,1,6
+2025-09-30,Telephone & Data Systems,10,3,0,7,3
+2025-09-30,TelevisaUnivision,6,5,0,1,5
+2025-09-30,Tempur Sealy International,7,2,0,5,2
+2025-09-30,Tenet Healthcare,6,2,0,4,2
+2025-09-30,Teradyne,5,2,0,3,2
+2025-09-30,Terex,7,4,0,3,4
+2025-09-30,Tesla,4,2,0,2,2
+2025-09-30,Tetra Tech,7,4,0,3,4
+2025-09-30,Texas Instruments,7,3,0,4,3
+2025-09-30,Texas Roadhouse,6,1,0,4,2
+2025-09-30,Textron,7,4,0,3,4
+2025-09-30,The Andersons Inc,7,2,0,5,2
+2025-09-30,The Coca-Cola Company,7,3,0,4,3
+2025-09-30,The Hartford,6,4,0,2,4
+2025-09-30,Thermo Fisher Scientific,7,4,0,3,4
+2025-09-30,Thrivent Financial for Lutherans,7,1,0,6,1
+2025-09-30,Timken,8,6,0,2,6
+2025-09-30,Titan Machinery,7,4,0,2,5
+2025-09-30,Toast Inc,7,4,0,3,4
+2025-09-30,Toll Brothers,5,2,0,3,2
+2025-09-30,TopBuild,7,4,0,3,4
+2025-09-30,Topgolf Callaway Brands,7,2,0,4,3
+2025-09-30,Toro Company,7,3,0,4,3
+2025-09-30,Tractor Supply,6,4,0,2,4
+2025-09-30,TransDigm,7,2,0,5,2
+2025-09-30,TransUnion,6,2,0,4,2
+2025-09-30,Travelers Insurance,7,2,1,4,2
+2025-09-30,TreeHouse Foods,9,7,0,2,7
+2025-09-30,Tri Pointe Homes,7,3,0,3,4
+2025-09-30,TriNet Group,7,3,0,4,3
+2025-09-30,Trimble,5,3,0,2,3
+2025-09-30,Trinity Industries,8,3,0,5,3
+2025-09-30,TruStage,7,5,0,1,6
+2025-09-30,Truist Financial,7,4,0,3,4
+2025-09-30,Tutor Perini Corporation,7,3,0,4,3
+2025-09-30,Twilio,4,3,0,1,3
+2025-09-30,Tyson Foods,6,3,0,3,3
+2025-09-30,U-Haul,7,2,2,2,3
+2025-09-30,UFP Industries,5,2,0,3,2
+2025-09-30,UGI Utilities Inc,7,4,0,2,5
+2025-09-30,UL Solutions,7,3,0,3,4
+2025-09-30,UPS,8,8,0,0,8
+2025-09-30,US Bancorp,6,4,0,2,4
+2025-09-30,US Foods,6,3,0,3,3
+2025-09-30,USAA,8,7,0,1,7
+2025-09-30,Uber,6,5,0,1,5
+2025-09-30,Ulta Beauty,7,5,0,0,7
+2025-09-30,Under Armour,7,4,0,3,4
+2025-09-30,Union Pacific,6,2,0,4,2
+2025-09-30,United Airlines,5,3,0,0,5
+2025-09-30,United Natural Foods,5,3,0,0,5
+2025-09-30,United Rentals,7,4,0,0,7
+2025-09-30,United States Steel,5,3,0,1,4
+2025-09-30,UnitedHealth,9,3,0,5,4
+2025-09-30,Universal Corporation,7,3,0,4,3
+2025-09-30,Universal Health Services,6,1,0,5,1
+2025-09-30,Unum Group,7,4,0,2,5
+2025-09-30,Upbound Group,7,2,0,5,2
+2025-09-30,Urban Outfitters,7,5,0,2,5
+2025-09-30,V2X,6,3,0,2,4
+2025-09-30,VF Corporation,4,2,0,2,2
+2025-09-30,VICI Properties,96,7,2,64,30
+2025-09-30,Vail Resorts,6,2,1,3,2
+2025-09-30,Valero Energy,6,1,0,0,6
+2025-09-30,Valley National Bancorp,7,2,0,5,2
+2025-09-30,Valmont Industries,7,2,0,5,2
+2025-09-30,Valvoline Inc,7,2,0,5,2
+2025-09-30,Ventas Inc,8,2,0,6,2
+2025-09-30,Verisk Analytics,6,3,0,3,3
+2025-09-30,Verizon,5,4,0,1,4
+2025-09-30,Vertex Pharmaceuticals,6,3,0,3,3
+2025-09-30,Vertiv,14,10,0,4,10
+2025-09-30,Viasat,7,3,1,3,3
+2025-09-30,Viatris,7,4,0,3,4
+2025-09-30,Victorias Secret,9,6,0,2,7
+2025-09-30,Visa,7,3,0,4,3
+2025-09-30,Vishay Intertechnology,6,2,0,4,2
+2025-09-30,Vista Outdoor,10,5,1,4,5
+2025-09-30,Visteon,5,3,0,2,3
+2025-09-30,Vistra,6,2,0,4,2
+2025-09-30,Vontier,8,2,0,6,2
+2025-09-30,Voya Financial,8,3,0,5,3
+2025-09-30,Vulcan Materials,6,2,0,4,2
+2025-09-30,WEC Energy,6,2,0,1,5
+2025-09-30,WESCO International,7,4,0,3,4
+2025-09-30,WEX,8,5,0,3,5
+2025-09-30,WR Berkley,5,2,0,3,2
+2025-09-30,WW Grainger,7,3,0,4,3
+2025-09-30,Wabash National,5,2,0,3,2
+2025-09-30,Walgreens Boots Alliance,6,2,0,3,3
+2025-09-30,Walmart,6,5,0,1,5
+2025-09-30,Walt Disney,9,2,0,7,2
+2025-09-30,Warner Bros Discovery,6,3,1,2,3
+2025-09-30,Warner Music Group,7,4,0,3,4
+2025-09-30,Waters Corporation,10,6,1,3,6
+2025-09-30,Watsco,6,4,0,2,4
+2025-09-30,Wayfair,5,5,0,0,5
+2025-09-30,Webster Financial,6,2,0,3,3
+2025-09-30,Weis Markets,6,5,0,1,5
+2025-09-30,Wells Fargo,7,5,0,1,6
+2025-09-30,Welltower,6,1,0,3,3
+2025-09-30,Werner Enterprises,5,3,0,2,3
+2025-09-30,West Pharmaceutical Services,7,2,0,5,2
+2025-09-30,Western & Southern Financial,7,2,0,4,3
+2025-09-30,Western Alliance Bancorp,6,2,0,4,2
+2025-09-30,Western Digital,6,4,0,2,4
+2025-09-30,Western Midstream Partners,7,2,0,4,3
+2025-09-30,Western Union,7,4,0,2,5
+2025-09-30,Westinghouse Air Brake Technologies,7,2,0,5,2
+2025-09-30,Weyerhaeuser,7,4,0,2,5
+2025-09-30,Whirlpool,8,5,0,3,5
+2025-09-30,Williams Companies,7,2,0,5,2
+2025-09-30,Williams-Sonoma,8,6,0,2,6
+2025-09-30,Winnebago Industries,7,2,0,5,2
+2025-09-30,Wintrust Financial,7,3,0,2,5
+2025-09-30,Woodward Inc,7,4,0,3,4
+2025-09-30,Workday,8,5,0,2,6
+2025-09-30,World Kinect,7,3,0,4,3
+2025-09-30,Worthington Enterprises,7,3,0,4,3
+2025-09-30,Wynn Resorts,95,6,5,76,14
+2025-09-30,XPO,7,3,0,4,3
+2025-09-30,Xcel Energy,7,6,0,0,7
+2025-09-30,Xerox,7,6,0,1,6
+2025-09-30,Xylem Inc,7,4,0,3,4
+2025-09-30,Yum Brands,6,3,0,3,3
+2025-09-30,Yum China,8,4,0,4,4
+2025-09-30,Zebra Technologies,6,2,0,4,2
+2025-09-30,Zimmer Biomet,7,5,0,2,5
+2025-09-30,Zions Bancorp,9,3,0,5,4
+2025-09-30,Zoetis,7,7,0,0,7
+2025-09-30,Zoom Video Communications,6,2,0,4,2
+2025-09-30,eXp World,9,4,0,4,5
+2025-09-30,iHeartMedia,8,5,0,2,6

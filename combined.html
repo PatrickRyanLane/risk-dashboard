@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fortune 1000 Brand & CEO Risk Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Smooth-ish height updates for the iframe */
+    #dashFrame { transition: height .12s ease; }
+    .tab-btn {
+      @apply px-5 py-2.5 rounded-lg font-medium transition;
+      background: #000000;   /* black when unselected */
+      color: #ffffff;
+      padding: 4px 16px;
+      border-radius: 8px;
+    }
+    .tab-btn:hover {
+      background: #333333;   /* slightly lighter black on hover */
+    }
+    .tab-btn.active {
+      background: #00809e;   /* teal blue when active */
+      color: #ffffff;
+    }
+
+  </style>
+</head>
+<body class="bg-[#5e858e] text-slate-900">
+  <div class="max-w-7xl mx-auto p-6">
+    <header class="mb-4">
+      <h1 class="text-3xl font-bold">Fortune 1000 Brand & CEO Risk Dashboard</h1>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="flex items-center gap-2 mb-4">
+      <button id="tab-brands"  class="tab-btn active">Brands</button>
+      <button id="tab-ceos"    class="tab-btn">CEOs</button>
+      <button id="tab-sectors" class="tab-btn">Sectors</button>
+
+      <div class="ml-auto text-sm">
+        <a id="openTabLink" class="underline" target="_blank" rel="noopener">Open current tab in a new tab</a>
+      </div>
+    </nav>
+
+    <!-- Frame -->
+    <section class="rounded-xl border-none overflow-hidden">
+      <iframe id="dashFrame" title="Embedded dashboard" src="" class="w-full border-0"></iframe>
+    </section>
+  </div>
+
+  <script>
+    // ----- Paths (relative to this file) -----
+    const PATHS = {
+      brands:  'brand-dashboard.html',
+      ceos:    'ceo-dashboard.html',
+      sectors: 'sectors.html'
+    };
+
+    // Utility: build a URL relative to this file's directory
+    function toAbsolute(relPath) {
+      const base = new URL('.', location.href); // current directory
+      return new URL(relPath, base).href;
+    }
+
+    // Elements
+    const frame = document.getElementById('dashFrame');
+    const openTabLink = document.getElementById('openTabLink');
+    const tabs = {
+      brands: document.getElementById('tab-brands'),
+      ceos: document.getElementById('tab-ceos'),
+      sectors: document.getElementById('tab-sectors')
+    };
+
+    // Set active tab styling
+    function setActiveTab(which) {
+      Object.entries(tabs).forEach(([key, btn]) => {
+        if (key === which) btn.classList.add('active');
+        else btn.classList.remove('active');
+      });
+    }
+
+    // Resize iframe to fill viewport minus header/nav
+    function resizeFrame() {
+      const rect = frame.getBoundingClientRect();
+      const margin = 16; // some breathing room
+      const height = Math.max(320, window.innerHeight - rect.top - margin);
+      frame.style.height = height + 'px';
+    }
+    window.addEventListener('resize', resizeFrame);
+
+    // Load a given dashboard into the iframe
+    function loadDash(which) {
+      const url = toAbsolute(PATHS[which]);
+      frame.src = url;
+      openTabLink.href = url;
+      setActiveTab(which);
+    }
+
+    // Hide "Sources …" line inside the embedded dashboards (same-origin)
+    function hideSourcesInFrame() {
+      try {
+        const doc = frame.contentWindow?.document;
+        if (!doc) return;
+        // Typical structure: header > p (the "Sources..." line)
+        const headerPs = doc.querySelectorAll('header p');
+        headerPs.forEach(p => {
+          // Be defensive: hide only if it looks like the sources line
+          const text = (p.textContent || '').toLowerCase();
+          if (text.includes('source')) p.style.display = 'none';
+        });
+      } catch (e) {
+        // Different origin or not ready — ignore
+      }
+    }
+    frame.addEventListener('load', () => {
+      resizeFrame();
+      // Defer to ensure the embedded page has rendered
+      setTimeout(hideSourcesInFrame, 100);
+    });
+
+    // Hook up tab buttons
+    tabs.brands.addEventListener('click', () => loadDash('brands'));
+    tabs.ceos.addEventListener('click', () => loadDash('ceos'));
+    tabs.sectors.addEventListener('click', () => loadDash('sectors'));
+
+    // Support ?tab=brands|ceos|sectors
+    const params = new URLSearchParams(location.search);
+    const initial = ['brands','ceos','sectors'].includes(params.get('tab')) ? params.get('tab') : 'brands';
+    loadDash(initial);
+  </script>
+</body>
+</html>

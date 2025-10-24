@@ -1,0 +1,119 @@
+name: Daily Brands Pipeline
+
+on:
+  # Manual run with optional date, e.g. 2025-09-22
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Run date in UTC (YYYY-MM-DD). Leave blank for today."
+        required: false
+        type: string
+  # Scheduled run – adjust as you like
+  schedule:
+    - cron: "10 9 * * *"   # 05:10 ET daily
+
+# allow the workflow to push commits back to the repo
+permissions:
+  contents: write
+
+# prevent two data-writing jobs from colliding
+concurrency:
+  group: data-writes
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone - scripts only process today's data
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            rosters/
+            data/daily_counts
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Ensure folders (NEW STRUCTURE)
+        run: |
+          mkdir -p data/daily_counts
+          mkdir -p data/processed_articles
+          mkdir -p data/processed_serps
+          mkdir -p rosters
+
+      - name: Build brand articles
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+        run: |
+          set -euo pipefail
+          DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          echo "Running news_articles_brands.py for ${DATE_TO_RUN}"
+          python scripts/news_articles_brands.py --date "${DATE_TO_RUN}"
+
+      - name: Aggregate brand news sentiment
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+        run: |
+          set -euo pipefail
+          DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          echo "Running news_sentiment_brands.py for ${DATE_TO_RUN}"
+          python scripts/news_sentiment_brands.py --date "${DATE_TO_RUN}"
+
+      - name: Process brand SERPs
+        shell: bash
+        env:
+          DATE_IN: ${{ github.event.inputs.date }}
+        run: |
+          set -euo pipefail
+          DATE="${DATE_IN:-$(date -u +%F)}"
+          ROW="data/processed_serps/${DATE}-brand-serps-modal.csv"
+      
+          # Optional idempotence – skip if we already wrote this date
+          if [ -s "$ROW" ]; then
+            echo "Rows already exist for ${DATE}; skipping."
+            exit 0
+          fi
+      
+          echo "Processing brand SERPs for ${DATE}"
+          python scripts/process_serps_brands.py --date "${DATE}"
+
+      # --- Safe commit & push: rebase onto latest main, retry once if needed ---
+      - name: Commit outputs
+        shell: bash
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+        run: |
+          set -euo pipefail
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          # Rebase onto latest main even with local changes from earlier steps
+          git fetch origin main
+          git checkout main
+          git pull --rebase --autostash origin main
+
+          # Use --sparse to allow adding files outside sparse-checkout definition
+          git add -A --sparse
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+            exit 0
+          fi
+
+          DATE_TO_USE="${RUN_DATE:-$(date -u +%F)}"
+          git commit -m "brand pipeline: update data (${DATE_TO_USE})"
+
+          # Push; if remote moved meanwhile, rebase once and retry
+          if ! git push origin HEAD:main; then
+            echo "Push rejected; rebasing once…"
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+          fi

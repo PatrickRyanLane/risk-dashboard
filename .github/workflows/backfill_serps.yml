@@ -1,0 +1,107 @@
+name: Backfill Brand & CEO SERPs
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        default: "2025-09-15"
+        required: true
+      end:
+        description: "End date (YYYY-MM-DD, defaults to today)"
+        required: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow - backfill processes day by day, doesn't need history
+          # Backfill needs to read/write data files
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            rosters/
+            data/daily_counts
+            data/processed_serps
+            .github/
+          sparse-checkout-cone-mode: false
+          
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Ensure folders (NEW STRUCTURE)
+        run: |
+          mkdir -p data/daily_counts
+          mkdir -p data/processed_serps
+
+      - name: Backfill brand SERPs
+        shell: bash
+        env:
+          START: ${{ github.event.inputs.start }}
+          ENDIN: ${{ github.event.inputs.end }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, sys, subprocess, datetime as dt
+          start = os.environ["START"]
+          end   = os.environ.get("ENDIN") or dt.date.today().isoformat()
+          d = dt.date.fromisoformat(start)
+          end_d = dt.date.fromisoformat(end)
+          while d <= end_d:
+            s = d.isoformat()
+            print(f"[brand] {s}")
+            rc = subprocess.call([sys.executable, "scripts/process_serps_brands.py", "--date", s])
+            if rc != 0:
+              print(f"[brand][skip] {s} (no raw SERP or non-fatal error)")
+            d += dt.timedelta(days=1)
+          PY
+
+      - name: Backfill CEO SERPs
+        shell: bash
+        env:
+          START: ${{ github.event.inputs.start }}
+          ENDIN: ${{ github.event.inputs.end }}
+        run: |
+          set -euo pipefail
+          END_DATE="${ENDIN:-$(date -u +%F)}"
+          echo "Backfilling CEO SERPs from ${START} to ${END_DATE}"
+          # Your script supports inclusive range via --backfill START END
+          python scripts/process_serps_ceos.py --backfill "${START}" "${END_DATE}"
+
+      - name: Commit outputs
+        shell: bash
+        env:
+          START_IN: ${{ github.event.inputs.start }}
+          END_IN:   ${{ github.event.inputs.end }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          git fetch origin main
+          git checkout main
+          git pull --rebase --autostash origin main
+
+          # Use --sparse to allow adding files outside sparse-checkout definition
+          git add -A --sparse
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+            exit 0
+          fi
+
+          START_DATE="${START_IN:-manual}"
+          DATE_LABEL="${END_IN:-$(date -u +%F)}"
+          git commit -m "SERPs backfill (brand + CEO): ${START_DATE}..${DATE_LABEL}"
+
+          if ! git push origin HEAD:main; then
+            echo "Push rejected; rebasing once…"
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+          fi

@@ -1,0 +1,102 @@
+name: Fetch Trends Data (Batched)
+
+on:
+  schedule:
+    # Batch 1: 10:30am ET = 14:30 UTC (companies 1-300)
+    - cron: '30 14 * * 1-5'
+    # Batch 2: 2:00pm ET = 18:00 UTC (companies 301-600)
+    - cron: '0 18 * * 1-5'
+    # Batch 3: 6:00pm ET = 22:00 UTC (companies 601-900)
+    - cron: '0 22 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'Batch number (1, 2, or 3). Leave empty to run all batches.'
+        required: false
+        type: string
+
+jobs:
+  fetch-trends:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository (sparse)
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sparse-checkout: |
+            scripts
+            rosters
+            data/stock_prices
+            data/trends_data
+            requirements.txt
+            .github/actions
+          sparse-checkout-cone-mode: false
+      
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+      
+      - name: Determine batch number
+        id: batch
+        run: |
+          # Determine which batch to run based on current time or manual input
+          if [ -n "${{ github.event.inputs.batch }}" ]; then
+            # Manual run - use specified batch
+            BATCH="${{ github.event.inputs.batch }}"
+            echo "Running manually specified batch: $BATCH"
+          else
+            # Scheduled run - determine batch from current UTC hour
+            HOUR=$(date -u +%H)
+            
+            if [ "$HOUR" -eq 14 ]; then
+              BATCH=1
+            elif [ "$HOUR" -eq 18 ]; then
+              BATCH=2
+            elif [ "$HOUR" -eq 22 ]; then
+              BATCH=3
+            else
+              # Default to batch 1 for manual testing
+              BATCH=1
+              echo "⚠️  Not a scheduled time. Defaulting to batch 1 for testing."
+            fi
+            
+            echo "Auto-detected batch: $BATCH"
+          fi
+          
+          echo "batch=$BATCH" >> $GITHUB_OUTPUT
+      
+      - name: Fetch trends data (Batch ${{ steps.batch.outputs.batch }})
+        run: |
+          python scripts/fetch_trends_data.py --batch ${{ steps.batch.outputs.batch }} --batch-size 300
+      
+      - name: Merge batches (Batch 3 only)
+        if: steps.batch.outputs.batch == '3'
+        run: |
+          # Wait a moment to ensure batch 3 file is fully written
+          sleep 5
+          
+          # Merge all batch files into final output
+          python scripts/fetch_trends_data.py --merge
+      
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add only the trends_data directory (sparse)
+          git add --sparse data/trends_data/
+          
+          # Commit with batch info
+          BATCH="${{ steps.batch.outputs.batch }}"
+          DATE=$(date -u +%Y-%m-%d)
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            if [ "$BATCH" -eq 3 ]; then
+              git commit -m "Update trends data batch $BATCH and merge final file for $DATE"
+            else
+              git commit -m "Update trends data batch $BATCH for $DATE"
+            fi
+            git push
+          fi

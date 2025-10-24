@@ -1,0 +1,99 @@
+name: Aggregate Negative Articles
+
+on:
+  schedule:
+    # Run daily at 12:30 UTC (after article processing completes at 12:00 UTC)
+    - cron: '30 12 * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone - don't need full git history
+          # This script READS historical data, so we need data/ folder
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            rosters/
+            data/
+            .github/
+          sparse-checkout-cone-mode: false
+      
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+      
+      - name: Ensure output directory
+        run: |
+          mkdir -p data
+      
+      - name: Run negative articles aggregation
+        run: |
+          echo "📄 Starting negative articles aggregation..."
+          python scripts/aggregate_negative_articles.py --days-back 90
+      
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if [[ -n $(git status --porcelain data/daily_counts/negative-articles-summary.csv) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "✅ Changes detected in negative-articles-summary.csv"
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No changes to commit"
+          fi
+      
+      - name: Commit and push if changed
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add the summary file
+          git add --sparse data/daily_counts/negative-articles-summary.csv
+          
+          # Get stats for commit message
+          ROWS=$(wc -l < data/daily_counts/negative-articles-summary.csv)
+          SIZE=$(du -h data/daily_counts/negative-articles-summary.csv | cut -f1)
+          DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+          
+          # Commit with informative message
+          git commit -m "Update negative articles summary
+          
+          📊 Rows: $ROWS
+          💾 Size: $SIZE
+          🕐 Generated: $DATE
+          
+          Automated update via GitHub Actions"
+          
+          # Push changes
+          git push
+          
+          echo "✅ Successfully committed and pushed changes"
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Negative Articles Aggregation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ -f data/daily_counts/negative-articles-summary.csv ]]; then
+            ROWS=$(wc -l < data/daily_counts/negative-articles-summary.csv)
+            SIZE=$(du -h data/daily_counts/negative-articles-summary.csv | cut -f1)
+            echo "✅ **File created successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "- 📊 Total rows: $ROWS" >> $GITHUB_STEP_SUMMARY
+            echo "- 💾 File size: $SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "- 📂 Location: \`data/daily_counts/negative-articles-summary.csv\`" >> $GITHUB_STEP_SUMMARY
+            
+            if [[ "${{ steps.check_changes.outputs.changes }}" == "true" ]]; then
+              echo "- ✅ Changes committed and pushed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ℹ️  No changes from previous run" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **File generation failed**" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -1,0 +1,57 @@
+name: Fetch Stock Data
+
+on:
+  schedule:
+    # Run at 9:30 AM ET after market open on weekdays
+    - cron: '30 13 * * 1-5'
+  
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  fetch-stock-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository (optimized)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone - no git history (much faster!)
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            rosters/
+            .github/
+          sparse-checkout-cone-mode: false
+      
+      - name: Create data directory
+        run: |
+          mkdir -p data/stock_prices
+      
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Fetch stock price data with volume
+        run: |
+          python scripts/fetch_stock_data.py
+      
+      - name: Commit and push stock data
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          
+          # Use --sparse to allow adding files outside sparse-checkout definition
+          git add data/stock_prices/ --sparse
+          git diff --staged --quiet || git commit -m "Update stock data with volume - $(date +'%Y-%m-%d %H:%M ET')"
+          git push
+      
+      - name: Summary
+        if: always()
+        run: |
+          latest_file=$(ls -t data/stock_prices/*-stock-data.csv 2>/dev/null | head -1)
+          if [ -f "$latest_file" ]; then
+            companies=$(tail -n +2 "$latest_file" | wc -l)
+            echo "✅ Stock data collected for $companies companies"
+            echo "📊 File: $(basename $latest_file)"
+          else
+            echo "❌ No stock data file created"
+          fi
