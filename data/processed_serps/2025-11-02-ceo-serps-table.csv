@@ -1,0 +1,992 @@
+date,ceo,total,controlled,negative_serp,neutral_serp,positive_serp,company
+2025-11-02,,8,2,0,6,2,
+2025-11-02,AJ Jim Teague,10,5,0,4,6,Enterprise Products Partners
+2025-11-02,Aaron P Jagdfeld,8,6,0,1,7,Generac
+2025-11-02,Adaire Fox-Martin,9,4,0,4,5,Equinix
+2025-11-02,Adam Aron,8,3,1,4,3,AMC Entertainment
+2025-11-02,Adam Foroughi,7,2,0,4,3,AppLovin
+2025-11-02,Adam J Greenlee,10,3,0,6,4,Silgan
+2025-11-02,Adam Norwitt,10,4,0,5,5,Amphenol
+2025-11-02,Adam Schechter,9,4,0,4,5,Labcorp Holdings
+2025-11-02,Adam W Miller,9,4,0,5,4,Knight Swift Transportation
+2025-11-02,Adena Friedman,9,6,0,2,7,Nasdaq Inc
+2025-11-02,Alan Armstrong,9,4,0,4,5,Williams Companies
+2025-11-02,Alan Schnitzer,10,4,0,5,5,Travelers Insurance
+2025-11-02,Albert Bourla,9,4,0,5,4,Pfizer
+2025-11-02,Albert Nahmad,10,5,0,5,5,Watsco
+2025-11-02,Albert White III,9,3,0,6,3,Cooper Cos
+2025-11-02,Alessandro Maselli,10,6,0,4,6,Catalent
+2025-11-02,Alex Chriss,8,3,0,5,3,PayPal
+2025-11-02,Allan C Thygesen,8,4,0,4,4,DocuSign
+2025-11-02,Alok Maskara,8,3,0,5,3,Lennox International
+2025-11-02,Aman Bhutani,7,4,0,2,5,GoDaddy
+2025-11-02,Aman Narang,8,2,0,5,3,Toast Inc
+2025-11-02,Amar Maletira,9,4,0,5,4,Rackspace Technology
+2025-11-02,Andi Owen,8,3,1,4,3,MillerKnoll
+2025-11-02,Andrew Anagnost,8,4,1,3,4,Autodesk
+2025-11-02,Andrew Clyde,9,3,0,4,5,Murphy USA
+2025-11-02,Andrew Marsh,9,4,0,3,6,Entergy
+2025-11-02,Andrew McMahon,9,5,0,4,5,Guardian Life insurance
+2025-11-02,Andrew Rees,8,4,0,3,5,Crocs
+2025-11-02,Andrew Silvernail,9,6,0,3,6,International Paper
+2025-11-02,Andrew Sullivan,8,4,0,4,4,Prudential Financial
+2025-11-02,Andrew Teno,9,4,0,3,6,Icahn Enterprises
+2025-11-02,Andrew Wilson,8,3,0,3,5,Electronic Arts
+2025-11-02,Andrés Gluski,9,4,0,5,4,AES
+2025-11-02,Andy Eidson,10,5,0,5,5,Alpha Metallurgical Resources
+2025-11-02,Andy Jassy,7,3,0,3,4,Amazon
+2025-11-02,Andy L Nemeth,10,5,0,4,6,Patrick Industries
+2025-11-02,Andy P Power,10,5,0,3,7,Digital Realty Trust
+2025-11-02,Anirudh Devgan,8,3,0,5,3,Cadence
+2025-11-02,Anne P Noonan,10,4,0,4,6,Summit Materials
+2025-11-02,Anthony Capuano,7,5,0,2,5,Marriott International
+2025-11-02,Anthony Guzzi,10,3,0,5,5,EMCOR Group
+2025-11-02,Anthony J Wood,9,3,0,5,4,Roku
+2025-11-02,Anthony Smurfit,9,5,0,4,5,Smurfit Westrock
+2025-11-02,Antonio Neri,7,3,0,4,3,Hewlett Packard Enterprise
+2025-11-02,Ara K Hovnanian,10,2,0,8,2,Hovnanian Enterprises
+2025-11-02,Ari Bousbib,10,5,0,5,5,IQVIA
+2025-11-02,Ariane Gorin,7,4,0,2,5,Expedia
+2025-11-02,Arie Kotler,9,4,0,4,5,ARKO
+2025-11-02,Arkadiy Dobkin,9,4,0,4,5,EPAM Systems
+2025-11-02,Arvind Krishna,7,4,0,1,6,IBM
+2025-11-02,Ashish Chand,8,6,0,2,6,Belden
+2025-11-02,Ashish K Khandpur,10,7,0,3,7,Avient
+2025-11-02,Avigal Soreq,10,5,0,5,5,Delek US
+2025-11-02,Avner M Applbaum,10,3,0,5,5,Valmont Industries
+2025-11-02,B Andrew Rose,10,3,0,5,5,Worthington Enterprises
+2025-11-02,Barry L Biffle,8,4,1,2,5,Frontier Airlines
+2025-11-02,Barry R Port,10,3,0,6,4,Ensign Group
+2025-11-02,Benito Minicucci,9,4,0,4,5,Alaska Air
+2025-11-02,Benjamin Tisch,9,3,0,6,3,Loews
+2025-11-02,Benjamin W Schall,8,4,1,2,5,AvalonBay Communities
+2025-11-02,Bernard Kim,10,2,0,7,3,Match Group
+2025-11-02,Bernard Zovighian,8,5,0,3,5,Edwards Lifesciences
+2025-11-02,Bertrand Loy,10,6,0,3,7,Entegris
+2025-11-02,Beth Ford,8,3,0,4,4,Land O'Lakes
+2025-11-02,Bill Burns,9,4,0,5,4,Zebra Technologies
+2025-11-02,Bill Meury,10,6,0,3,7,Incyte
+2025-11-02,Bill Ready,10,5,0,0,10,Pinterest
+2025-11-02,Bill Westrate,7,4,0,2,5,American Family Insurance
+2025-11-02,Blake Moret,8,4,0,3,5,Rockwell Automation
+2025-11-02,Bob Eddy,9,4,0,5,4,BJ's Wholesale Club
+2025-11-02,Bob Flexon,10,5,0,5,5,UGI Utilities Inc
+2025-11-02,Bob Jordan,8,2,0,6,2,Southwest Airlines
+2025-11-02,Bob Michael,10,4,0,6,4,AbbVie
+2025-11-02,Bob Pragada,8,4,0,4,4,Jacobs Solutions
+2025-11-02,Bom Kim,10,3,0,6,4,Coupang
+2025-11-02,Bracken Darrell,9,5,0,4,5,VF Corporation
+2025-11-02,Brad Beckham,8,4,1,3,4,O'Reilly Automotive
+2025-11-02,Brad Jacobs,9,1,0,6,3,QXO Building Products
+2025-11-02,Brendan M Foley,10,5,0,4,6,McCormick & Company
+2025-11-02,Brendan McCracken,8,3,0,5,3,Ovintiv
+2025-11-02,Brendan T Cavanagh,10,4,0,6,4,SBA Communications
+2025-11-02,Brent L Yeagy,10,3,0,5,5,Wabash National
+2025-11-02,Brent Shafer,10,4,0,5,5,Baxter International
+2025-11-02,Brian Armstrong,8,3,1,4,3,Coinbase Global
+2025-11-02,Brian Chambers,10,5,0,5,5,Owens Corning
+2025-11-02,Brian Chesky,6,4,0,1,5,Airbnb
+2025-11-02,Brian D Pieninck,10,4,0,6,4,GuideWell Mutual
+2025-11-02,Brian Doubles,9,6,0,3,6,Synchrony Financial
+2025-11-02,Brian E Lane,9,5,0,0,9,Comfort Systems USA
+2025-11-02,Brian J Blaser,10,5,0,5,5,QuidelOrtho
+2025-11-02,Brian Moynihan,8,3,1,4,3,Bank of America
+2025-11-02,Brian Niccol,7,3,0,3,4,Starbucks
+2025-11-02,Brian R Gray,10,6,0,4,6,Knife River Corporation
+2025-11-02,Brian Robbins,10,3,0,7,3,Paramount Global
+2025-11-02,Brian Roberts,8,3,0,4,4,Comcast
+2025-11-02,Brian Tierney,9,4,0,5,4,FirstEnergy
+2025-11-02,Brian Tyler,9,6,1,2,6,McKesson
+2025-11-02,Bruce Bodine,9,5,0,4,5,The Mosaic Company
+2025-11-02,Bruce Fleming,10,3,0,6,4,Calumet Inc
+2025-11-02,Bruce L Caswell,10,5,0,5,5,Maximus
+2025-11-02,Bruce Van Saun,9,4,0,4,5,Citizens Financial Group
+2025-11-02,Bryan DeBoer,8,4,0,3,5,Lithia Motors
+2025-11-02,Bryan Hanson,9,3,0,5,4,Solventum
+2025-11-02,Bryan J Knutson,9,3,0,5,4,Titan Machinery
+2025-11-02,C Howard Nye,9,4,1,4,4,Martin Marietta Materials
+2025-11-02,Calvin G Butler Jr,9,5,0,4,5,Exelon
+2025-11-02,Calvin McDonald,9,5,0,4,5,Lululemon athletica
+2025-11-02,Cameron Bready,10,7,0,3,7,Global Payments
+2025-11-02,Carey A Smith,9,5,0,3,6,Parsons Corporation
+2025-11-02,Carl Eschenbach,8,3,1,3,4,Workday
+2025-11-02,Carl Lindner lll,10,6,0,4,6,American Financial Group
+2025-11-02,Carlos Abrams-Rivera,7,4,1,1,5,Kraft Heinz
+2025-11-02,Carlos Alberini,10,4,0,6,4,Guess Inc
+2025-11-02,Carol Tome,8,4,1,3,4,UPS
+2025-11-02,Caroline S Grace,10,3,0,1,9,AMN Healthcare Services
+2025-11-02,Casey Wasserman,9,2,0,6,3,Wasserman
+2025-11-02,Celeste B Mastin,8,6,0,2,6,HB Fuller
+2025-11-02,Charles Chip Blankenship,10,3,0,5,5,Woodward Inc
+2025-11-02,Charles D. Young,9,5,0,3,6,Sun Communities
+2025-11-02,Charles H Giancarlo,8,4,0,3,5,Pure Storage
+2025-11-02,Charles Liang,8,4,0,2,6,Super Micro Computer
+2025-11-02,Charles M Nifong Jr,10,3,0,6,4,CrossAmerica Partners
+2025-11-02,Charles Magro,9,5,0,4,5,Corteva
+2025-11-02,Charles Scharf,8,3,1,2,5,Wells Fargo
+2025-11-02,Chris Boerner,8,4,1,3,4,Bristol-Myers Squibb
+2025-11-02,Chris Cocks,8,4,0,3,5,Hasbro
+2025-11-02,Chris Kempczinski,8,5,0,3,5,McDonalds
+2025-11-02,Chris Kubasik,8,5,0,3,5,L3Harris Technologies
+2025-11-02,Chris Osowski,10,4,0,6,4,Green Plains Inc
+2025-11-02,Christian Ulbrich,8,3,0,5,3,Jones Lang LaSalle
+2025-11-02,Christine Leahy,9,5,0,4,5,CDW
+2025-11-02,Christophe Beck,9,4,0,4,5,Ecolab
+2025-11-02,Christopher A Cartwright,9,4,0,4,5,TransUnion
+2025-11-02,Christopher Caldwell,9,5,0,3,6,Concentrix
+2025-11-02,Christopher Calio,10,4,0,5,5,RTX
+2025-11-02,Christopher Gorman,8,2,0,5,3,KeyCorp
+2025-11-02,Christopher H Hunter,9,4,1,3,5,Acadia Healthcare
+2025-11-02,Christopher Hilger,10,6,0,4,6,Securian Financial
+2025-11-02,Christopher Kastner,9,4,0,5,4,Huntington Ingalls Industries
+2025-11-02,Christopher Nassetta,8,6,1,1,6,Hilton Worldwide
+2025-11-02,Christopher O'Herlihy,10,6,0,4,6,Illinois Tool Works
+2025-11-02,Christopher Pappas,9,5,0,2,7,Chefs Warehouse
+2025-11-02,Christopher Peterson,9,5,0,3,6,Newell Brands
+2025-11-02,Christopher S Ripley,9,2,0,7,2,Sinclair
+2025-11-02,Christopher Swift,9,6,0,0,9,The Hartford
+2025-11-02,Christopher Viehbacher,9,3,0,5,4,Biogen
+2025-11-02,Christopher Winfrey,10,2,0,8,2,Charter Communications
+2025-11-02,Christopher Womack,9,5,0,4,5,Southern Company
+2025-11-02,Chuck Divita,9,4,0,4,5,Teladoc Health
+2025-11-02,Chuck Robbins,8,6,0,2,6,Cisco Systems
+2025-11-02,Chuck Treadway,10,5,1,4,5,CommScope
+2025-11-02,Cindy J Miller,9,6,0,3,6,Stericycle
+2025-11-02,Clark Lauritzen,10,1,0,9,1,First National of Nebraska
+2025-11-02,Clay Gaspar,9,3,0,2,7,Devon Energy
+2025-11-02,Clay Magouyrk,7,4,0,3,4,Oracle
+2025-11-02,Clay Williams,10,4,0,6,4,NOV
+2025-11-02,Clifford A Skelton,9,3,0,6,3,Conduent
+2025-11-02,Clint E Stein,10,3,0,7,3,Columbia Banking System
+2025-11-02,Corie Barry,8,3,0,1,7,Best Buy
+2025-11-02,Craig Billings,9,4,0,5,4,Wynn Resorts
+2025-11-02,Craig DeSanto,10,6,0,4,6,New York Life Insurance
+2025-11-02,Craig Smiddy,10,3,0,7,3,Old Republic International
+2025-11-02,Cristiano Amon,8,5,0,1,7,Qualcomm
+2025-11-02,Curtis C Farmer,10,6,0,4,6,Comerica
+2025-11-02,D Bryan Jordan,9,3,0,6,3,First Horizon
+2025-11-02,D Christian Koch,9,3,0,5,4,Carlisle Companies
+2025-11-02,D Scott Barbour,9,3,0,3,6,Advanced Drainage Systems
+2025-11-02,DG Macpherson,8,5,0,3,5,WW Grainger
+2025-11-02,Dale Asplund,10,5,0,5,5,BrightView Holdings
+2025-11-02,Dale Francescon,10,4,0,6,4,Century Communities
+2025-11-02,Dan Amos,8,2,0,6,2,Aflac
+2025-11-02,Dan L Batrack,10,3,0,6,4,Tetra Tech
+2025-11-02,Dan Schulman,7,2,1,4,2,Verizon
+2025-11-02,Daniel E Brown,9,4,0,2,7,Chord Energy
+2025-11-02,Daniel Fisher,9,6,0,3,6,Ball Corporation
+2025-11-02,Daniel Florness,8,5,0,3,5,Fastenal
+2025-11-02,Daniel Heaf,9,4,0,4,5,Bath & Body Works
+2025-11-02,Daniel O'Day,9,6,0,3,6,Gilead Sciences
+2025-11-02,Daniel S. Peyovich,10,3,0,5,5,Dycom Industries
+2025-11-02,Daniel Wall,10,3,0,5,5,Expeditors International of Washington
+2025-11-02,Dara Khosrowshahi,9,4,0,4,5,Uber
+2025-11-02,Darren Rebelez,8,3,0,4,4,Caseys General Stores
+2025-11-02,Darren Woods,7,3,0,4,3,Exxon Mobil
+2025-11-02,Darryl Button,10,4,0,6,4,Pacific Life
+2025-11-02,Daryl Kenningham,7,3,0,4,3,Group 1 Automotive
+2025-11-02,Dave Banyard Jr,10,4,0,6,4,MasterBrand
+2025-11-02,Dave Davis,9,5,1,0,8,Spirit Airlines
+2025-11-02,Dave Guilmette,9,5,0,3,6,Alight Solutions
+2025-11-02,Dave Peacock,9,3,0,3,6,Advantage Solutions
+2025-11-02,David A Spector,10,4,0,5,5,PennyMac Financial Services
+2025-11-02,David A Zapico,9,4,0,4,5,Ametek
+2025-11-02,David Baszucki,8,5,0,3,5,Roblox
+2025-11-02,David Bozeman,7,5,0,2,5,CH Robinson Worldwide
+2025-11-02,David Bruton Smith,9,6,1,2,6,Sonic Automotive
+2025-11-02,David Burritt,8,4,0,2,6,United States Steel
+2025-11-02,David C Dauch,10,4,0,6,4,American Axle & Manufacturing
+2025-11-02,David Campbell,7,4,0,3,4,Evergy
+2025-11-02,David Cordani,8,5,0,3,5,Cigna
+2025-11-02,David E Simon,10,3,0,7,3,Simon Property Group
+2025-11-02,David Flitman,8,4,0,4,4,US Foods
+2025-11-02,David Gibbs,9,4,0,5,4,Yum Brands
+2025-11-02,David Gitlin,9,3,1,5,3,Carrier Global
+2025-11-02,David Hult,8,3,0,5,3,Asbury Automotive Group
+2025-11-02,David Joyner,10,5,1,4,5,CVS Health
+2025-11-02,David L Yowan,10,3,0,4,6,Navient
+2025-11-02,David M Foulkes,9,5,0,4,5,Brunswick Corporation
+2025-11-02,David M Maura,9,5,0,3,6,Spectrum Brands
+2025-11-02,David M O'Malley,8,3,0,5,3,Penn Mutual Life Insurance
+2025-11-02,David M Overton,8,3,0,4,4,Cheesecake Factory
+2025-11-02,David Rawlinson II,10,4,0,5,5,QVC Group
+2025-11-02,David Ricks,8,4,0,4,4,Eli Lilly
+2025-11-02,David S Chernow,10,5,0,5,5,Select Medical Holdings
+2025-11-02,David S Graziosi,10,4,0,5,5,Allison Transmission
+2025-11-02,David Solomon,7,5,1,1,5,Goldman Sachs
+2025-11-02,David W Grzebinski,10,5,0,4,6,Kirby Corporation
+2025-11-02,David Zaslav,7,2,1,4,2,Warner Bros Discovery
+2025-11-02,Deanna Strable-Soethout,10,3,0,6,4,PrIncipal Financial
+2025-11-02,Debra A Cafaro,9,3,0,6,3,Ventas Inc
+2025-11-02,Denise A Paulonis,10,3,0,3,7,Sally Beauty
+2025-11-02,Denise Dignam,8,4,0,4,4,Chemours
+2025-11-02,Dennis Degner,9,6,0,3,6,Range Resources
+2025-11-02,Dennis Mathew,9,4,0,5,4,Altice USA
+2025-11-02,Deon Stander,8,5,0,3,5,Avery Dennison
+2025-11-02,Derek Chang,10,5,0,1,9,Liberty Media
+2025-11-02,Derek J Leathers,9,5,0,4,5,Werner Enterprises
+2025-11-02,Devin B McGranahan,9,5,0,4,5,Western Union
+2025-11-02,Devin Stockfish,10,5,0,3,7,Weyerhaeuser
+2025-11-02,Dirk Van de Put,8,3,0,5,3,Mondelez
+2025-11-02,Domenic Dell’Osso Jr,9,3,0,4,5,Expand Energy Corporation
+2025-11-02,Donald Allan,9,6,0,3,6,Stanley Black & Decker
+2025-11-02,Donald Zurbay,10,3,0,6,4,Patterson Companies Inc
+2025-11-02,Donnie King,10,5,0,4,6,Tyson Foods
+2025-11-02,Doug Black,10,4,0,5,5,SiteOne Landscape Supply
+2025-11-02,Doug Howe,9,3,0,6,3,Designer Brands
+2025-11-02,Doug McMillon,8,5,0,2,6,Walmart
+2025-11-02,Doug Palladini,10,4,0,6,4,Carters Inc
+2025-11-02,Doug Shulman,10,4,0,6,4,OneMain
+2025-11-02,Douglas F Bauer,9,4,0,5,4,Tri Pointe Homes
+2025-11-02,Douglas Yearley,9,5,0,4,5,Toll Brothers
+2025-11-02,Drew Houston,7,3,0,3,4,Dropbox
+2025-11-02,Drew M Wilkerson,9,6,0,3,6,RXO Inc
+2025-11-02,Dustin Semach,9,4,0,5,4,Sealed Air Corporation
+2025-11-02,E Jean Savage,10,2,0,7,3,Trinity Industries
+2025-11-02,Earl Austin,10,4,0,5,5,Quanta Services
+2025-11-02,Ed Bastian,7,4,0,2,5,Delta Air Lines
+2025-11-02,Edmund Shallcross III,10,2,0,7,3,Amica Mutual Insurance
+2025-11-02,Eduardo Menezes,10,3,1,6,3,Air Products & Chemicals
+2025-11-02,Edward B Pitoniak,8,3,0,5,3,VICI Properties
+2025-11-02,Edward J Lehner,10,4,0,5,5,Ryerson Holding
+2025-11-02,Edward Pesicka,9,3,0,5,4,Owens & Minor
+2025-11-02,Ellen Cooper,8,3,0,4,4,Lincoln National
+2025-11-02,Elliott Hill,8,4,1,3,4,Nike
+2025-11-02,Elon Musk,7,3,1,2,4,Tesla
+2025-11-02,Emmanuel Ligner,9,3,0,6,3,Avantor
+2025-11-02,Enrique Lores,8,6,0,2,6,HP
+2025-11-02,Eric D Ashleman,10,5,0,5,5,IDEX
+2025-11-02,Eric Hansotia,8,3,0,4,4,AGCO
+2025-11-02,Eric M Green,10,4,0,6,4,West Pharmaceutical Services
+2025-11-02,Eric Nyman,9,4,0,3,6,Vista Outdoor
+2025-11-02,Eric S Yuan,9,5,0,3,6,Zoom Video Communications
+2025-11-02,Eric Slifka,9,6,0,3,6,Global Partners
+2025-11-02,Eric T Steigerwalt,10,5,0,5,5,Brighthouse Financial
+2025-11-02,Eric W Gerstenberg,10,5,0,0,10,Clean Harbors
+2025-11-02,Erik Fyrwald,9,5,0,2,7,International Flavors & Fragrances
+2025-11-02,Erik Gershwind,9,3,0,5,4,MSC Industrial Direct
+2025-11-02,Erik Nordstrom,10,3,1,6,3,Nordstrom
+2025-11-02,Ernest Garcia III,9,4,1,4,4,Carvana
+2025-11-02,Ernie Herrman,10,4,0,4,6,TJX
+2025-11-02,Eugene A Hall,10,4,0,4,6,Gartner
+2025-11-02,Eugene Bredow,10,1,0,7,3,NVR Inc
+2025-11-02,Evan Spiegel,9,5,0,4,5,Snap Inc
+2025-11-02,Ezra Yacob,10,5,0,4,6,EOG Resources
+2025-11-02,Fahmi Karam,9,4,0,5,4,Upbound Group
+2025-11-02,Fidji Simo,9,6,0,2,7,Instacart
+2025-11-02,Fran Horowitz,8,2,0,6,2,Abercrombie & Fitch
+2025-11-02,Francisco J Leon,10,4,0,5,5,California Resources
+2025-11-02,Francois Locoh-Donou,9,7,0,2,7,F5
+2025-11-02,Frank A Lonegro,10,4,0,3,7,Landstar System
+2025-11-02,Frank C Sullivan,10,5,0,5,5,RPM International
+2025-11-02,Frank H Laukien,10,5,0,5,5,Bruker
+2025-11-02,Frank Holding,10,3,0,7,3,First Citizens BancShares
+2025-11-02,Frank M Svoboda,8,1,0,4,4,Globe Life
+2025-11-02,Frederick J Holzgrefe III,10,2,0,7,3,Saia Inc
+2025-11-02,Fredric J Tomczyk,9,3,0,5,4,Cboe Global Markets
+2025-11-02,G Mike Mikan,10,4,0,6,4,NeueHealth
+2025-11-02,Gabriel Tirador,9,1,0,7,2,Mercury General
+2025-11-02,Gail Boudreaux,10,6,0,4,6,Elevance Health
+2025-11-02,Garrick Rochow,10,4,0,3,7,CMS Energy
+2025-11-02,Gary B Smith,10,3,0,5,5,Ciena
+2025-11-02,Gary C Bhojwani,8,4,0,3,5,CNO Financial Group
+2025-11-02,Gary D Burnison,8,4,0,4,4,Korn Ferry
+2025-11-02,Gary Dickerson,9,3,0,3,6,Applied Materials
+2025-11-02,Gary G Friedman,7,2,0,5,2,Restoration Hardware
+2025-11-02,Gary Guthart,8,4,0,3,5,Intuitive Surgical
+2025-11-02,Gavin Hattersley,8,4,1,3,4,Molson Coors Beverage
+2025-11-02,George Bobb III,10,3,0,7,3,Teledyne Technologies
+2025-11-02,George C Freeman III,10,1,0,0,10,Universal Corporation
+2025-11-02,George F Chappelle Jr,10,3,0,2,8,Americold Realty Trust
+2025-11-02,George Holm,10,3,0,7,3,Performance Food
+2025-11-02,George Kurian,8,4,0,3,5,NetApp
+2025-11-02,George Kurtz,8,4,0,4,4,CrowdStrike
+2025-11-02,Gerald L Morgan,9,3,0,5,4,Texas Roadhouse
+2025-11-02,Gerardo Norcia,9,4,0,4,5,DTE Energy
+2025-11-02,Gerben W Bakker,10,2,0,7,3,Hubbell
+2025-11-02,Gerry P Smith,10,4,0,6,4,ODP Business Solutions
+2025-11-02,Giel Rutten,9,3,1,5,3,Amkor Technology
+2025-11-02,Gil West,9,4,0,5,4,Hertz
+2025-11-02,Giordano Albertazzi,16,6,0,10,6,Vertiv
+2025-11-02,Glenn Fogel,9,4,0,4,5,Booking Holdings
+2025-11-02,Glenn J Williams,9,4,0,5,4,Primerica
+2025-11-02,Glenn Sanford,8,6,0,2,6,eXp World
+2025-11-02,Gordon J Hardie,10,2,0,7,3,O-I Glass
+2025-11-02,Grant E Sims,10,3,0,0,10,Genesis Energy
+2025-11-02,Greg Anderson,10,5,0,5,5,Allegiant Travel Company
+2025-11-02,Greg Smith,10,4,0,5,5,Teradyne
+2025-11-02,Gregory Brown,9,4,0,1,8,Motorola Solutions
+2025-11-02,Gregory L Christopher,10,3,0,5,5,Mueller Industries
+2025-11-02,Gregory Roberts,10,2,0,1,9,A-Mark Precious Metals
+2025-11-02,Gunjan Kedia,10,5,1,3,6,US Bancorp
+2025-11-02,Gunner Smith,9,5,0,4,5,Cornerstone Building Brands
+2025-11-02,H Michael Krimbill,10,3,0,2,8,NGL Energy Partners
+2025-11-02,Hamid Akhavan,8,2,0,5,3,EchoStar
+2025-11-02,Hamid Moghadam,8,5,0,3,5,Prologis
+2025-11-02,Harry Lawton III,10,5,0,4,6,Tractor Supply
+2025-11-02,Harry Sideris,8,5,0,3,5,Duke Energy
+2025-11-02,Harvey M Schwartz,9,5,0,4,5,Carlyle Group
+2025-11-02,Hassane El-Khoury,8,4,0,4,4,ON Semiconductor
+2025-11-02,Haviv Ilan,9,6,0,3,6,Texas Instruments
+2025-11-02,Heath Sampson,9,4,0,4,5,ModivCare
+2025-11-02,Heather Lavallee,8,3,0,5,3,Voya Financial
+2025-11-02,Heidi Petz,8,4,0,4,4,Sherwin-Williams
+2025-11-02,Henry A Fernandez,9,4,0,4,5,MSCI
+2025-11-02,Hillary Super,10,4,1,0,9,Victorias Secret
+2025-11-02,Hilton H Howell Jr,9,3,0,6,3,Gray Television
+2025-11-02,Hock Tan,8,3,0,5,3,Broadcom
+2025-11-02,Horacio Rozanski,8,5,0,3,5,Booz Allen Hamilton
+2025-11-02,Ira D Robbins,9,3,0,6,3,Valley National Bancorp
+2025-11-02,Ivan Tornos,9,4,0,5,4,Zimmer Biomet
+2025-11-02,J Eric Evans,9,5,0,4,5,Surgery Partners
+2025-11-02,J Kent Masters,10,4,0,6,4,Albemarle Corporation
+2025-11-02,J Powell Brown,8,3,0,5,3,Brown & Brown
+2025-11-02,Jacek Olczak,8,4,0,4,4,Philip Morris International
+2025-11-02,Jack Fusco,9,4,0,4,5,Cheniere Energy
+2025-11-02,Jack Sinclair,7,2,1,1,5,Sprouts Farmers Market
+2025-11-02,Jacob Thaysen,10,4,0,6,4,Illumina Inc
+2025-11-02,James A Brock,8,3,0,3,5,Consol Energy
+2025-11-02,James Blackledge,10,3,0,6,4,Mutual of Omaha
+2025-11-02,James Breuer,8,6,0,2,6,Fluor
+2025-11-02,James Burke,8,3,0,2,6,Vistra
+2025-11-02,James C Foster,10,3,0,7,3,Charles River Laboratories International
+2025-11-02,James C Grech,10,3,0,4,6,Peabody Energy
+2025-11-02,James Conroy,9,4,0,5,4,Ross Stores
+2025-11-02,James Cracchiolo,9,3,0,5,4,Ameriprise Financial
+2025-11-02,James Davis,9,3,0,5,4,Quest Diagnostics
+2025-11-02,James F Risoleo,10,2,0,7,3,Host Hotels & Resorts
+2025-11-02,James H Walter,9,3,0,6,3,Permian Resources
+2025-11-02,James Jim C Ryan III,10,4,0,5,5,Old National Bancorp
+2025-11-02,James Kelly,9,4,0,5,4,NCR Voyix
+2025-11-02,James Quincey,8,4,0,4,4,The Coca-Cola Company
+2025-11-02,James S Hagedorn,9,4,0,4,5,Scotts Miracle-Gro
+2025-11-02,James Snee,9,4,0,4,5,Hormel Foods
+2025-11-02,James Taiclet,8,4,0,3,5,Lockheed Martin
+2025-11-02,James W Lanning,10,1,0,6,4,Ingles Markets
+2025-11-02,James Zallie,9,4,0,5,4,Ingredion
+2025-11-02,Jamie Dimon,8,2,0,5,3,JPMorgan Chase
+2025-11-02,Jamie Iannone,7,3,0,2,5,Ebay
+2025-11-02,Jamie Whisnant,9,6,0,2,7,Auto-Owners Insurance
+2025-11-02,Jane Fraser,8,3,0,5,3,Citigroup
+2025-11-02,Jared Isaacman,9,1,2,5,2,Shift4 Payments
+2025-11-02,Jason D Robins,9,4,0,4,5,DraftKings
+2025-11-02,Jason Hollar,8,6,0,2,6,Cardinal Health
+2025-11-02,Jason Lippert,9,6,0,3,6,LCI Industries
+2025-11-02,Jason Murray,8,4,0,4,4,PACS Group
+2025-11-02,Jason P Wells,8,4,0,0,8,CenterPoint Energy
+2025-11-02,Javier D Ferrer Fernandez,10,3,0,3,7,Popular Inc
+2025-11-02,Javier Rodriguez,8,4,0,2,6,DaVita
+2025-11-02,Jay Debertin,9,3,0,6,3,CHS
+2025-11-02,Jay Geldmacher,10,4,0,5,5,Resideo Technologies
+2025-11-02,Jay L Schottenstein,8,2,0,5,3,American Eagle Outfitters
+2025-11-02,Jay Schmidt,10,4,0,5,5,Caleres Inc
+2025-11-02,Jay Snowden,9,5,0,2,7,PENN Entertainment
+2025-11-02,Jayne Hrdlicka,10,1,1,8,1,Endeavor Group
+2025-11-02,Jayshree Ullal,8,4,0,4,4,Arista Networks
+2025-11-02,Jean-Michel Ribieras,10,5,0,5,5,Sylvamo
+2025-11-02,Jeff Benck,9,4,0,4,5,Benchmark Electronics
+2025-11-02,Jeff Liaw,10,3,0,5,5,Copart
+2025-11-02,Jeff Miller,9,4,0,5,4,Halliburton
+2025-11-02,Jeffrey B Guldner,10,5,0,4,6,Pinnacle West Capital
+2025-11-02,Jeffrey Harmening,9,3,0,6,3,General Mills
+2025-11-02,Jeffrey Lorberbaum,10,4,0,6,4,Mohawk Industries
+2025-11-02,Jeffrey Mezger,10,5,1,4,5,KB Home
+2025-11-02,Jeffrey N Simmons,8,4,0,3,5,Elanco Animal Health
+2025-11-02,Jeffrey S Edwards,10,5,0,5,5,Cooper-Standard
+2025-11-02,Jeffrey Sprecher,9,5,0,4,5,Intercontinental Exchange
+2025-11-02,Jeffrey W Edwards,9,4,0,3,6,Installed Building Products
+2025-11-02,Jennifer F Scanlon,10,4,0,4,6,UL Solutions
+2025-11-02,Jennifer Johnson,8,3,0,5,3,Franklin Resources
+2025-11-02,Jennifer Parmentier,10,4,0,6,4,Parker-Hannifin
+2025-11-02,Jennifer Rumsey,8,6,0,1,7,Cummins Inc
+2025-11-02,Jennifer Witz,8,2,0,5,3,Sirius XM
+2025-11-02,Jensen Huang,8,3,0,5,3,Nvidia
+2025-11-02,Jeremy Wensinger,10,5,0,4,6,V2X
+2025-11-02,Jerry E Gahlhoff Jr,10,3,0,5,5,Rollins Inc
+2025-11-02,Jesse Arenivas,10,1,0,8,2,EnLink Midstream
+2025-11-02,Jillian C Evanko,8,2,0,6,2,Chart Industries
+2025-11-02,Jim Anderson,8,5,0,3,5,Coherent
+2025-11-02,Jim DeVries,10,4,0,3,7,ADT
+2025-11-02,Jim Farley,9,4,0,4,5,Ford Motor
+2025-11-02,Jim Jacobs,8,6,0,2,6,Country Financial
+2025-11-02,Jim Rechtin,10,5,0,4,6,Humana
+2025-11-02,Jim Vena,8,4,0,4,4,Union Pacific
+2025-11-02,Joanna Geraghty,9,4,0,4,5,JetBlue Airways
+2025-11-02,Joanne Crevoiserat,9,5,0,3,6,Tapestry
+2025-11-02,Joaquin Duato,8,4,0,4,4,Johnson & Johnson
+2025-11-02,Jochen Zeitz,9,3,0,5,4,Harley-Davidson
+2025-11-02,Joe Craft,9,2,0,6,3,Alliance Resource Partners
+2025-11-02,Joe Creed,8,4,0,4,4,Caterpillar
+2025-11-02,Joe Shoen,10,3,1,6,3,U-Haul
+2025-11-02,Joe Zubretsky,10,3,0,6,4,Molina Healthcare
+2025-11-02,Joel D Anderson,10,3,0,5,5,Petco Health and Wellness
+2025-11-02,Joel Smejkal,10,4,0,5,5,Vishay Intertechnology
+2025-11-02,Joey Levin,9,4,0,5,4,IAC
+2025-11-02,Joey Wat,9,3,0,6,3,Yum China
+2025-11-02,John B Gibson,8,3,0,5,3,Paychex
+2025-11-02,John Barrett,9,4,0,3,6,Western & Southern Financial
+2025-11-02,John C Rademacher,9,5,0,1,8,Option Care Health
+2025-11-02,John C Roche,10,3,0,7,3,Hanover Insurance Group
+2025-11-02,John C Turner Jr,9,2,0,5,4,GMS
+2025-11-02,John C. Griffith,10,5,1,3,6,American Water Works
+2025-11-02,John Christmann IV,10,3,0,7,3,APA
+2025-11-02,John David Risher,9,4,0,4,5,Lyft
+2025-11-02,John Doyle,9,5,2,2,5,Marsh & McLennan
+2025-11-02,John E Geller Jr,10,5,0,5,5,Marriott Vacations Worldwide
+2025-11-02,John Engel,9,3,1,4,4,WESCO International
+2025-11-02,John J Marchioni,10,3,0,5,5,Selective Insurance Group
+2025-11-02,John Ketchum,8,5,0,0,8,NextEra Energy
+2025-11-02,John L Plueger,9,3,0,4,5,Air Lease
+2025-11-02,John May,8,5,1,2,5,Deere
+2025-11-02,John Mengucci,9,4,0,5,4,CACI International
+2025-11-02,John Pfeifer,9,4,0,4,5,Oshkosh Corporation
+2025-11-02,John Plant,10,3,0,5,5,Howmet Aerospace
+2025-11-02,John R Ciulla,9,3,0,5,4,Webster Financial
+2025-11-02,John Stankey,9,4,0,5,4,AT&T
+2025-11-02,John T C Lee,8,5,0,2,6,MKS Instruments
+2025-11-02,John Turner,10,6,0,4,6,Regions Financial
+2025-11-02,John Venhuizen,8,4,0,4,4,Ace Hardware
+2025-11-02,John W Lindsay,9,6,0,3,6,Helmerich & Payne
+2025-11-02,John Wren,9,2,0,6,3,Omnicom Group
+2025-11-02,John Zillmer,9,6,0,3,6,Aramark
+2025-11-02,Jon Farney,9,4,1,3,5,State Farm Insurance
+2025-11-02,Jon Moeller,8,3,0,5,3,Procter & Gamble
+2025-11-02,Jon Rousseau,9,5,0,3,6,BrightSpring Health Services
+2025-11-02,Jon Vander Ark,8,4,0,3,5,Republic Services
+2025-11-02,Jonas Prising,8,5,0,3,5,ManpowerGroup
+2025-11-02,Jonathan H Weis,10,3,0,7,3,Weis Markets
+2025-11-02,Jonathan J Mazelsky,10,4,0,4,6,IDEXX Laboratories
+2025-11-02,Jonathan Jaffe,10,4,0,6,4,Lennar
+2025-11-02,Jonathan W Witter,10,3,0,7,3,Sallie Mae
+2025-11-02,Joseph Bae,8,3,0,3,5,KKR & Co
+2025-11-02,Joseph D Margolis,9,6,0,3,6,Extra Space Storage
+2025-11-02,Joseph D Russell Jr,10,4,0,6,4,Public Storage
+2025-11-02,Joseph Dominguez,7,3,0,1,6,Constellation Energy
+2025-11-02,Joseph Fadool,9,4,0,4,5,BorgWarner
+2025-11-02,Joseph Ferraro,10,3,0,7,3,Avis Budget
+2025-11-02,Joseph Hinrichs,9,3,0,5,4,CSX
+2025-11-02,Joseph M Hogan,9,7,0,2,7,Align Technology
+2025-11-02,Joseph M Otting,10,5,0,4,6,Flagstar Financial
+2025-11-02,Joseph Nolan,9,2,0,6,3,Eversource Energy
+2025-11-02,Joseph P Lacher Jr,10,3,0,6,4,Kemper Corporation
+2025-11-02,Joseph Wm Foran,10,3,0,4,6,Matador Resources
+2025-11-02,Joshua G Silverman,8,5,0,3,5,Etsy
+2025-11-02,José Mas,10,5,0,4,6,MasTec
+2025-11-02,Joyce Mullen,8,4,0,3,5,Insight Enterprises
+2025-11-02,Juan Andrade,8,2,0,6,2,USAA
+2025-11-02,Juan Luciano,10,4,2,4,4,Archer Daniels Midland
+2025-11-02,Judith Marks,8,3,0,5,3,Otis Worldwide
+2025-11-02,Judy R McReynolds,9,4,0,4,5,ArcBest
+2025-11-02,Julie Felss Masino,8,4,3,1,4,Cracker Barrel Old Country Store
+2025-11-02,Julie Schertell,9,2,0,4,5,Mativ
+2025-11-02,Jure Sola,10,3,0,7,3,Sanmina
+2025-11-02,Justin Jude,8,3,0,2,6,LKQ
+2025-11-02,Kaes Van’t Hof,8,5,0,3,5,Diamondback Energy
+2025-11-02,Kamal Hathi,8,6,0,1,7,Splunk
+2025-11-02,Karen S Haller,10,6,0,4,6,Southwest Gas Holdings
+2025-11-02,Karl G. Glassman,10,4,0,6,4,Leggett & Platt
+2025-11-02,Karla Lewis,8,5,0,3,5,Reliance Inc
+2025-11-02,Karsanbhai,8,5,0,3,5,Emerson Electric
+2025-11-02,Kathleen Johnson,8,4,0,3,5,Lumen Technologies
+2025-11-02,Kathleen Mazzarella,10,4,0,6,4,Graybar Electric
+2025-11-02,Kathleen Quirk,8,4,0,4,4,Freeport-McMoRan
+2025-11-02,Kathy Warden,8,5,0,3,5,Northrop Grumman
+2025-11-02,Kaz Nejatian,8,4,0,2,6,Opendoor Technologies
+2025-11-02,Kecia Steelman,8,4,0,3,5,Ulta Beauty
+2025-11-02,Keith A Harvey,10,4,0,4,6,Kaiser Aluminum
+2025-11-02,Keith Allman,10,3,0,6,4,Masco
+2025-11-02,Keith Demmings,9,6,0,2,7,Assurant
+2025-11-02,Keith E Smith,10,4,0,6,4,Boyd Gaming
+2025-11-02,Kelly Ortberg,8,3,0,3,5,Boeing
+2025-11-02,Ken Xie,10,5,0,4,6,Fortinet
+2025-11-02,Kenneth A Vecchione,10,5,2,3,5,Western Alliance Bancorp
+2025-11-02,Kenneth T Lane,9,5,0,4,5,Olin
+2025-11-02,Kevin Akers,10,4,0,3,7,Atmos Energy
+2025-11-02,Kevin Ali,9,4,2,3,4,Organon
+2025-11-02,Kevin D Hochman,9,4,0,4,5,Brinker International
+2025-11-02,Kevin Hogan,10,5,0,4,6,Corebridge Financial
+2025-11-02,Kevin Hourican,9,5,0,4,5,Sysco
+2025-11-02,Kevin J Wheeler,9,4,0,5,4,A O Smith
+2025-11-02,Kevin Kwilinski,9,1,0,6,3,Berry Global
+2025-11-02,Kevin Lobo,8,4,0,2,6,Stryker
+2025-11-02,Kevin M Freeman,10,3,0,3,7,Old Dominion Freight Line
+2025-11-02,Kevin Murphy,18,5,0,12,6,Publix Super Markets
+2025-11-02,Kevin Plank,8,4,0,3,5,Under Armour
+2025-11-02,Kevin R Sayer,9,4,0,4,5,DexCom
+2025-11-02,Kevin Roycraft,10,3,0,3,7,Adams Resources & Energy
+2025-11-02,Kevin S Blair,9,4,0,4,5,Synovus Financial
+2025-11-02,Kevin Stein,9,3,0,6,3,TransDigm
+2025-11-02,Kevin T Conroy,9,4,1,4,4,Exact Sciences
+2025-11-02,Khozema Z Shipchandler,8,3,0,5,3,Twilio
+2025-11-02,Kimberly A Fields,9,3,0,5,4,ATI Inc
+2025-11-02,Kimberly Dang,10,2,0,4,6,Kinder Morgan
+2025-11-02,Kimberly K Ryan,10,3,0,7,3,Hillenbrand
+2025-11-02,Kirk Perry,9,4,0,5,4,Kenvue
+2025-11-02,Kirt Walker,10,3,0,6,4,Nationwide Insurance
+2025-11-02,Kristin A Dolan,9,3,0,5,4,AMC Networks
+2025-11-02,Kristin Peck,7,3,0,4,3,Zoetis
+2025-11-02,Kurt J Ekert,9,3,0,6,3,Sabre Corporation
+2025-11-02,Kurt Wolf,9,3,0,5,4,Pitney Bowes
+2025-11-02,Kyle T Larkin,10,4,0,5,5,Granite Construction
+2025-11-02,Ladd Wilks,10,2,0,8,2,ProFrac Holding
+2025-11-02,Lane Riggs,9,4,0,2,7,Valero Energy
+2025-11-02,Larry Fink,7,3,0,4,3,BlackRock
+2025-11-02,Laura Alber,8,4,0,4,4,Williams-Sonoma
+2025-11-02,Laura Prieskorn,9,3,0,6,3,Jackson Financial
+2025-11-02,Laurans A Mendelson,10,4,1,5,4,HEICO
+2025-11-02,Lauren Hobart,10,5,0,5,5,Dicks Sporting Goods
+2025-11-02,Lawrence Coben,9,4,0,4,5,NRG Energy
+2025-11-02,Lawrence H Silber,10,5,0,5,5,Herc Rentals
+2025-11-02,Lawson E Whiting,10,4,0,6,4,Brown-Forman
+2025-11-02,Lee M Shavel,9,3,0,6,3,Verisk Analytics
+2025-11-02,Lee M Tillman,10,2,0,7,3,Marathon Oil
+2025-11-02,Leon Topalian,7,2,0,5,2,Nucor
+2025-11-02,Leonard Schleifer,8,4,0,4,4,Regeneron Pharmaceuticals
+2025-11-02,Liam J Kelly,9,4,0,5,4,Teleflex
+2025-11-02,Liam K Griffin,8,4,0,2,6,Skyworks Solutions
+2025-11-02,Linda Rendle,8,4,0,2,6,Clorox
+2025-11-02,Lip-Bu Tan,9,3,0,5,4,Intel
+2025-11-02,Lisa M Barton,10,5,0,3,7,Alliant Energy
+2025-11-02,Lisa Su,8,2,0,5,3,Advanced Micro Devices
+2025-11-02,Lloyd Yates,10,3,0,6,4,NiSource
+2025-11-02,Lorenzo Simonelli,8,3,0,3,5,Baker Hughes
+2025-11-02,Lori Flees,9,4,0,5,4,Valvoline Inc
+2025-11-02,Lori Koch,9,3,0,4,5,DuPont de Nemours
+2025-11-02,Lorie L Tekorius,10,5,0,4,6,The Greenbrier Companies
+2025-11-02,Louis V Pinkham,10,4,0,4,6,Regal Rexnord
+2025-11-02,Lourenco Goncalves,8,4,0,4,4,Cleveland-Cliffs
+2025-11-02,Luca Savi,9,3,0,4,5,ITT
+2025-11-02,Lucinda M Baier,10,2,0,8,2,Brookdale Senior Living
+2025-11-02,Lynn M Bamford,9,4,0,5,4,Curtiss-Wright
+2025-11-02,M Christopher Doyle,10,1,1,6,3,Civitas Resources
+2025-11-02,M Keith Waddell,10,4,0,6,4,Robert Half
+2025-11-02,Mac Cummings,9,5,0,4,5,Terakeet
+2025-11-02,Malcolm C Roberts,9,6,0,2,7,FM Global
+2025-11-02,Malcolm Wilson,9,2,0,7,2,GXO Logistics
+2025-11-02,Marc Benioff,6,2,0,3,3,Salesforce
+2025-11-02,Marc Bitzer,9,3,0,5,4,Whirlpool
+2025-11-02,Marc Casper,8,4,0,3,5,Thermo Fisher Scientific
+2025-11-02,Marc Miller,10,5,0,5,5,Universal Health Services
+2025-11-02,Marc Rowan,8,3,0,5,3,Apollo Global Management
+2025-11-02,Marcus Lemonis,9,5,1,2,6,Camping World
+2025-11-02,Maria Black,9,4,0,5,4,Automatic Data Processing
+2025-11-02,Maria M Pope,9,3,0,6,3,Portland General Electric
+2025-11-02,Mario Harik,8,4,0,4,4,XPO
+2025-11-02,Mark A Skonieczny,10,4,0,6,4,REV Group
+2025-11-02,Mark Bertolini,7,5,1,1,5,Oscar Health
+2025-11-02,Mark Costa,8,3,0,5,3,Eastman Chemical
+2025-11-02,Mark D Dankberg,10,5,0,4,6,Viasat
+2025-11-02,Mark D Morelli,9,4,0,5,4,Vontier
+2025-11-02,Mark E Seaton,10,4,0,5,5,First American Financial
+2025-11-02,Mark Eubanks,10,5,0,5,5,Brinks Company
+2025-11-02,Mark George,8,5,0,3,5,Norfolk Southern
+2025-11-02,Mark Hoplamazian,9,5,1,2,6,Hyatt Hotels
+2025-11-02,Mark J Parrell,10,5,0,4,6,Equity Residential
+2025-11-02,Mark J Tarr,9,4,0,5,4,Encompass Health
+2025-11-02,Mark Kowlzan,10,5,0,5,5,Packaging Corp of America
+2025-11-02,Mark Lashier,8,5,0,3,5,Phillips 66
+2025-11-02,Mark Mac McFarland,10,4,0,4,6,Talen Energy
+2025-11-02,Mark Millett,8,4,0,2,6,Steel Dynamics
+2025-11-02,Mark Pearson,10,4,0,5,5,Equitable Holdings
+2025-11-02,Mark Penn,10,4,0,6,4,Stagwell
+2025-11-02,Mark R Widmar,8,2,0,5,3,First Solar
+2025-11-02,Mark Rourke,9,4,0,4,5,Schneider National
+2025-11-02,Mark S LaVigne,10,4,0,1,9,Energizer Holdings
+2025-11-02,Mark Shapiro,9,1,0,8,1,Endeavor Group Holdings
+2025-11-02,Mark Smucker,8,4,0,4,4,JM Smucker
+2025-11-02,Mark Stewart,8,5,0,3,5,Goodyear Tire & Rubber
+2025-11-02,Mark W Begor,10,5,0,4,6,Equifax
+2025-11-02,Mark Wang,9,3,0,4,5,Hilton Grand Vacations
+2025-11-02,Mark Witkowski,9,7,0,2,7,Core & Main
+2025-11-02,Mark Zuckerberg,8,3,0,5,3,Meta Platforms
+2025-11-02,Martin J Lyons,10,3,0,6,4,Ameren
+2025-11-02,Martin Schroeter,9,6,0,2,7,Kyndryl
+2025-11-02,Martina Cheung,8,4,0,3,5,S&P Global
+2025-11-02,Marvin Ellison,8,3,0,4,4,Lowe's
+2025-11-02,Mary Barra,8,3,0,4,4,General Motors
+2025-11-02,Mary Dillon,9,1,0,6,3,Foot Locker
+2025-11-02,Mary E Kipp,10,4,0,3,7,Puget Sound Energy
+2025-11-02,Maryann Mannen,9,6,0,3,6,Marathon Petroleum
+2025-11-02,Matt Wilson,8,4,0,2,6,Light & Wonder
+2025-11-02,Matthew Flannery,8,4,0,1,7,United Rentals
+2025-11-02,Matthew J Cox,10,4,0,6,4,Matson Inc
+2025-11-02,Matthew J Murphy,8,3,0,4,4,Marvell Technology
+2025-11-02,Matthew Lucey,9,3,0,4,5,PBF Energy
+2025-11-02,Matthew Meloy,9,4,0,4,5,Targa Resources
+2025-11-02,Matthew Missad,10,5,0,2,8,UFP Industries
+2025-11-02,Matthew Pine,8,4,0,4,4,Xylem Inc
+2025-11-02,Matthew T Farrell,10,6,0,4,6,Church & Dwight
+2025-11-02,Mehran Assadi,9,4,0,5,4,NLV Financial
+2025-11-02,Melissa D Smith,9,3,0,6,3,WEX
+2025-11-02,Michael Arougheti,9,3,0,6,3,Ares Management
+2025-11-02,Michael Bender,9,4,1,4,4,Kohl's
+2025-11-02,Michael Cannon-Brookes,7,4,1,2,4,Atlassian
+2025-11-02,Michael Creedon,9,4,1,4,4,Dollar Tree
+2025-11-02,Michael Dastoor,7,5,0,2,5,Jabil
+2025-11-02,Michael Dell,7,3,0,4,3,Dell Technologies
+2025-11-02,Michael Doss,8,5,0,2,6,Graphic Packaging
+2025-11-02,Michael E Reed,9,2,0,6,3,Gannett
+2025-11-02,Michael Fiddelke,7,5,0,1,6,Target Corporation
+2025-11-02,Michael Hsu,8,5,0,3,5,Kimberly-Clark
+2025-11-02,Michael Hutchins,10,4,0,3,7,Freddie Mac
+2025-11-02,Michael J Brown,10,3,0,7,3,Euronet Worldwide
+2025-11-02,Michael J Happe,9,4,0,3,6,Winnebago Industries
+2025-11-02,Michael J Smith,10,5,1,4,5,Lamb Weston
+2025-11-02,Michael Kasbar,10,5,0,5,5,World Kinect
+2025-11-02,Michael L Baur,10,4,0,6,4,ScanSource
+2025-11-02,Michael Mahoney,9,4,0,5,4,Boston Scientific
+2025-11-02,Michael Manley,10,4,0,6,4,AutoNation
+2025-11-02,Michael Miebach,9,7,0,2,7,Mastercard
+2025-11-02,Michael Nierenberg,8,6,0,2,6,Rithm Capital
+2025-11-02,Michael Nolan,10,4,0,5,5,Fidelity National Financial
+2025-11-02,Michael O'Grady,9,2,0,3,6,Northern Trust
+2025-11-02,Michael O’Sullivan,10,3,0,6,4,Burlington Stores
+2025-11-02,Michael Rapino,9,5,0,4,5,Live Nation Entertainment
+2025-11-02,Michael Rhodes,10,3,0,6,4,Ally Financial
+2025-11-02,Michael Shepherd,10,2,0,4,6,Discover Financial
+2025-11-02,Michael Spanos,8,4,0,4,4,Bloomin Brands
+2025-11-02,Michel Khalaf,10,5,0,3,7,MetLife Inc
+2025-11-02,Michele Buck,8,3,0,4,4,Hershey
+2025-11-02,Michelle Gass,8,4,0,4,4,Levi Strauss
+2025-11-02,Mick Beekhuizen,8,3,0,5,3,Campbell Soup
+2025-11-02,Mick Farrell,9,3,0,6,3,ResMed
+2025-11-02,Mikael Bratt,9,5,0,4,5,Autoliv
+2025-11-02,Mike Lyons,7,5,0,2,5,Fiserv
+2025-11-02,Mike Sicilia,6,2,0,4,2,Oracle
+2025-11-02,Mike Simonds,8,4,0,2,6,TriNet Group
+2025-11-02,Mike Speetzen,10,4,0,5,5,Polaris Inc
+2025-11-02,Mike Steib,9,5,0,2,7,TEGNA
+2025-11-02,Mike Wirth,7,4,0,3,4,Chevron
+2025-11-02,Milan Galik,10,2,0,7,3,Interactive Brokers
+2025-11-02,Morris Goldfarb,10,7,0,2,8,G-III Apparel Group
+2025-11-02,NADominic Ng,9,5,0,4,5,East West Bancorp
+2025-11-02,Nate R Jorgensen,10,3,0,6,4,Boise Cascade
+2025-11-02,Neil A Schrimsher,10,6,0,4,6,Applied Industrial Technologies
+2025-11-02,Neil Hunn,9,5,0,4,5,Roper Technologies
+2025-11-02,Neil M Ashe,10,3,0,6,4,Acuity Inc
+2025-11-02,Nicholas I Fink,9,4,0,4,5,Fortune Brands Innovations
+2025-11-02,Nicholas R Lower,10,4,2,3,5,Federated Mutual Insurance
+2025-11-02,Nicholas T Pinchuk,8,1,0,6,2,Snap-on
+2025-11-02,Nick DeIuliis,9,3,0,6,3,CNX Resources
+2025-11-02,Nick Jeffery,10,3,1,5,4,Frontier Communications
+2025-11-02,Nicole A Kivisto,10,4,0,6,4,MDU Resources Group
+2025-11-02,Nikesh Arora,9,4,0,5,4,Palo Alto Networks
+2025-11-02,Niko Lahanas,9,5,0,4,5,Central Garden & Pet
+2025-11-02,Niraj Shah,8,4,0,3,5,Wayfair
+2025-11-02,Noel Wallace,8,4,0,4,4,Colgate-Palmolive
+2025-11-02,Norman D Schwartz,10,4,0,5,5,Bio-Rad Laboratories
+2025-11-02,Octavio Marquez,9,4,0,5,4,Diebold Nixdorf
+2025-11-02,Ole Rosgaard,9,3,0,6,3,Greif
+2025-11-02,Oliver G Brewer III,9,3,0,5,4,Topgolf Callaway Brands
+2025-11-02,Olivier Rabiller,9,4,0,5,4,Garrett Motion Inc
+2025-11-02,Olumide Soroye,8,5,0,2,6,Fortive
+2025-11-02,Oscar K Brown,10,5,0,5,5,Western Midstream Partners
+2025-11-02,Owen D Thomas,10,2,0,8,2,Boston Properties
+2025-11-02,Padraig McDonnell,7,4,0,2,5,Agilent Technologies
+2025-11-02,Pat Roche,8,5,0,3,5,Moog Inc
+2025-11-02,Patrice Louvet,8,4,0,4,4,Ralph Lauren
+2025-11-02,Patricia Poppe,7,2,0,4,3,PG&E
+2025-11-02,Patrick Gallagher,8,4,1,3,4,Arthur J Gallagher
+2025-11-02,Patrick Kaltenbach,10,4,0,5,5,Mettler-Toledo International
+2025-11-02,Patrick M Shanahan,10,6,0,2,8,Spirit AeroSystems
+2025-11-02,Patrick Zalupski,10,5,0,2,8,Dream Finders Homes
+2025-11-02,Patrick Zammit,7,4,0,3,4,TD Synnex
+2025-11-02,Paul A Lang,10,3,0,4,6,Arch Resources
+2025-11-02,Paul Bay,16,6,0,10,6,Ingram Micro
+2025-11-02,Paul E Burdiss,10,3,0,6,4,Zions Bancorp
+2025-11-02,Paul Keel,8,3,0,2,6,Envista
+2025-11-02,Paul M Rady,10,3,0,5,5,Antero Resources
+2025-11-02,Paul Romanowski,9,5,0,4,5,DR Horton Inc
+2025-11-02,Paul Sarvadi,9,4,0,4,5,Insperity
+2025-11-02,Paul Shoukry,8,4,0,4,4,Raymond James Financial
+2025-11-02,Pedro Pizarro,9,3,1,5,3,Edison International
+2025-11-02,Penny Pennington,7,3,0,3,4,Edward Jones
+2025-11-02,Perry A Sook,9,4,0,4,5,Nexstar Media Group
+2025-11-02,Pete McPartland,10,4,0,4,6,Sentry Insurance Group
+2025-11-02,Peter Arduini,9,5,0,4,5,GE HealthCare Technologies
+2025-11-02,Peter D Arvan,10,4,0,6,4,Pool Corporation
+2025-11-02,Peter J Federico,10,3,0,6,4,AGNC Investment
+2025-11-02,Peter Jackson,8,5,0,0,8,Builders FirstSource
+2025-11-02,Peter M Moglia,10,3,0,6,4,Alexandria Real Estate Equities
+2025-11-02,Peter Matt,9,4,0,5,4,Commercial Metals
+2025-11-02,Peter Quigley,9,4,0,5,4,Kelly Services Inc
+2025-11-02,Peter R Huntsman,10,3,1,5,4,Huntsman
+2025-11-02,Peter R Ingram,10,2,1,7,2,Hawaiian Airlines Inc
+2025-11-02,Peter Stern,8,4,0,4,4,Peloton Interactive
+2025-11-02,Peter Zaffino,9,4,0,4,5,AIG
+2025-11-02,Phebe Novakovic,10,4,0,4,6,General Dynamics
+2025-11-02,Philip Daniele III,10,4,0,6,4,AutoZone
+2025-11-02,Philip Gallagher,10,6,0,4,6,Avnet
+2025-11-02,Philip Smith,9,4,0,5,4,StoneX Group
+2025-11-02,Philippe Krakowsky,10,4,0,5,5,Interpublic Group
+2025-11-02,Phillip D Green,10,3,0,7,3,Cullen Frost Bankers
+2025-11-02,Phillip D Yeager,10,4,0,6,4,Hub Group
+2025-11-02,Phillippe Lord,8,4,0,4,4,Meritage Homes
+2025-11-02,Pierce Norton II,9,3,0,5,4,Oneok
+2025-11-02,Pierre R Brondeau,10,4,0,5,5,FMC Corporation
+2025-11-02,Prahlad Singh,8,3,0,4,4,Revvity
+2025-11-02,Preston Feight,10,5,0,5,5,Paccar
+2025-11-02,Priscilla Almodovar,9,1,0,8,1,Fannie Mae
+2025-11-02,R Bruce McDonald,10,5,0,4,6,Dana Incorporated
+2025-11-02,R Howard Coker,8,3,0,5,3,Sonoco Products
+2025-11-02,R Scott Rowe,9,4,0,4,5,Flowserve
+2025-11-02,RJ Scaringe,9,4,0,5,4,Rivian Automotive
+2025-11-02,Rafael Santana,10,3,0,5,5,Westinghouse Air Brake Technologies
+2025-11-02,Rainer Blair,9,4,0,4,5,Danaher
+2025-11-02,Rajesh Subramaniam,9,5,1,2,6,FedEx
+2025-11-02,Rajiv K Prasad,10,4,0,6,4,Hyster-Yale
+2025-11-02,Ralph Andretta,10,5,0,4,6,Bread Financial
+2025-11-02,Ralph LaRossa,10,4,0,4,6,Public Service Enterprise Group
+2025-11-02,Rami Rahim,9,5,0,3,6,Juniper Networks
+2025-11-02,Ramon Laguarta,8,4,0,4,4,PepsiCo
+2025-11-02,Randall C Stuewe,9,2,0,5,4,Darling Ingredients
+2025-11-02,Raul Fernandez,9,6,1,2,6,DXC Technology
+2025-11-02,Raul Nicholas Vargas Ochoa,10,1,0,8,2,Farmers Insurance Exchange
+2025-11-02,Ravi Kumar S,9,5,0,3,6,Cognizant Technology Solutions
+2025-11-02,Raymond E Scott,10,4,0,5,5,Lear Corporation
+2025-11-02,René Jones,9,5,0,3,6,M&T Bank
+2025-11-02,Reshma Kewalramani,8,3,0,5,3,Vertex Pharmaceuticals
+2025-11-02,Rex D Geveden,10,4,0,5,5,BWX Technologies
+2025-11-02,Ricardo Cardenas,9,2,0,6,3,Darden Restaurants
+2025-11-02,Rich Handler,10,6,1,1,8,Jefferies Financial
+2025-11-02,Rich Steinmeier,8,5,0,0,8,LPL Financial
+2025-11-02,Richard Fairbank,10,4,0,5,5,Capital One
+2025-11-02,Richard G Kyle,10,5,0,4,6,Timken
+2025-11-02,Richard Hayne,9,2,0,6,3,Urban Outfitters
+2025-11-02,Richard M Olson,10,5,0,5,5,Toro Company
+2025-11-02,Richard P Dealy,10,4,0,1,9,Pioneer Natural Resources
+2025-11-02,Richard S Swartz,10,4,0,6,4,MYR Group
+2025-11-02,Richard Tobin,8,6,0,2,6,Dover Corporation
+2025-11-02,Richard Wallace,9,3,0,4,5,KLA
+2025-11-02,Rick L Wessel,10,1,0,6,4,FirstCash
+2025-11-02,Rick Lanoha,9,1,0,7,2,Peter Kiewit Sons'
+2025-11-02,Rick McKenney,10,3,0,6,4,Unum Group
+2025-11-02,Rick Wurster,7,4,0,2,5,Charles Schwab
+2025-11-02,Rob Katz,7,4,0,2,5,Vail Resorts
+2025-11-02,Rob Saltiel,9,3,0,5,4,MRC Global
+2025-11-02,Rob Sharps,8,6,0,1,7,T Rowe Price
+2025-11-02,Rob Vitale,10,5,1,4,5,Post Holdings
+2025-11-02,Robert A Bruggeworth,10,3,0,7,3,Qorvo
+2025-11-02,Robert Antokol,10,3,0,7,3,Playtika Holding
+2025-11-02,Robert Berkley,10,5,0,4,6,WR Berkley
+2025-11-02,Robert Blue,9,3,0,3,6,Dominion Energy
+2025-11-02,Robert Bradway,9,4,0,3,6,Amgen
+2025-11-02,Robert D Lawler,10,1,0,9,1,Continental Resources
+2025-11-02,Robert E Price,10,4,0,6,4,PriceSmart
+2025-11-02,Robert Fauber,10,4,0,6,4,Moodys Corporation
+2025-11-02,Robert Ford,9,3,1,3,5,Abbott Laboratories
+2025-11-02,Robert Frenzel,9,5,0,3,6,Xcel Energy
+2025-11-02,Robert G Painter,10,4,0,6,4,Trimble Inc
+2025-11-02,Robert Goldstein,9,2,0,6,3,Las Vegas Sands
+2025-11-02,Robert Greenberg,9,1,0,7,2,Skechers USA
+2025-11-02,Robert H Schottenstein,10,2,0,8,2,M/I Homes
+2025-11-02,Robert Isom,9,4,0,5,4,American Airlines
+2025-11-02,Robert J Sheedy Jr,10,4,0,4,6,Grocery Outlet Holding
+2025-11-02,Robert Kyncl,7,5,0,1,6,Warner Music Group
+2025-11-02,Robert L Reffkin,9,4,0,3,6,Compass Group
+2025-11-02,Robert M Buck,9,5,0,4,5,TopBuild
+2025-11-02,Robert M Davis,9,3,0,5,4,Merck
+2025-11-02,Robert Martin,8,4,0,4,4,THOR Industries
+2025-11-02,Robert Mauch,9,5,0,3,6,Cencora
+2025-11-02,Robert Sanchez,9,3,0,5,4,Ryder System
+2025-11-02,Robert Steer,9,2,0,7,2,Seaboard
+2025-11-02,Robert Sulentic,9,5,0,3,6,CBRE Group
+2025-11-02,Robert Thomson,10,3,0,6,4,News Corp
+2025-11-02,Robert W Pittman,9,4,0,5,4,iHeartMedia
+2025-11-02,Robin Vince,9,4,0,5,4,Bank of New York Mellon
+2025-11-02,Rodney Sacks,10,1,0,8,2,Monster Beverage
+2025-11-02,Roger Crandall,9,3,0,6,3,Mass Mutual
+2025-11-02,Roger Penske,9,5,0,4,5,Penske Automotive
+2025-11-02,Roger W Jenkins,10,4,0,2,8,Murphy Oil
+2025-11-02,Ron Gusek,6,4,0,0,6,Liberty Energy
+2025-11-02,Ron Sargent,9,5,0,4,5,Kroger
+2025-11-02,Ron Vachris,9,4,0,5,4,Costco
+2025-11-02,Ronald F Clarke,10,6,0,4,6,Corpay
+2025-11-02,Ronald J Kramer,10,2,0,7,3,Griffon Corporation
+2025-11-02,Ronald Kruszewski,8,4,0,4,4,Stifel Financial
+2025-11-02,Ronald N Tutor,10,5,0,4,6,Tutor Perini Corporation
+2025-11-02,Ronald P O'Hanley,9,4,0,5,4,State Street
+2025-11-02,Russell Becker,8,4,0,3,5,APi Group
+2025-11-02,Russell Chip Childs,10,4,0,6,4,SkyWest
+2025-11-02,Russell J Weiner,8,3,0,5,3,Dominos Pizza Inc
+2025-11-02,Rusty Rush,10,4,1,4,5,Rush Enterprises
+2025-11-02,Ryals McMullian,9,6,0,2,7,Flowers Foods
+2025-11-02,Ryan Cohen,8,2,0,4,4,GameStop
+2025-11-02,Ryan Lance,8,4,0,4,4,ConocoPhillips
+2025-11-02,Ryan M. Schneider,10,5,0,5,5,Anywhere Real Estate Inc
+2025-11-02,Ryan Marshall,9,3,0,5,4,PulteGroup
+2025-11-02,Ryan McInerney,10,3,0,7,3,Visa Inc
+2025-11-02,Sachin S Lawande,9,3,0,5,4,Visteon
+2025-11-02,Samuel Hazen,9,3,0,5,4,HCA Healthcare
+2025-11-02,Sandy Douglas,9,4,1,2,6,United Natural Foods
+2025-11-02,Sanjay Mehrotra,8,4,0,4,4,Micron Technology
+2025-11-02,Sara E Armbruster,9,5,0,3,6,Steelcase
+2025-11-02,Sarah London,9,4,0,4,5,Centene
+2025-11-02,Sasan Goodarzi,8,5,1,2,5,Intuit
+2025-11-02,Sassine Ghazi,8,3,0,5,3,Synopsys
+2025-11-02,Satish Dhanasekaran,9,4,0,5,4,Keysight Technologies
+2025-11-02,Satya Nadella,8,2,1,5,2,Microsoft
+2025-11-02,Saumya Sutaria,9,3,0,5,4,Tenet Healthcare
+2025-11-02,Schnitzer Steel Industries,7,3,0,4,3,Radius Recycling
+2025-11-02,Scott Boatwright,7,4,2,1,4,Chipotle Mexican Grill
+2025-11-02,Scott Donnelly,10,3,0,6,4,Textron
+2025-11-02,Scott Doyle,9,5,0,4,5,Spire Inc
+2025-11-02,Scott H Baxter,8,3,0,5,3,Kontoor Brands
+2025-11-02,Scott Kirby,7,4,1,1,5,United Airlines
+2025-11-02,Scott L Thompson,10,1,0,8,2,Tempur Sealy International
+2025-11-02,Scott Lauber,10,3,0,3,7,WEC Energy
+2025-11-02,Scott R Wells,10,5,0,0,10,Clear Channel Outdoor Hldgs
+2025-11-02,Scott Richardson,10,5,0,5,5,Celanese
+2025-11-02,Scott Salmirs,8,4,1,3,4,ABM Industries
+2025-11-02,Scott Seu,8,3,0,5,3,Hawaiian Electric Industries
+2025-11-02,Scott Smith,10,7,0,2,8,Viatris
+2025-11-02,Scott Strazik,8,4,0,3,5,GE Vernova
+2025-11-02,Sean Connolly,9,3,0,6,3,Conagra Brands
+2025-11-02,Sean D Keohane,10,4,0,6,4,Cabot Corporation
+2025-11-02,Sean Gamble,9,5,0,4,5,Cinemark
+2025-11-02,Sean Kerins,10,2,0,6,4,Arrow Electronics
+2025-11-02,Sean Trauschke,10,3,0,4,6,OGE Energy
+2025-11-02,Shane O'Kelly,9,3,0,5,4,Advance Auto Parts
+2025-11-02,Shankh Mitra,9,2,1,5,3,Welltower
+2025-11-02,Shantanu Narayen,8,6,0,2,6,Adobe
+2025-11-02,Shawn O'Connell,8,6,0,2,6,EnerSys
+2025-11-02,Shelley Simpson,8,5,0,2,6,JB Hunt Transport Services
+2025-11-02,Sherman Miller,10,3,0,6,4,Cal-Maine Foods
+2025-11-02,Sheryl Palmer,9,4,0,5,4,Taylor Morrison Home
+2025-11-02,Shyam K Reddy,9,6,0,3,6,BlueLinx
+2025-11-02,Shyam P Kambeyanda,10,5,0,5,5,ESAB
+2025-11-02,Simon D Campion,9,4,0,4,5,Dentsply Sirona
+2025-11-02,Simon Meester,9,4,0,4,5,Terex
+2025-11-02,Sivasankaran Somasundaram,10,4,0,6,4,ChampionX
+2025-11-02,Sridhar Ramaswamy,8,4,0,4,4,Snowflake Inc
+2025-11-02,Stacy Kymes,9,4,0,4,5,BOK Financial
+2025-11-02,Stanley Bergman,9,5,0,4,5,Henry Schein
+2025-11-02,Stefan Larsson,10,5,0,4,6,PVH
+2025-11-02,Stefano Caroti,9,4,0,5,4,Deckers Outdoor
+2025-11-02,Stephan B Tanda,10,5,0,5,5,AptarGroup
+2025-11-02,Stephane Bancel,8,2,0,5,3,Moderna
+2025-11-02,Stephanie Ferris,10,4,0,4,6,Fidelity National Information Services
+2025-11-02,Stephen Bratspies,10,4,1,4,5,Hanesbrands
+2025-11-02,Stephen Hemsley,9,2,0,5,4,UnitedHealth
+2025-11-02,Stephen P MacMillan,9,4,0,3,6,Hologic
+2025-11-02,Stephen Schwarzman,8,4,0,4,4,Blackstone
+2025-11-02,Stephen Spray,10,4,0,6,4,CIncinnati Financial
+2025-11-02,Stephen Squeri,8,3,0,4,4,American Express
+2025-11-02,Stephen Steinour,9,2,0,7,2,Huntington Bancshares
+2025-11-02,Steve Henry,7,4,0,2,5,Domtar
+2025-11-02,Steve Sanghi,9,3,0,6,3,Microchip Technology
+2025-11-02,Steven B Hedlund,10,5,0,3,7,Lincoln Electric
+2025-11-02,Steven Bandrowczak,8,4,0,4,4,Xerox
+2025-11-02,Steven Cahillane,9,3,0,6,3,Kellanova
+2025-11-02,Steven H Gunby,9,5,0,4,5,FTI Consulting
+2025-11-02,Steven J Moskowitz,10,4,0,4,6,Crown Castle
+2025-11-02,Steven Oakland,9,4,0,5,4,TreeHouse Foods
+2025-11-02,Steven P Lawrence,10,4,0,3,7,Academy Sports and Outdoors
+2025-11-02,Steven Sell,10,4,2,4,4,Agilon Health
+2025-11-02,Steven Vondran,8,6,0,2,6,American Tower
+2025-11-02,Strauss Zelnick,6,2,0,3,3,Take-Two Interactive Software
+2025-11-02,Stuart Bradie,10,4,0,5,5,KBR
+2025-11-02,Stéphane de La Faverie,8,4,0,3,5,Estée Lauder
+2025-11-02,Sue Nabi,9,4,0,4,5,Coty
+2025-11-02,Sumit Roy,9,3,0,6,3,Realty Income
+2025-11-02,Sumit Singh,9,4,1,3,5,Chewy
+2025-11-02,Sundar Pichai,8,3,0,4,4,Alphabet
+2025-11-02,Sundaram Nagarajan,10,4,0,5,5,Nordson
+2025-11-02,Susan Morris,8,3,0,5,3,Albertsons
+2025-11-02,Suzanne Foster,9,3,0,5,4,AdaptHealth
+2025-11-02,Ted Decker,8,3,0,3,5,Home Depot
+2025-11-02,Ted Pick,8,3,0,4,4,Morgan Stanley
+2025-11-02,Ted Sarandos,8,3,0,4,4,Netflix
+2025-11-02,Teresa Rasmussen,10,3,0,4,6,Thrivent Financial for Lutherans
+2025-11-02,Terrance Williams,8,5,0,3,5,TruStage
+2025-11-02,Terrence A Duffy,9,5,0,3,6,CME Group
+2025-11-02,Thasunda Brown Duckett,8,5,0,3,5,TIAA
+2025-11-02,Theodore S Hanson,10,4,0,5,5,ASGN
+2025-11-02,Thomas Bell,9,4,0,4,5,Leidos
+2025-11-02,Thomas E Gottwald,10,3,0,6,4,NewMarket Corporation
+2025-11-02,Thomas E Jorden,9,3,0,2,7,Coterra Energy
+2025-11-02,Thomas Edward McCormick,10,3,0,5,5,Primoris Services
+2025-11-02,Thomas Gayner,9,4,0,5,4,Markel Group
+2025-11-02,Thomas Hill,9,4,0,2,7,Vulcan Materials
+2025-11-02,Thomas J Baltimore Jr,10,5,0,5,5,Park Hotels & Resorts
+2025-11-02,Thomas J McInerney,10,5,0,5,5,Genworth Financial
+2025-11-02,Thomas J Wilson,9,4,1,4,4,Allstate
+2025-11-02,Thomas L Ryan,9,4,0,4,5,Service Corp International
+2025-11-02,Thomas Long,9,5,0,2,7,Energy Transfer
+2025-11-02,Thomas Palmer,7,4,0,3,4,Newmont
+2025-11-02,Thomas Polen,9,3,0,6,3,Becton Dickinson
+2025-11-02,Thomas Reeg,8,3,0,1,7,Caesars Entertainment
+2025-11-02,Thomas V Taylor,10,3,0,6,4,Floor & Decor
+2025-11-02,Tiang Yew Tan,9,2,0,7,2,Western Digital
+2025-11-02,Tim Cook,7,3,0,4,3,Apple
+2025-11-02,Tim Gerend,7,3,0,2,5,Northwestern Mutual
+2025-11-02,Tim Go,9,5,0,3,6,HF Sinclair
+2025-11-02,Tim Gokey,10,5,0,4,6,Broadridge Financial Solutions
+2025-11-02,Tim Hingtgen,10,2,1,7,2,Community Health Systems
+2025-11-02,Tim Larson,9,3,0,0,9,Skyline Champion
+2025-11-02,Tim O Shaughnessy,10,4,0,6,4,Graham Holdings Company
+2025-11-02,Timothy Archer,8,2,0,5,3,Lam Research
+2025-11-02,Timothy C Oliver,9,5,0,4,5,NCR Atleos
+2025-11-02,Timothy Cawley,9,3,0,6,3,Consolidated Edison
+2025-11-02,Timothy Cofer,9,4,0,3,6,Keurig Dr Pepper
+2025-11-02,Timothy J Donahue,9,4,0,4,5,Crown Holdings
+2025-11-02,Timothy J McGrath,10,3,0,6,4,PC Connection Inc
+2025-11-02,Timothy John Fitzgerald,9,4,0,4,5,Middleby
+2025-11-02,Timothy Knavish,10,3,0,5,5,PPG Industries
+2025-11-02,Timothy M Sweeney,10,3,0,1,9,Liberty Mutual Insurance
+2025-11-02,Timothy NeCastro,10,4,0,5,5,Erie Insurance
+2025-11-02,Timothy P Boyle,8,1,0,6,2,Columbia Sportswear
+2025-11-02,Timothy S Crane,10,5,0,5,5,Wintrust Financial
+2025-11-02,Timothy Spence,8,4,0,4,4,Fifth Third Bancorp
+2025-11-02,Toby Rice,8,5,0,1,7,EQT
+2025-11-02,Tod Carpenter,9,3,0,6,3,Donaldson Company
+2025-11-02,Todd Kelsey,10,3,0,4,6,Plexus Corp
+2025-11-02,Todd Schneider,9,4,0,3,6,Cintas
+2025-11-02,Todd Vasos,10,3,1,5,4,Dollar General
+2025-11-02,Tom Leighton,8,4,0,4,4,Akamai Technologies
+2025-11-02,Toni Townes-Whitley,8,2,0,5,3,Science Applications International
+2025-11-02,Tony Cheng,10,5,0,5,5,Reinsurance Group of America
+2025-11-02,Tony Helton,9,4,0,4,5,Medical Mutual of Ohio
+2025-11-02,Tony R Thene,10,5,0,5,5,Carpenter Technology
+2025-11-02,Tony Sarsam,7,3,0,4,3,SpartanNash
+2025-11-02,Tony Spring,8,4,1,1,6,Macys
+2025-11-02,Tony Xu,8,4,0,4,4,DoorDash
+2025-11-02,Tricia Griffith,9,4,1,4,4,Progressive Insurance
+2025-11-02,Troy Rudd,10,6,0,4,6,AECOM
+2025-11-02,Udit Batra,8,2,0,6,2,Waters Corporation
+2025-11-02,Varun Krishna,8,3,0,4,4,Rocket Companies
+2025-11-02,Vicente Reynal,10,3,0,7,3,Ingersoll Rand
+2025-11-02,Vicki Hollub,8,3,0,4,4,Occidental Petroleum
+2025-11-02,Vimal Kapur,7,5,0,1,6,Honeywell
+2025-11-02,Vincent Pilette,8,2,0,6,2,Gen Digital
+2025-11-02,Vincent Roche,8,3,0,5,3,Analog Devices
+2025-11-02,Vincent Sorgi,10,3,0,7,3,PPL Corporation
+2025-11-02,W Anthony Will,10,6,0,4,6,CF Industries
+2025-11-02,W Bradley Southern,10,5,0,4,6,Louisiana-Pacific Corporation
+2025-11-02,Wade Davis,9,4,1,4,4,TelevisaUnivision
+2025-11-02,Walker Martin,10,4,0,6,4,Sempra
+2025-11-02,Walter C. D. Carlson,10,4,0,5,5,Telephone & Data Systems
+2025-11-02,Warren Buffett,9,2,0,6,3,Berkshire Hathaway
+2025-11-02,Wendell Weeks,8,3,0,4,4,Corning
+2025-11-02,William Andrew Hendricks Jr,10,3,0,3,7,Patterson-UTI Energy
+2025-11-02,William C Stone,10,4,0,5,5,SS&C Technologies
+2025-11-02,William Demchak,9,3,0,4,5,PNC Financial Services
+2025-11-02,William E Waltz,9,4,0,5,4,Atkore
+2025-11-02,William Fehrman,8,5,0,3,5,American Electric Power
+2025-11-02,William Gifford,10,4,0,6,4,Altria
+2025-11-02,William H Rogers Jr,10,3,1,6,3,Truist Financial
+2025-11-02,William Hornbuckle,9,4,2,1,6,MGM Resorts International
+2025-11-02,William J Christensen,10,5,0,5,5,JELD-WEN Holding
+2025-11-02,William Krueger,10,3,0,5,5,The Andersons Inc
+2025-11-02,William L Meaney,10,4,0,5,5,Iron Mountain
+2025-11-02,William M Brown,10,5,0,4,6,3M Company
+2025-11-02,William McDermott,9,7,0,2,7,ServiceNow
+2025-11-02,William Monteleone,10,4,0,6,4,Par Pacific
+2025-11-02,William Nash,10,4,0,6,4,CarMax
+2025-11-02,William Newlands,8,2,0,6,2,Constellation Brands
+2025-11-02,William Oplinger,8,5,0,3,5,Alcoa Corporation
+2025-11-02,William Stengel II,10,2,0,8,2,Genuine Parts
+2025-11-02,William T Dillard II,9,2,0,5,4,Dillards
+2025-11-02,Willie Chiang,10,2,0,6,4,Plains GP
+2025-11-02,Winnie Park,10,5,0,5,5,Five Below
+2025-11-02,Ynon Kreiz,7,4,0,3,4,Mattel
