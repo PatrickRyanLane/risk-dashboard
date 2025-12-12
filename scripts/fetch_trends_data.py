@@ -1,329 +1,259 @@
+#!/usr/bin/env python3
 """
-Fetch Google Trends search volume data for companies in the roster.
-Retrieves relative search interest over the past 30 days to align with stock data.
-Supports batched execution to avoid rate limits.
-
-Usage:
-  # Run specific batch (1-indexed)
-  python fetch_trends_data.py --batch 1 --batch-size 300
-  
-  # Run all companies (no batching)
-  python fetch_trends_data.py
-  
-  # Merge batch files into final output
-  python fetch_trends_data.py --merge
+Fetch Google Trends data for companies in the roster and save to Cloud Storage
+Updated to write to Google Cloud Storage
 """
 
 from pytrends.request import TrendReq
 import pandas as pd
 from datetime import datetime, timedelta
 import time
-from pathlib import Path
-import random
 import argparse
+import sys
+from pathlib import Path
 
-# Suppress the pandas FutureWarning from pytrends
-import warnings
-warnings.filterwarnings('ignore', category=FutureWarning)
-pd.set_option('future.no_silent_downcasting', True)
+# Add parent directory to path to import storage_utils
+sys.path.append(str(Path(__file__).parent.parent))
+from storage_utils import CloudStorageManager
 
-# Set up paths
-SCRIPT_DIR = Path(__file__).parent
-PROJECT_ROOT = SCRIPT_DIR.parent
-ROSTER_PATH = PROJECT_ROOT / 'rosters' / 'main-roster.csv'
-STOCK_DATA_DIR = PROJECT_ROOT / 'data' / 'stock_prices'
-OUTPUT_DIR = PROJECT_ROOT / 'data' / 'trends_data'
 
-# Rate limit settings
-MIN_DELAY = 2.0
-MAX_DELAY = 4.0
-RETRY_DELAY = 10.0
-MAX_RETRIES = 2
-
-# Batch settings
-DEFAULT_BATCH_SIZE = 300
-
-def merge_batch_files():
+def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
     """
-    Merge all batch files from today into a single trends data file.
-    """
-    today = datetime.now().strftime('%Y-%m-%d')
-    batch_files = sorted(OUTPUT_DIR.glob(f'{today}-trends-data-batch*.csv'))
-    
-    if not batch_files:
-        print(f"❌ No batch files found for {today}")
-        return None
-    
-    print(f"📦 Merging {len(batch_files)} batch files...")
-    
-    all_data = []
-    for batch_file in batch_files:
-        df = pd.read_csv(batch_file)
-        all_data.append(df)
-        print(f"  ✓ Loaded {batch_file.name}: {len(df)} companies")
-    
-    # Combine all batches
-    merged_df = pd.concat(all_data, ignore_index=True)
-    
-    # Remove duplicates (keep first occurrence)
-    merged_df = merged_df.drop_duplicates(subset=['company'], keep='first')
-    
-    # Save merged file
-    output_file = OUTPUT_DIR / f'{today}-trends-data.csv'
-    merged_df.to_csv(output_file, index=False)
-    
-    print(f"\n✓ Merged data saved to {output_file}")
-    print(f"  Total companies: {len(merged_df)}")
-    print(f"  Successfully fetched: {len(merged_df[merged_df['trends_history'] != ''])}")
-    
-    return merged_df
-
-def fetch_trends_data(batch_num=None, batch_size=DEFAULT_BATCH_SIZE):
-    """
-    Fetch Google Trends data for companies.
+    Load company roster from Cloud Storage or local file
     
     Args:
-        batch_num: Batch number (1-indexed). If None, fetch all companies.
-        batch_size: Number of companies per batch.
+        storage: CloudStorageManager instance (optional)
+        roster_path: Path to roster file
+    
+    Returns:
+        DataFrame with company information
     """
-    print("Loading roster...")
-    roster_df = pd.read_csv(ROSTER_PATH)
-    
-    # Load the most recent stock data
-    stock_files = sorted(STOCK_DATA_DIR.glob('*-stock-data.csv'))
-    if not stock_files:
-        print("❌ No stock data files found. Please run fetch_stock_data.py first.")
-        return None
-    
-    latest_stock_file = stock_files[-1]
-    print(f"Using dates from: {latest_stock_file.name}")
-    stock_df = pd.read_csv(latest_stock_file)
-    
-    # Get unique companies from stock data
-    all_companies = stock_df['company'].unique().tolist()
-    total_companies = len(all_companies)
-    
-    # Calculate batch range
-    if batch_num is not None:
-        start_idx = (batch_num - 1) * batch_size
-        end_idx = min(start_idx + batch_size, total_companies)
-        companies = all_companies[start_idx:end_idx]
+    try:
+        if storage and storage.file_exists(roster_path):
+            print(f"📋 Loading roster from Cloud Storage: {roster_path}")
+            df = storage.read_csv(roster_path)
+        else:
+            print(f"📋 Loading roster from local file: {roster_path}")
+            df = pd.read_csv(roster_path, encoding='utf-8-sig')
         
-        print(f"\n📊 BATCH {batch_num}")
-        print(f"   Processing companies {start_idx + 1}-{end_idx} of {total_companies}")
-        print(f"   ({len(companies)} companies in this batch)")
-    else:
-        companies = all_companies
-        print(f"Found {len(companies)} companies to fetch trends for (no batching)")
+        # Normalize column names
+        df.columns = [c.strip().lower() for c in df.columns]
+        
+        # Clean up data
+        df['company'] = df['company'].astype(str).str.strip()
+        
+        # Filter out invalid rows
+        df = df[(df['company'] != '') & (df['company'] != 'nan')]
+        
+        print(f"✅ Loaded {len(df)} companies from roster")
+        return df
+        
+    except Exception as e:
+        print(f"❌ Error loading roster: {e}")
+        return pd.DataFrame()
+
+
+def fetch_trends_for_company(company_name, pytrends, days_back=30):
+    """
+    Fetch Google Trends data for a single company
+    
+    Args:
+        company_name: Name of the company
+        pytrends: TrendReq instance
+        days_back: Number of days of historical data
+    
+    Returns:
+        dict with trends data or None if failed
+    """
+    try:
+        # Build payload
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_back)
+        timeframe = f"{start_date.strftime('%Y-%m-%d')} {end_date.strftime('%Y-%m-%d')}"
+        
+        pytrends.build_payload(
+            kw_list=[company_name],
+            timeframe=timeframe,
+            geo='US'
+        )
+        
+        # Get interest over time
+        trends_df = pytrends.interest_over_time()
+        
+        if trends_df.empty or company_name not in trends_df.columns:
+            print(f"  ⚠️  {company_name}: No trends data available")
+            return None
+        
+        # Extract data
+        trends_values = trends_df[company_name].values
+        trends_dates = [date.strftime('%Y-%m-%d') for date in trends_df.index]
+        
+        # Calculate statistics
+        avg_interest = trends_values.mean()
+        max_interest = trends_values.max()
+        current_interest = trends_values[-1] if len(trends_values) > 0 else 0
+        
+        result = {
+            'company': company_name,
+            'trends_history': '|'.join([str(int(val)) for val in trends_values]),
+            'date_history': '|'.join(trends_dates),
+            'average_interest': round(avg_interest, 2),
+            'max_interest': int(max_interest),
+            'current_interest': int(current_interest),
+            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        print(f"  ✅ {company_name}: Current={current_interest}, Avg={avg_interest:.1f}, Max={max_interest}")
+        return result
+        
+    except Exception as e:
+        print(f"  ❌ {company_name}: {str(e)}")
+        return None
+
+
+def fetch_all_trends_data(storage=None, roster_path='rosters/main-roster.csv', 
+                          output_dir='data/trends_data', batch_size=5):
+    """
+    Fetch Google Trends data for all companies and save to Cloud Storage or local file
+    
+    Args:
+        storage: CloudStorageManager instance (optional)
+        roster_path: Path to roster CSV
+        output_dir: Directory to save trends data
+        batch_size: Number of companies to process before pausing (rate limiting)
+    """
+    print("\n" + "="*60)
+    print("🔍 FETCHING GOOGLE TRENDS DATA")
+    print("="*60 + "\n")
+    
+    # Load roster
+    roster_df = load_roster(storage, roster_path)
+    
+    if roster_df.empty:
+        print("❌ No companies in roster, exiting")
+        return
     
     # Initialize pytrends
     pytrends = TrendReq(hl='en-US', tz=360)
     
+    # Fetch trends data for each company
     results = []
-    failed_companies = []
-    consecutive_rate_limits = 0
-    MAX_CONSECUTIVE_RATE_LIMITS = 5
+    total = len(roster_df)
     
-    for idx, company in enumerate(companies):
-        # Early exit if we're clearly rate limited
-        if consecutive_rate_limits >= MAX_CONSECUTIVE_RATE_LIMITS:
-            print(f"\n⚠️  Hit {MAX_CONSECUTIVE_RATE_LIMITS} consecutive rate limits. Stopping to avoid further blocking.")
-            print(f"   Collected data for {len([r for r in results if r['trends_history']])} companies.")
-            
-            # Add empty results for remaining companies in this batch
-            for remaining_company in companies[idx:]:
-                stock_row = stock_df[stock_df['company'] == remaining_company].iloc[0]
-                results.append({
-                    'company': remaining_company,
-                    'trends_history': '',
-                    'date_history': stock_row['date_history'],
-                    'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'avg_interest': 0
-                })
-            break
+    for idx, row in roster_df.iterrows():
+        company = row['company']
         
-        retry_count = 0
-        success = False
+        print(f"[{idx+1}/{total}] {company}")
         
-        while retry_count <= MAX_RETRIES and not success:
-            try:
-                if retry_count > 0:
-                    print(f"  🔄 Retry {retry_count}/{MAX_RETRIES} for {company}...")
-                else:
-                    progress = f"[{idx + 1}/{len(companies)}]"
-                    print(f"{progress} Fetching trends for {company}...")
-                
-                # Get the date range from the stock data
-                stock_row = stock_df[stock_df['company'] == company].iloc[0]
-                date_history = stock_row['date_history'].split('|')
-                
-                # Use the date range from stock data
-                start_date = date_history[0]
-                end_date = date_history[-1]
-                timeframe = f"{start_date} {end_date}"
-                
-                search_terms = [company]
-                
-                # Re-initialize pytrends for each request
-                pytrends = TrendReq(hl='en-US', tz=360, timeout=(10, 25))
-                pytrends.build_payload(search_terms, timeframe=timeframe, geo='US')
-                
-                # Get interest over time
-                interest_df = pytrends.interest_over_time()
-                
-                if interest_df.empty or company not in interest_df.columns:
-                    print(f"  ⚠️  No trends data available for {company}")
-                    failed_companies.append({'company': company, 'reason': 'No data'})
-                    
-                    results.append({
-                        'company': company,
-                        'trends_history': '',
-                        'date_history': stock_row['date_history'],
-                        'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'avg_interest': 0
-                    })
-                    success = True
-                    continue
-                
-                # Get the search interest values
-                interest_values = interest_df[company].tolist()
-                trends_dates = interest_df.index.strftime('%Y-%m-%d').tolist()
-                trends_map = dict(zip(trends_dates, interest_values))
-                
-                # Align with stock dates
-                aligned_trends = []
-                for stock_date in date_history:
-                    if stock_date in trends_map:
-                        aligned_trends.append(trends_map[stock_date])
-                    else:
-                        earlier_values = [v for d, v in trends_map.items() if d <= stock_date]
-                        if earlier_values:
-                            aligned_trends.append(earlier_values[-1])
-                        else:
-                            aligned_trends.append(list(trends_map.values())[0] if trends_map else 0)
-                
-                avg_interest = sum(aligned_trends) / len(aligned_trends) if aligned_trends else 0
-                
-                results.append({
-                    'company': company,
-                    'trends_history': '|'.join(map(str, [int(v) for v in aligned_trends])),
-                    'date_history': stock_row['date_history'],
-                    'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'avg_interest': round(avg_interest, 1)
-                })
-                
-                print(f"  ✓ {company}: Avg interest: {avg_interest:.1f}/100")
-                
-                success = True
-                consecutive_rate_limits = 0
-                
-                # Add delay
-                delay = random.uniform(MIN_DELAY, MAX_DELAY)
-                time.sleep(delay)
-                
-            except Exception as e:
-                error_msg = str(e)
-                
-                if '429' in error_msg or 'rate limit' in error_msg.lower():
-                    retry_count += 1
-                    consecutive_rate_limits += 1
-                    
-                    if retry_count <= MAX_RETRIES:
-                        backoff_delay = RETRY_DELAY * (2 ** (retry_count - 1))
-                        print(f"  ⚠️  Rate limited (429). Waiting {backoff_delay:.0f}s before retry...")
-                        time.sleep(backoff_delay)
-                    else:
-                        print(f"  ✗ Rate limit exceeded for {company}")
-                        failed_companies.append({'company': company, 'reason': 'Rate limit (429)'})
-                        
-                        stock_row = stock_df[stock_df['company'] == company].iloc[0]
-                        results.append({
-                            'company': company,
-                            'trends_history': '',
-                            'date_history': stock_row['date_history'],
-                            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'avg_interest': 0
-                        })
-                        time.sleep(RETRY_DELAY)
-                else:
-                    print(f"  ✗ Error fetching trends for {company}: {error_msg}")
-                    failed_companies.append({'company': company, 'reason': error_msg})
-                    
-                    stock_row = stock_df[stock_df['company'] == company].iloc[0]
-                    results.append({
-                        'company': company,
-                        'trends_history': '',
-                        'date_history': stock_row['date_history'],
-                        'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'avg_interest': 0
-                    })
-                    
-                    success = True
-                    consecutive_rate_limits = 0
-                    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+        trends_data = fetch_trends_for_company(company, pytrends, days_back=30)
+        
+        if trends_data:
+            results.append(trends_data)
+        
+        # Rate limiting: pause every batch_size requests
+        if (idx + 1) % batch_size == 0 and idx + 1 < total:
+            print(f"\n⏸️  Pausing for 30 seconds (rate limiting)...\n")
+            time.sleep(30)
+        else:
+            # Small delay between requests
+            time.sleep(2)
     
     # Create DataFrame
-    trends_df = pd.DataFrame(results)
+    if not results:
+        print("\n❌ No trends data collected")
+        return
     
-    # Save results
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    results_df = pd.DataFrame(results)
+    
+    # Save to Cloud Storage or local file
     today = datetime.now().strftime('%Y-%m-%d')
+    output_path = f"{output_dir}/{today}-trends-data.csv"
     
-    if batch_num is not None:
-        output_file = OUTPUT_DIR / f'{today}-trends-data-batch{batch_num}.csv'
-    else:
-        output_file = OUTPUT_DIR / f'{today}-trends-data.csv'
-    
-    trends_df.to_csv(output_file, index=False)
-    
-    # Calculate statistics
-    total = len(results)
-    successful = len([r for r in results if r['trends_history']])
-    rate_limited = len([f for f in failed_companies if '429' in str(f.get('reason', ''))])
-    
-    print(f"\n✓ Trends data saved to {output_file}")
-    print(f"  Total companies: {total}")
-    print(f"  Successfully fetched: {successful}")
-    print(f"  Rate limited (429): {rate_limited}")
-    
-    if batch_num is not None:
-        print(f"\n💡 Run with --merge after all batches complete to create final file")
-    
-    # Save failed companies
-    if failed_companies:
-        failed_df = pd.DataFrame(failed_companies)
-        if batch_num is not None:
-            failed_file = OUTPUT_DIR / f'{today}-failed-trends-batch{batch_num}.csv'
+    try:
+        if storage:
+            # Write to Cloud Storage
+            storage.write_csv(results_df, output_path, index=False)
+            print(f"\n✅ Saved to Cloud Storage: gs://{storage.bucket_name}/{output_path}")
+            
+            # Get public URL
+            public_url = storage.get_public_url(output_path)
+            print(f"🌐 Public URL: {public_url}")
         else:
-            failed_file = OUTPUT_DIR / f'{today}-failed-trends.csv'
-        failed_df.to_csv(failed_file, index=False)
-        print(f"  Failed companies saved to {failed_file}")
-    
-    return trends_df
+            # Write to local file
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            results_df.to_csv(output_path, index=False)
+            print(f"\n✅ Saved locally: {output_path}")
+        
+        # Print summary
+        print(f"\n📊 Summary:")
+        print(f"   Total companies: {len(roster_df)}")
+        print(f"   Successful: {len(results)}")
+        print(f"   Failed: {len(roster_df) - len(results)}")
+        
+        # Print some statistics
+        avg_interest = results_df['average_interest'].mean()
+        high_interest = (results_df['current_interest'] >= 50).sum()
+        
+        print(f"\n🔍 Trends Summary:")
+        print(f"   Average interest: {avg_interest:.1f}")
+        print(f"   High interest (≥50): {high_interest}")
+        
+    except Exception as e:
+        print(f"\n❌ Error saving data: {e}")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Fetch Google Trends data for companies')
-    parser.add_argument('--batch', type=int, help='Batch number (1-indexed)')
-    parser.add_argument('--batch-size', type=int, default=DEFAULT_BATCH_SIZE, 
-                        help=f'Number of companies per batch (default: {DEFAULT_BATCH_SIZE})')
-    parser.add_argument('--merge', action='store_true', 
-                        help='Merge batch files into final output')
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Fetch Google Trends data and save to Cloud Storage or local file'
+    )
+    parser.add_argument(
+        '--bucket',
+        type=str,
+        default='risk-dashboard',
+        help='GCS bucket name (default: risk-dashboard)'
+    )
+    parser.add_argument(
+        '--local',
+        action='store_true',
+        help='Use local file storage instead of GCS'
+    )
+    parser.add_argument(
+        '--roster',
+        type=str,
+        default='rosters/main-roster.csv',
+        help='Path to roster file (default: rosters/main-roster.csv)'
+    )
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        default='data/trends_data',
+        help='Output directory path (default: data/trends_data)'
+    )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=5,
+        help='Number of companies to process before pausing (default: 5)'
+    )
     
     args = parser.parse_args()
     
-    print("=" * 60)
-    print("Google Trends Data Fetcher (Batched)")
-    print("=" * 60)
-    
-    if args.merge:
-        merge_batch_files()
+    # Initialize storage (GCS by default, local with --local flag)
+    storage = None
+    if args.local:
+        print("📁 Using local file storage (--local flag)")
     else:
-        if args.batch:
-            print(f"\n📦 Running BATCH {args.batch} (size: {args.batch_size})")
-        else:
-            print("\n⚠️  Running without batching (all companies)")
-        
-        print("\n⚠️  NOTE: Google Trends has rate limits.")
-        print("Expect ~10-20 minutes per 300-company batch.\n")
-        
-        fetch_trends_data(batch_num=args.batch, batch_size=args.batch_size)
+        print(f"☁️  Using Cloud Storage bucket: {args.bucket}")
+        storage = CloudStorageManager(args.bucket)
+    
+    # Fetch and save trends data
+    fetch_all_trends_data(
+        storage=storage,
+        roster_path=args.roster,
+        output_dir=args.output_dir,
+        batch_size=args.batch_size
+    )
+
+
+if __name__ == '__main__':
+    main()

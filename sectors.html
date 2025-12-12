@@ -8,6 +8,15 @@
 <!-- Chart.js + PapaParse -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+// CLOUD STORAGE CONFIGURATION - ADD THIS AT TOP
+const BUCKET_NAME = 'risk-dashboard';
+
+function getDataUrl(path) {
+  return `https://storage.googleapis.com/${BUCKET_NAME}/${path}`;
+}
+// END OF CLOUD STORAGE CONFIG
+</script>
 
 <style>
 :root {
@@ -251,9 +260,9 @@ tbody tr td:last-child{border-right:1px solid #0f1831;border-radius:0 10px 10px 
 
 <script>
 /* ================= Config & Runtime ================= */
-const COUNTS_CANDIDATES = [ 'data/daily_counts/brand-articles-daily-counts-chart.csv' ];
-const SERPS_DAILY_CSV   = 'data/daily_counts/brand-serps-daily-counts-chart.csv';
-const ROSTER_CANDIDATES = [ 'rosters/main-roster.csv' ];
+const COUNTS_CANDIDATES   = [getDataUrl('data/daily_counts/brand-articles-daily-counts-chart.csv')];
+const SERPS_DAILY_CSV     = getDataUrl('data/daily_counts/brand-serps-daily-counts-chart.csv');
+const ROSTER_CANDIDATES   = [getDataUrl('rosters/main-roster.csv')];
 
 let allCountsRows = [];
 let serpsDaily = [];

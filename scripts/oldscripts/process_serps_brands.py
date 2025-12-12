@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
-Process daily BRAND SERP data.
-Updated to read from and write to Google Cloud Storage.
+Process daily BRAND SERP data:
+
+- Fetch raw SERPs from S3: https://tk-public-data.s3.us-east-1.amazonaws.com/serp_files/{date}-brand-serps.csv
+- Classify sentiment (VADER) using ONLY the page TITLE
+- Classify CONTROL using three rules:
+    (1) Always-controlled platforms (and their subdomains):
+        facebook.com, instagram.com, twitter.com, x.com, linkedin.com, play.google.com, apps.apple.com
+    (2) Any domain (or its subdomains) present in rosters/main-roster.csv (Websites column)
+        Multiple URLs can be separated by pipe (|) character
+    (3) Domain contains the normalized brand token
+
+- If CONTROLLED and FORCE_POSITIVE_IF_CONTROLLED = True -> sentiment is forced to "positive"
 
 Outputs:
   1) Row-level processed SERPs:       data/processed_serps/{date}-brand-serps-modal.csv
@@ -14,26 +24,26 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import os, sys
+import os
 from datetime import datetime
 from typing import Dict, Tuple, Set
 from urllib.parse import urlparse
-from pathlib import Path
 
 import pandas as pd
 import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
-from storage_utils import CloudStorageManager
-
+# -----------------------
 # Config / constants
+# -----------------------
 S3_URL_TEMPLATE = (
     "https://tk-public-data.s3.us-east-1.amazonaws.com/serp_files/{date}-brand-serps.csv"
 )
 
+# Updated to use consolidated roster
 MAIN_ROSTER_PATH = "rosters/main-roster.csv"
+
+# Updated paths - consolidated in data/processed_serps
 OUT_ROWS_DIR = "data/processed_serps"
 OUT_DAILY_DIR = "data/processed_serps"
 OUT_ROLLUP = "data/daily_counts/brand-serps-daily-counts-chart.csv"
@@ -50,15 +60,12 @@ ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
     "apps.apple.com",
 }
 
-# Argument parsing
+# -----------------------
+# Argument parsing / dates
+# -----------------------
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Process daily brand SERPs.")
     ap.add_argument("--date", help="YYYY-MM-DD (defaults to today)", default=None)
-    ap.add_argument("--bucket", type=str, default="risk-dashboard",
-                   help="GCS bucket name (default: risk-dashboard)")
-    ap.add_argument("--local", action="store_true",
-                   help="Use local file storage instead of GCS")
-    ap.add_argument("--roster", default=MAIN_ROSTER_PATH, help="Path to roster file")
     return ap.parse_args()
 
 def get_target_date(arg_date: str | None) -> str:
@@ -70,16 +77,26 @@ def get_target_date(arg_date: str | None) -> str:
             pass
     return datetime.utcnow().strftime("%Y-%m-%d")
 
+# -----------------------
+# Files / I/O helpers
+# -----------------------
+def ensure_dirs() -> None:
+    os.makedirs(OUT_ROWS_DIR, exist_ok=True)
+    os.makedirs(OUT_DAILY_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(OUT_ROLLUP), exist_ok=True)
+
 def fetch_csv_from_s3(url: str) -> pd.DataFrame | None:
     try:
         resp = requests.get(url, timeout=45)
         resp.raise_for_status()
         return pd.read_csv(io.StringIO(resp.text))
     except Exception as e:
-        print(f"[WARN] Could not fetch {url} – {e}")
+        print(f"[WARN] Could not fetch {url} — {e}")
         return None
 
+# -----------------------
 # Domain normalization
+# -----------------------
 def _hostname(url: str) -> str:
     try:
         host = (urlparse(url).hostname or "").lower()
@@ -90,28 +107,29 @@ def _hostname(url: str) -> str:
 def _norm_token(s: str) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
-def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[str]]:
+def _norm_domain_for_name_match(host: str) -> str:
+    return "".join(ch for ch in (host or "") if ch.isalnum())
+
+# -----------------------
+# Roster loading
+# -----------------------
+def load_roster_domains(path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[str]]:
     """
     Load controlled domains from roster, keyed by company name.
+    Supports pipe-separated URLs in a single cell: 'domain1.com|domain2.com|domain3.com'
+    Also handles single domains without pipes.
+    
     Returns: Dict[company_name, Set[domain_names]]
+    This ensures each company only has its own domains marked as controlled.
     """
     company_domains: Dict[str, Set[str]] = {}
 
+    if not os.path.exists(path):
+        print(f"[WARN] roster not found at {path}; proceeding with empty controlled set")
+        return company_domains
+
     try:
-        if storage:
-            # Read from Cloud Storage
-            if not storage.file_exists(path):
-                print(f"[WARN] Roster not found in Cloud Storage at {path}")
-                return company_domains
-            df = storage.read_csv(path)
-        else:
-            # Read from local file
-            roster_file = Path(path)
-            if not roster_file.exists():
-                print(f"[WARN] Roster not found at {roster_file}")
-                return company_domains
-            df = pd.read_csv(roster_file, encoding="utf-8-sig")
-        
+        df = pd.read_csv(path, encoding="utf-8-sig")
         cols = {c.strip().lower(): c for c in df.columns}
         
         # Find company and website columns
@@ -128,10 +146,10 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
                 break
         
         if not company_col or not website_col:
-            print(f"[WARN] Missing company or website column in roster")
+            print(f"[WARN] Missing company or website column in {path}")
             return company_domains
         
-        print(f"[INFO] Loading controlled domains from roster...")
+        print(f"[INFO] Loading controlled domains from {path} (company: {company_col}, websites: {website_col})...")
         
         for idx, row in df.iterrows():
             company = str(row[company_col]).strip()
@@ -146,10 +164,12 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
             if not val or val.lower() == "nan":
                 continue
             
+            # Initialize set for this company if not exists
             if company not in company_domains:
                 company_domains[company] = set()
             
-            # Split on pipe character
+            # Split on pipe character to support multiple URLs per company
+            # This works for both "apple.com" (single) and "apple.com|support.apple.com" (multiple)
             urls = val.split("|")
             
             for url in urls:
@@ -157,48 +177,67 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
                 if not url or url.lower() == "nan":
                     continue
                 
+                # Add http/https prefix if missing for URL parsing
                 if not url.startswith(("http://", "https://")):
                     url = f"http://{url}"
                 
                 host = _hostname(url)
                 if host and "." in host:
                     company_domains[company].add(host)
+                    print(f"  ✓ {company}: {host}")
         
         total_domains = sum(len(domains) for domains in company_domains.values())
         print(f"[OK] Loaded {len(company_domains)} companies with {total_domains} total controlled domains")
                         
     except Exception as e:
-        print(f"[WARN] Failed reading roster: {e}")
+        print(f"[WARN] failed reading roster at {path}: {e}")
 
     return company_domains
 
+# -----------------------
+# Control classification
+# -----------------------
 def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
-    """Classify if a URL is controlled by a company"""
+    """
+    Classify if a URL is controlled by a company using three rules:
+    (1) Always-controlled platforms (social media, etc.)
+    (2) Domains specific to this company from the roster
+    (3) Domain contains the company's brand token
+    """
     host = _hostname(url)
     if not host:
         return False
 
-    # Rule 1: Always-controlled platforms
+    # Rule 1: Always-controlled social platforms
     for good in ALWAYS_CONTROLLED_DOMAINS:
         if host == good or host.endswith("." + good):
             return True
 
-    # Rule 2: Company-specific roster domains
+    # Rule 2: Company-specific roster domains (ONLY this company's domains)
     company_specific_domains = company_domains.get(company, set())
     for rd in company_specific_domains:
         if host == rd or host.endswith("." + rd):
             return True
 
-    # Rule 3: Domain contains the brand token
+    # Rule 3: Domain contains the brand token (proper subdomain matching)
     brand_token = _norm_token(company)
     if brand_token:
+        # Split hostname into parts and normalize each part
+        # For "news.apple.com": parts are ["news", "apple", "com"]
+        # For "apple.com": parts are ["apple", "com"]
         host_parts = host.split('.')
         normalized_parts = [_norm_token(part) for part in host_parts if part]
-        if brand_token in normalized_parts[:-1]:
+        
+        # Check if brand_token matches any part of the domain (except TLD)
+        # This prevents false positives like "pineapple.com" matching "apple"
+        if brand_token in normalized_parts[:-1]:  # Exclude the TLD (last part)
             return True
 
     return False
 
+# -----------------------
+# Sentiment
+# -----------------------
 def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[float, str]:
     s = analyzer.polarity_scores(title or "")
     c = s.get("compound", 0.0)
@@ -210,10 +249,14 @@ def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tu
         lab = "neutral"
     return c, lab
 
-def process_for_date(storage, target_date: str, roster_path: str) -> None:
+# -----------------------
+# Main processing
+# -----------------------
+def process_for_date(target_date: str) -> None:
     print(f"[INFO] Processing brand SERPs for {target_date} …")
+    ensure_dirs()
 
-    company_domains = load_roster_domains(storage, roster_path)
+    company_domains = load_roster_domains()
 
     url = S3_URL_TEMPLATE.format(date=target_date)
     raw = fetch_csv_from_s3(url)
@@ -266,20 +309,9 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         return
 
     rows_df = pd.DataFrame(processed_rows)
-    row_out_path = f"{OUT_ROWS_DIR}/{target_date}-brand-serps-modal.csv"
-    
-    try:
-        if storage:
-            storage.write_csv(rows_df, row_out_path, index=False)
-            print(f"[OK] Wrote row-level SERPs to Cloud Storage: {row_out_path}")
-        else:
-            out_file = Path(row_out_path)
-            out_file.parent.mkdir(parents=True, exist_ok=True)
-            rows_df.to_csv(out_file, index=False)
-            print(f"[OK] Wrote row-level SERPs: {out_file}")
-    except Exception as e:
-        print(f"[ERROR] Failed to write row-level SERPs: {e}")
-        return
+    row_out_path = os.path.join(OUT_ROWS_DIR, f"{target_date}-brand-serps-modal.csv")
+    rows_df.to_csv(row_out_path, index=False)
+    print(f"[OK] Wrote row-level SERPs → {row_out_path}")
 
     agg = (
         rows_df.groupby("company", as_index=False)
@@ -293,75 +325,34 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     )
     agg.insert(0, "date", target_date)
 
-    daily_out_path = f"{OUT_DAILY_DIR}/{target_date}-brand-serps-table.csv"
-    
-    try:
-        if storage:
-            storage.write_csv(agg, daily_out_path, index=False)
-            print(f"[OK] Wrote daily aggregate to Cloud Storage: {daily_out_path}")
-        else:
-            out_file = Path(daily_out_path)
-            out_file.parent.mkdir(parents=True, exist_ok=True)
-            agg.to_csv(out_file, index=False)
-            print(f"[OK] Wrote daily aggregate: {out_file}")
-    except Exception as e:
-        print(f"[ERROR] Failed to write daily aggregate: {e}")
-        return
+    daily_out_path = os.path.join(OUT_DAILY_DIR, f"{target_date}-brand-serps-table.csv")
+    agg.to_csv(daily_out_path, index=False)
+    print(f"[OK] Wrote daily aggregate → {daily_out_path}")
 
-    # Update rolling index
-    try:
-        if storage:
-            if storage.file_exists(OUT_ROLLUP):
-                roll = storage.read_csv(OUT_ROLLUP)
-                roll = roll[roll["date"] != target_date]
-                roll = pd.concat([roll, agg], ignore_index=True)
-            else:
-                roll = agg.copy()
-        else:
-            rollup_file = Path(OUT_ROLLUP)
-            if rollup_file.exists():
-                roll = pd.read_csv(rollup_file)
-                roll = roll[roll["date"] != target_date]
-                roll = pd.concat([roll, agg], ignore_index=True)
-            else:
-                roll = agg.copy()
+    if os.path.exists(OUT_ROLLUP):
+        roll = pd.read_csv(OUT_ROLLUP)
+        roll = roll[roll["date"] != target_date]
+        roll = pd.concat([roll, agg], ignore_index=True)
+    else:
+        roll = agg.copy()
 
-        cols = [
-            "date",
-            "company",
-            "total",
-            "controlled",
-            "negative_serp",
-            "neutral_serp",
-            "positive_serp",
-        ]
-        roll = roll[cols].sort_values(["date", "company"]).reset_index(drop=True)
-        
-        if storage:
-            storage.write_csv(roll, OUT_ROLLUP, index=False)
-            print(f"[OK] Updated rolling index in Cloud Storage: {OUT_ROLLUP}")
-        else:
-            rollup_file = Path(OUT_ROLLUP)
-            rollup_file.parent.mkdir(parents=True, exist_ok=True)
-            roll.to_csv(rollup_file, index=False)
-            print(f"[OK] Updated rolling index: {rollup_file}")
-            
-    except Exception as e:
-        print(f"[ERROR] Failed to update rolling index: {e}")
+    cols = [
+        "date",
+        "company",
+        "total",
+        "controlled",
+        "negative_serp",
+        "neutral_serp",
+        "positive_serp",
+    ]
+    roll = roll[cols].sort_values(["date", "company"]).reset_index(drop=True)
+    roll.to_csv(OUT_ROLLUP, index=False)
+    print(f"[OK] Updated rolling index → {OUT_ROLLUP}")
 
 def main() -> None:
     args = parse_args()
     date_str = get_target_date(args.date)
-    
-    # Initialize storage (GCS by default, local with --local flag)
-    storage = None
-    if args.local:
-        print("📁 Using local file storage (--local flag)")
-    else:
-        print(f"☁️  Using Cloud Storage bucket: {args.bucket}")
-        storage = CloudStorageManager(args.bucket)
-    
-    process_for_date(storage, date_str, args.roster)
+    process_for_date(date_str)
 
 if __name__ == "__main__":
     main()

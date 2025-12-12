@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
 Aggregate negative article data for stock chart heatmap visualization.
-🆕 CLOUD STORAGE VERSION - Reads/writes from Google Cloud Storage
 
 UPDATED: Handles brand articles without CEO column using smart company name matching.
 Includes fuzzy matching for common company name variations.
 
-Output: gs://BUCKET_NAME/data/daily_counts/negative-articles-summary.csv
+Output: data/daily_counts/negative-articles-summary.csv
 """
 
 import argparse
@@ -14,12 +13,6 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import re
-import os
-import sys
-
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
-from storage_utils import CloudStorageManager
 
 
 def normalize_company_name(name):
@@ -53,20 +46,15 @@ def normalize_company_name(name):
     return name
 
 
-def load_roster(storage, roster_path='rosters/main-roster.csv'):
+def load_roster(roster_path='rosters/main-roster.csv'):
     """
-    🆕 Load roster from Cloud Storage and create company -> CEO mapping with fuzzy matching support.
-    
-    Args:
-        storage: CloudStorageManager instance
-        roster_path: Path in bucket to roster CSV
+    Load roster and create company -> CEO mapping with fuzzy matching support.
     
     Returns:
         tuple: (exact_mapping, normalized_mapping, all_companies)
     """
     try:
-        # 🆕 Read from Cloud Storage instead of local file
-        df = storage.read_csv(roster_path)
+        df = pd.read_csv(roster_path, encoding='utf-8-sig')
         
         # Normalize column names
         df.columns = [c.strip().lower() for c in df.columns]
@@ -108,7 +96,9 @@ def load_roster(storage, roster_path='rosters/main-roster.csv'):
 def find_ceo_for_company(company, exact_mapping, normalized_mapping):
     """
     Find CEO for a company using exact then fuzzy matching.
-    (No changes needed - this is a pure logic function)
+    
+    Returns:
+        tuple: (ceo_name, match_type) or (None, None)
     """
     if not company or company == 'nan':
         return None, None
@@ -127,32 +117,26 @@ def find_ceo_for_company(company, exact_mapping, normalized_mapping):
     if normalized in normalized_mapping:
         return normalized_mapping[normalized], 'normalized'
     
-    # Try partial match
+    # Try partial match (if company name contains roster name or vice versa)
     company_lower = company.lower()
     for roster_company, ceo in exact_mapping.items():
         roster_lower = roster_company.lower()
+        # Check if one contains the other
         if company_lower in roster_lower or roster_lower in company_lower:
+            # Make sure it's not a tiny substring match
             if len(company_lower) >= 3 and len(roster_lower) >= 3:
                 return ceo, 'partial'
     
     return None, None
 
 
-def process_ceo_articles(storage, file_path):
-    """
-    🆕 Process CEO articles file from Cloud Storage (has CEO column).
-    
-    Args:
-        storage: CloudStorageManager instance
-        file_path: Path in bucket to CSV file
-    """
-    # 🆕 Check if file exists in Cloud Storage
-    if not storage.file_exists(file_path):
+def process_ceo_articles(file_path):
+    """Process CEO articles file (has CEO column)."""
+    if not file_path.exists():
         return []
     
     try:
-        # 🆕 Read from Cloud Storage instead of local file
-        df = storage.read_csv(file_path)
+        df = pd.read_csv(file_path)
         
         if df.empty:
             return []
@@ -209,39 +193,34 @@ def process_ceo_articles(storage, file_path):
         return []
 
 
-def process_brand_articles(storage, file_path, exact_mapping, normalized_mapping):
+def process_brand_articles(file_path, exact_mapping, normalized_mapping):
     """
-    🆕 Process brand articles file from Cloud Storage (NO CEO column - look it up with fuzzy matching).
-    
-    Args:
-        storage: CloudStorageManager instance
-        file_path: Path in bucket to CSV file
-        exact_mapping: Dict of company -> CEO
-        normalized_mapping: Dict of normalized company -> CEO
+    Process brand articles file (NO CEO column - look it up with fuzzy matching).
     """
-    # 🆕 Check if file exists in Cloud Storage
-    if not storage.file_exists(file_path):
+    if not file_path.exists():
         return []
     
     try:
-        # 🆕 Read from Cloud Storage instead of local file
-        df = storage.read_csv(file_path)
+        df = pd.read_csv(file_path)
         
         if df.empty:
             return []
         
-        # Rest of the logic remains the same...
+        # Normalize column names
         df.columns = [c.lower().strip() for c in df.columns]
         
+        # Brand files have: company, title, url, source, date, sentiment
         required_cols = ['company', 'sentiment', 'title']
         for col in required_cols:
             if col not in df.columns:
                 return []
         
+        # Clean up data
         df['sentiment'] = df['sentiment'].astype(str).str.lower().str.strip()
         df['company'] = df['company'].astype(str).str.strip()
         df['title'] = df['title'].astype(str).str.strip()
         
+        # Filter for negative sentiment only
         negative = df[df['sentiment'] == 'negative']
         
         if negative.empty:
@@ -251,10 +230,12 @@ def process_brand_articles(storage, file_path, exact_mapping, normalized_mapping
         unmatched_companies = set()
         match_stats = {'exact': 0, 'case-insensitive': 0, 'normalized': 0, 'partial': 0, 'failed': 0}
         
+        # Group by company
         for company, group in negative.groupby('company'):
             if not company or company == 'nan':
                 continue
             
+            # Look up CEO from roster with fuzzy matching
             ceo, match_type = find_ceo_for_company(company, exact_mapping, normalized_mapping)
             
             if not ceo:
@@ -266,6 +247,7 @@ def process_brand_articles(storage, file_path, exact_mapping, normalized_mapping
                 
             count = len(group)
             
+            # Get top 3 headlines
             headlines = []
             for title in group['title'].head(3):
                 title_str = str(title).strip()
@@ -281,6 +263,7 @@ def process_brand_articles(storage, file_path, exact_mapping, normalized_mapping
                 'article_type': 'brand'
             })
         
+        # Report matching stats
         if match_stats['failed'] > 0:
             print(f"  ⚠️  {match_stats['failed']} companies not matched to CEOs")
             if unmatched_companies and len(unmatched_companies) <= 10:
@@ -295,36 +278,21 @@ def process_brand_articles(storage, file_path, exact_mapping, normalized_mapping
         return summary_data
     
     except Exception as e:
-        print(f"⚠️  Error processing {file_path}: {e}")
+        print(f"⚠️  Error processing {file_path.name}: {e}")
         return []
 
 
-def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv', bucket_name='risk-dashboard', use_local=False):
-    """
-    🆕 Create aggregated negative articles summary from last N days using Cloud Storage.
+def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv'):
+    """Create aggregated negative articles summary from last N days."""
+    articles_dir = Path("data/processed_articles")
+    output_file = Path("data/daily_counts/negative-articles-summary.csv")
     
-    Args:
-        days_back: Number of days to scan
-        roster_path: Path to roster in bucket
-        bucket_name: GCS bucket name (default: risk-dashboard)
-        use_local: If True, use local file storage instead of GCS
-    """
-    # Initialize storage (GCS by default, local with use_local=True)
-    if use_local:
-        print("📁 Using local file storage (--local flag)")
-        print("⚠️  Local mode not fully implemented for aggregate_negative_articles.py")
-        print("   This script is designed for Cloud Storage. Use --bucket flag.")
+    if not articles_dir.exists():
+        print(f"❌ Articles directory not found: {articles_dir}")
         return
     
-    storage = CloudStorageManager(bucket_name)
-    print(f"☁️  Connected to bucket: {storage.bucket_name}")
-    
-    # 🆕 Define paths in Cloud Storage (not local filesystem)
-    articles_prefix = "data/processed_articles/"
-    output_file = "data/daily_counts/negative-articles-summary.csv"
-    
     # Load roster for company -> CEO mapping
-    exact_mapping, normalized_mapping, all_companies = load_roster(storage, roster_path)
+    exact_mapping, normalized_mapping, all_companies = load_roster(roster_path)
     if not exact_mapping:
         print("⚠️  Warning: No roster loaded. Brand articles will be skipped.")
     
@@ -342,29 +310,27 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
     for i in range(days_back):
         date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
         
-        # 🆕 Build Cloud Storage paths
-        ceo_file = f"{articles_prefix}{date}-ceo-articles-modal.csv"
-        brand_file = f"{articles_prefix}{date}-brand-articles-modal.csv"
-        
-        # Process CEO articles
-        if storage.file_exists(ceo_file):
+        # Process CEO articles (have CEO column)
+        ceo_file = articles_dir / f"{date}-ceo-articles-modal.csv"
+        if ceo_file.exists():
             ceo_files_found += 1
-            ceo_data = process_ceo_articles(storage, ceo_file)
+            ceo_data = process_ceo_articles(ceo_file)
             for item in ceo_data:
                 item['date'] = date
                 all_summary_data.append(item)
                 ceo_articles_count += 1
         
-        # Process brand articles
-        if storage.file_exists(brand_file):
+        # Process brand articles (NO CEO column - look up from roster)
+        brand_file = articles_dir / f"{date}-brand-articles-modal.csv"
+        if brand_file.exists():
             brand_files_found += 1
-            brand_data = process_brand_articles(storage, brand_file, exact_mapping, normalized_mapping)
+            brand_data = process_brand_articles(brand_file, exact_mapping, normalized_mapping)
             for item in brand_data:
                 item['date'] = date
                 all_summary_data.append(item)
                 brand_articles_count += 1
         
-        if storage.file_exists(ceo_file) or storage.file_exists(brand_file):
+        if ceo_file.exists() or brand_file.exists():
             days_processed += 1
     
     print(f"\n📁 Files found: {ceo_files_found} CEO, {brand_files_found} brand ({days_processed} days with data)")
@@ -387,9 +353,12 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
             types = company_data['article_type'].unique()
             if len(types) > 1:
                 companies_with_both.append(company)
+                ceo_count = company_data[company_data['article_type'] == 'ceo']['negative_count'].sum()
+                brand_count = company_data[company_data['article_type'] == 'brand']['negative_count'].sum()
         
         if companies_with_both:
             print(f"✅ {len(companies_with_both)} companies have both CEO and brand negative articles!")
+            # Show a few examples
             for company in sorted(companies_with_both)[:5]:
                 company_data = summary_df[summary_df['company'] == company]
                 ceo_count = company_data[company_data['article_type'] == 'ceo']['negative_count'].sum()
@@ -404,16 +373,15 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
             'date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type'
         ])
     
-    # 🆕 Write to Cloud Storage instead of local filesystem
-    storage.write_csv(summary_df, output_file, index=False)
+    # Write to CSV
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    summary_df.to_csv(output_file, index=False)
     
-    print(f"\n✅ Created gs://{storage.bucket_name}/{output_file}")
+    print(f"\n✅ Created {output_file}")
     print(f"📊 Total rows: {len(summary_df):,}")
     
     if not summary_df.empty:
-        # 🆕 Calculate approximate size (can't get exact size from bucket easily)
-        csv_size_bytes = len(summary_df.to_csv(index=False).encode('utf-8'))
-        file_size_kb = csv_size_bytes / 1024
+        file_size_kb = output_file.stat().st_size / 1024
         print(f"📊 File size: {file_size_kb:.1f} KB")
         
         ceo_count = len(summary_df[summary_df['article_type'] == 'ceo'])
@@ -425,15 +393,11 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
         
         companies = summary_df['company'].nunique()
         print(f"🏭 Companies with negative coverage: {companies}")
-        
-        # 🆕 Show public URL if bucket is public
-        public_url = storage.get_public_url(output_file)
-        print(f"🌐 Public URL: {public_url}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Aggregate negative articles for stock chart visualization (Cloud Storage version)'
+        description='Aggregate negative articles for stock chart visualization'
     )
     parser.add_argument(
         '--days-back',
@@ -445,18 +409,7 @@ def main():
         '--roster',
         type=str,
         default='rosters/main-roster.csv',
-        help='Path to roster file in bucket (default: rosters/main-roster.csv)'
-    )
-    parser.add_argument(
-        '--bucket',
-        type=str,
-        default='risk-dashboard',
-        help='GCS bucket name (default: risk-dashboard)'
-    )
-    parser.add_argument(
-        '--local',
-        action='store_true',
-        help='Use local file storage instead of GCS'
+        help='Path to roster file (default: rosters/main-roster.csv)'
     )
     
     args = parser.parse_args()
@@ -465,13 +418,7 @@ def main():
         print("❌ --days-back must be at least 1")
         return 1
     
-    # Pass parameters to function
-    create_negative_summary(
-        days_back=args.days_back, 
-        roster_path=args.roster,
-        bucket_name=args.bucket,
-        use_local=args.local
-    )
+    create_negative_summary(days_back=args.days_back, roster_path=args.roster)
     return 0
 
 

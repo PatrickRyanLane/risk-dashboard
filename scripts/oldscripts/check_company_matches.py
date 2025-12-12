@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 """
 Diagnostic tool to identify company name mismatches between brand articles and roster.
-Updated to read from Google Cloud Storage.
+
+This helps you see exactly which companies in your brand articles aren't matching
+the roster, so you can fix them if needed.
 
 Usage:
-    python check_company_matches.py [--date 2025-10-12] [--bucket bucket-name]
+    python check_company_matches.py [--date 2025-10-12]
 """
 
 import argparse
 import pandas as pd
-import sys
 from pathlib import Path
 from datetime import datetime, timezone
 import re
-
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
-from storage_utils import CloudStorageManager
 
 
 def normalize_company_name(name):
@@ -47,35 +44,14 @@ def main():
     parser = argparse.ArgumentParser(description='Check company name matching')
     parser.add_argument('--date', default=None, help='Date to check (YYYY-MM-DD)')
     parser.add_argument('--roster', default='rosters/main-roster.csv', help='Roster path')
-    parser.add_argument('--bucket', type=str, default=None,
-                       help='Google Cloud Storage bucket name (optional, uses local files if not provided)')
     args = parser.parse_args()
     
     date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    # Initialize Cloud Storage if bucket provided
-    storage = None
-    if args.bucket:
-        print(f"☁️  Using Cloud Storage bucket: {args.bucket}\n")
-        storage = CloudStorageManager(args.bucket)
-    else:
-        print("📁 Using local file storage\n")
-    
     # Load roster
     print(f"📋 Loading roster from {args.roster}...")
     try:
-        if storage:
-            if not storage.file_exists(args.roster):
-                print(f"❌ Roster not found in Cloud Storage: {args.roster}")
-                return 1
-            roster_df = storage.read_csv(args.roster)
-        else:
-            roster_file = Path(args.roster)
-            if not roster_file.exists():
-                print(f"❌ Roster not found: {roster_file}")
-                return 1
-            roster_df = pd.read_csv(roster_file, encoding='utf-8-sig')
-        
+        roster_df = pd.read_csv(args.roster, encoding='utf-8-sig')
         roster_df.columns = [c.strip().lower() for c in roster_df.columns]
         roster_df['company'] = roster_df['company'].astype(str).str.strip()
         roster_df = roster_df[roster_df['company'] != '']
@@ -86,22 +62,15 @@ def main():
         return 1
     
     # Load brand articles
-    brand_file_path = f"data/processed_articles/{date}-brand-articles-modal.csv"
-    print(f"📄 Loading brand articles from {brand_file_path}...")
+    brand_file = Path(f"data/processed_articles/{date}-brand-articles-modal.csv")
+    print(f"📄 Loading brand articles from {brand_file}...")
+    
+    if not brand_file.exists():
+        print(f"❌ File not found: {brand_file}")
+        return 1
     
     try:
-        if storage:
-            if not storage.file_exists(brand_file_path):
-                print(f"❌ File not found in Cloud Storage: {brand_file_path}")
-                return 1
-            brand_df = storage.read_csv(brand_file_path)
-        else:
-            brand_file = Path(brand_file_path)
-            if not brand_file.exists():
-                print(f"❌ File not found: {brand_file}")
-                return 1
-            brand_df = pd.read_csv(brand_file)
-        
+        brand_df = pd.read_csv(brand_file)
         brand_df.columns = [c.lower().strip() for c in brand_df.columns]
         
         if 'company' not in brand_df.columns:

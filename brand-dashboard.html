@@ -9,6 +9,15 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+// CLOUD STORAGE CONFIGURATION - ADD THIS AT TOP
+const BUCKET_NAME = 'risk-dashboard';
+
+function getDataUrl(path) {
+  return `https://storage.googleapis.com/${BUCKET_NAME}/${path}`;
+}
+// END OF CLOUD STORAGE CONFIG
+</script>
 
 <style>
 :root{
@@ -738,12 +747,12 @@ body:has(#stockChartModal.open) {
 
 <script>
 /********************** Config (brand) **********************/
-const COUNTS_CANDIDATES   = ['data/daily_counts/brand-articles-daily-counts-chart.csv'];
-const SERPS_DAILY_CSV     = 'data/daily_counts/brand-serps-daily-counts-chart.csv';
-const ARTICLES_DAILY_PATH = d => `data/processed_articles/${d}-brand-articles-table.csv`;
-const HEADLINES_PATH      = d => `data/processed_articles/${d}-brand-articles-modal.csv`;
-const SERP_PROCESSED_PATH = d => `data/processed_serps/${d}-brand-serps-table.csv`;
-const SERP_ROWS_PATH      = d => `data/processed_serps/${d}-brand-serps-modal.csv`;
+const COUNTS_CANDIDATES   = [getDataUrl('data/daily_counts/brand-articles-daily-counts-chart.csv')];
+const SERPS_DAILY_CSV     = getDataUrl('data/daily_counts/brand-serps-daily-counts-chart.csv');
+const ARTICLES_DAILY_PATH = d => getDataUrl(`data/processed_articles/${d}-brand-articles-table.csv`);
+const HEADLINES_PATH      = d => getDataUrl(`data/processed_articles/${d}-brand-articles-modal.csv`);
+const SERP_PROCESSED_PATH = d => getDataUrl(`data/processed_serps/${d}-brand-serps-table.csv`);
+const SERP_ROWS_PATH      = d => getDataUrl(`data/processed_serps/${d}-brand-serps-modal.csv`);
 
 /********************** Runtime **********************/
 let allCountsRows = [];
@@ -793,7 +802,7 @@ async function loadStockData() {
       const dateStr = checkDate.toISOString().split('T')[0];
       
       try {
-        const url = `data/stock_prices/${dateStr}-stock-data.csv`;
+        const url = getDataUrl(`data/stock_prices/${dateStr}-stock-data.csv`);
         console.log(`🔍 Trying: ${url}`);
         
         const response = await fetch(url, {cache:'no-store'});
@@ -901,7 +910,7 @@ async function loadNegativeSummary() {
   console.log('📰 Loading negative articles summary...');
   
   try {
-    const rows = await fetchCsv('data/daily_counts/negative-articles-summary.csv');
+    const rows = await fetchCsv(getDataUrl('data/daily_counts/negative-articles-summary.csv'));
     
     console.log(`📊 Loaded ${rows.length} total rows from summary file`);
     
@@ -956,7 +965,7 @@ async function loadTrendsData() {
       const dateStr = checkDate.toISOString().split('T')[0];
       
       try {
-        const url = `data/trends_data/${dateStr}-trends-data.csv`;
+        const url = getDataUrl(`data/trends_data/${dateStr}-trends-data.csv`);
         console.log(`🔍 Trying: ${url}`);
         
         const response = await fetch(url, {cache:'no-store'});
