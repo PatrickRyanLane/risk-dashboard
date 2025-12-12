@@ -31,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: send-alerts
@@ -40,42 +41,84 @@ jobs:
   send-alerts:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    env:
+      GCS_BUCKET: risk-dashboard
+      PYTHONPATH: ${{ github.workspace }}
+      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Shallow clone
-          # Alert script likely reads recent data files to determine what to send
+          fetch-depth: 1
           sparse-checkout: |
             requirements.txt
             scripts/
+            storage_utils.py
             rosters/
-            data/processed_articles/
-            data/processed_serps/
             .github/
           sparse-checkout-cone-mode: false
 
+      - name: Verify checkout
+        run: |
+          echo "📂 Workspace contents:"
+          ls -la
+          echo "✅ storage_utils.py exists:" && test -f storage_utils.py && echo "YES" || echo "NO"
+
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
-          
 
-      - name: Ensure data directory for alert tracking
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Download recent data from GCS for alert processing
+      - name: Download data from GCS
         run: |
+          echo "📥 Downloading recent data from GCS..."
+          mkdir -p data/processed_articles
+          mkdir -p data/processed_serps
+          mkdir -p data/daily_counts
           mkdir -p data/email_alerts
+          
+          # Get today's date and yesterday's date
+          TODAY=$(date -u +%F)
+          YESTERDAY=$(date -u -d "yesterday" +%F 2>/dev/null || date -u -v-1d +%F)
+          
+          # Download recent article files (last 2 days)
+          echo "📄 Downloading article files..."
+          gsutil -m cp "gs://$GCS_BUCKET/data/processed_articles/${TODAY}*" data/processed_articles/ 2>/dev/null || echo "No files for today"
+          gsutil -m cp "gs://$GCS_BUCKET/data/processed_articles/${YESTERDAY}*" data/processed_articles/ 2>/dev/null || echo "No files for yesterday"
+          
+          # Download recent SERP files
+          echo "🔍 Downloading SERP files..."
+          gsutil -m cp "gs://$GCS_BUCKET/data/processed_serps/${TODAY}*" data/processed_serps/ 2>/dev/null || echo "No SERP files for today"
+          gsutil -m cp "gs://$GCS_BUCKET/data/processed_serps/${YESTERDAY}*" data/processed_serps/ 2>/dev/null || echo "No SERP files for yesterday"
+          
+          # Download daily counts
+          echo "📊 Downloading daily counts..."
+          gsutil -m cp "gs://$GCS_BUCKET/data/daily_counts/*" data/daily_counts/ 2>/dev/null || echo "No daily counts"
+          
+          # List what we downloaded
+          echo ""
+          echo "📂 Downloaded files:"
+          find data -type f -name "*.csv" | head -20
 
       - name: Download last cooldown artifact
         uses: dawidd6/action-download-artifact@v6
         with:
-          workflow: send_alerts.yml         # your workflow file name
+          workflow: send_alerts.yml
           workflow_conclusion: success
           branch: main
-          name: cooldown-state              # must match the upload name below
+          name: cooldown-state
           path: .
           if_no_artifact_found: ignore
 
       - name: Run alert sender
         env:
-          PYTHONPATH: ${{ github.workspace }}
           MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
           MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
           MAILGUN_FROM: ${{ secrets.MAILGUN_FROM }}

@@ -14,33 +14,44 @@ on:
 jobs:
   backfill:
     runs-on: ubuntu-latest
+    env:
+      GCS_BUCKET: risk-dashboard
+      PYTHONPATH: ${{ github.workspace }}
+    
     permissions:
-      contents: write
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Shallow - backfill processes day by day, doesn't need history
-          # Backfill needs to read/write data files
+          fetch-depth: 1
           sparse-checkout: |
             requirements.txt
             scripts/
-            rosters/
-            data/daily_counts
-            data/processed_serps
+            storage_utils.py
             .github/
           sparse-checkout-cone-mode: false
+
+      - name: Verify checkout
+        run: |
+          echo "📂 Workspace contents:"
+          ls -la
+          echo "✅ storage_utils.py exists:" && test -f storage_utils.py && echo "YES" || echo "NO"
           
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
 
-      - name: Ensure folders (NEW STRUCTURE)
-        run: |
-          mkdir -p data/daily_counts
-          mkdir -p data/processed_serps
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
 
-      - name: Backfill brand SERPs
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Backfill brand SERPs (→ GCS)
         shell: bash
         env:
           START: ${{ github.event.inputs.start }}
@@ -51,18 +62,23 @@ jobs:
           import os, sys, subprocess, datetime as dt
           start = os.environ["START"]
           end   = os.environ.get("ENDIN") or dt.date.today().isoformat()
+          bucket = os.environ.get("GCS_BUCKET", "risk-dashboard")
           d = dt.date.fromisoformat(start)
           end_d = dt.date.fromisoformat(end)
           while d <= end_d:
             s = d.isoformat()
             print(f"[brand] {s}")
-            rc = subprocess.call([sys.executable, "scripts/process_serps_brands.py", "--date", s])
+            rc = subprocess.call([
+              sys.executable, "scripts/process_serps_brands.py", 
+              "--date", s, 
+              "--bucket", bucket
+            ])
             if rc != 0:
               print(f"[brand][skip] {s} (no raw SERP or non-fatal error)")
             d += dt.timedelta(days=1)
           PY
 
-      - name: Backfill CEO SERPs
+      - name: Backfill CEO SERPs (→ GCS)
         shell: bash
         env:
           START: ${{ github.event.inputs.start }}
@@ -71,37 +87,25 @@ jobs:
           set -euo pipefail
           END_DATE="${ENDIN:-$(date -u +%F)}"
           echo "Backfilling CEO SERPs from ${START} to ${END_DATE}"
-          # Your script supports inclusive range via --backfill START END
-          python scripts/process_serps_ceos.py --backfill "${START}" "${END_DATE}"
+          python scripts/process_serps_ceos.py \
+            --backfill "${START}" "${END_DATE}" \
+            --bucket "$GCS_BUCKET"
 
-      - name: Commit outputs
-        shell: bash
+      - name: Summary
+        if: always()
         env:
           START_IN: ${{ github.event.inputs.start }}
-          END_IN:   ${{ github.event.inputs.end }}
+          END_IN: ${{ github.event.inputs.end }}
         run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-          git fetch origin main
-          git checkout main
-          git pull --rebase --autostash origin main
-
-          # Use --sparse to allow adding files outside sparse-checkout definition
-          git add -A --sparse
-          if git diff --cached --quiet; then
-            echo "No data changes to commit."
-            exit 0
-          fi
-
           START_DATE="${START_IN:-manual}"
-          DATE_LABEL="${END_IN:-$(date -u +%F)}"
-          git commit -m "SERPs backfill (brand + CEO): ${START_DATE}..${DATE_LABEL}"
-
-          if ! git push origin HEAD:main; then
-            echo "Push rejected; rebasing once…"
-            git pull --rebase --autostash origin main
-            git push origin HEAD:main
-          fi
+          END_DATE="${END_IN:-$(date -u +%F)}"
+          
+          echo "### SERP Backfill Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📅 **Range:** ${START_DATE} to ${END_DATE}" >> $GITHUB_STEP_SUMMARY
+          echo "☁️ **Bucket:** gs://$GCS_BUCKET" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Files written:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil ls "gs://$GCS_BUCKET/data/processed_serps/" 2>/dev/null | tail -20 || echo "No files"
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

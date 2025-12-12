@@ -2,12 +2,9 @@ name: Fetch Trends Data (Batched)
 
 on:
   schedule:
-    # Batch 1: 10:30am ET = 14:30 UTC (companies 1-300)
-    - cron: '30 14 * * 1-5'
-    # Batch 2: 2:00pm ET = 18:00 UTC (companies 301-600)
-    - cron: '0 18 * * 1-5'
-    # Batch 3: 6:00pm ET = 22:00 UTC (companies 601-900)
-    - cron: '0 22 * * 1-5'
+    - cron: '30 14 * * 1-5'  # Batch 1: 10:30am ET
+    - cron: '0 18 * * 1-5'   # Batch 2: 2:00pm ET
+    - cron: '0 22 * * 1-5'   # Batch 3: 6:00pm ET
   workflow_dispatch:
     inputs:
       batch:
@@ -15,37 +12,53 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   fetch-trends:
     runs-on: ubuntu-latest
+    env:
+      GCS_BUCKET: risk-dashboard
+      PYTHONPATH: ${{ github.workspace }}
     
     steps:
-      - name: Checkout repository (sparse)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
           sparse-checkout: |
-            scripts
-            rosters
-            data/stock_prices
-            data/trends_data
             requirements.txt
-            .github/actions
+            scripts/
+            storage_utils.py
+            .github/
           sparse-checkout-cone-mode: false
+
+      - name: Verify checkout
+        run: |
+          echo "📂 Workspace: ${{ github.workspace }}"
+          ls -la
+          echo "✅ storage_utils.py exists:" && test -f storage_utils.py && echo "YES" || echo "NO"
       
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
       
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Determine batch number
         id: batch
         run: |
-          # Determine which batch to run based on current time or manual input
           if [ -n "${{ github.event.inputs.batch }}" ]; then
-            # Manual run - use specified batch
             BATCH="${{ github.event.inputs.batch }}"
             echo "Running manually specified batch: $BATCH"
           else
-            # Scheduled run - determine batch from current UTC hour
             HOUR=$(date -u +%H)
             
             if [ "$HOUR" -eq 14 ]; then
@@ -55,9 +68,8 @@ jobs:
             elif [ "$HOUR" -eq 22 ]; then
               BATCH=3
             else
-              # Default to batch 1 for manual testing
               BATCH=1
-              echo "⚠️  Not a scheduled time. Defaulting to batch 1 for testing."
+              echo "⚠️  Not a scheduled time. Defaulting to batch 1."
             fi
             
             echo "Auto-detected batch: $BATCH"
@@ -65,38 +77,34 @@ jobs:
           
           echo "batch=$BATCH" >> $GITHUB_OUTPUT
       
-      - name: Fetch trends data (Batch ${{ steps.batch.outputs.batch }})
+      - name: Fetch trends data (Batch ${{ steps.batch.outputs.batch }}) (→ GCS)
         run: |
-          python scripts/fetch_trends_data.py --batch ${{ steps.batch.outputs.batch }} --batch-size 300
+          echo "📊 Fetching trends batch ${{ steps.batch.outputs.batch }}..."
+          python scripts/fetch_trends_data.py \
+            --batch ${{ steps.batch.outputs.batch }} \
+            --batch-size 300 \
+            --bucket "$GCS_BUCKET"
       
-      - name: Merge batches (Batch 3 only)
+      - name: Merge batches (Batch 3 only) (→ GCS)
         if: steps.batch.outputs.batch == '3'
         run: |
-          # Wait a moment to ensure batch 3 file is fully written
           sleep 5
-          
-          # Merge all batch files into final output
-          python scripts/fetch_trends_data.py --merge
+          echo "🔀 Merging all trend batches..."
+          python scripts/fetch_trends_data.py --merge --bucket "$GCS_BUCKET"
       
-      - name: Commit and push changes
+      - name: Summary
+        if: always()
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          
-          # Add only the trends_data directory (sparse)
-          git add --sparse data/trends_data/
-          
-          # Commit with batch info
           BATCH="${{ steps.batch.outputs.batch }}"
           DATE=$(date -u +%Y-%m-%d)
           
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            if [ "$BATCH" -eq 3 ]; then
-              git commit -m "Update trends data batch $BATCH and merge final file for $DATE"
-            else
-              git commit -m "Update trends data batch $BATCH for $DATE"
-            fi
-            git push
-          fi
+          echo "### Trends Data Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📅 **Date:** ${DATE}" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Batch:** ${BATCH}" >> $GITHUB_STEP_SUMMARY
+          echo "☁️ **Bucket:** gs://$GCS_BUCKET" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Files written:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/trends_data/" 2>/dev/null || echo "No trends files"
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
