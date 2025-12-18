@@ -106,5 +106,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### Files written:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          gsutil ls -l "gs://$GCS_BUCKET/data/trends_data/" 2>/dev/null || echo "No trends files"
+          gsutil ls -l "gs://$GCS_BUCKET/data/trends_data/" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No trends files" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

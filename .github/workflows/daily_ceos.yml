@@ -109,7 +109,7 @@ jobs:
           
           echo "#### Files written to GCS:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          gsutil ls -l "gs://$GCS_BUCKET/data/processed_articles/${DATE_TO_USE}*ceo*" 2>/dev/null || echo "No CEO article files"
-          gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/ceo*" 2>/dev/null || echo "No CEO counts"
-          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*ceo*" 2>/dev/null || echo "No CEO SERP files"
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_articles/${DATE_TO_USE}*ceo*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO article files" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/ceo*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO counts" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*ceo*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO SERP files" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

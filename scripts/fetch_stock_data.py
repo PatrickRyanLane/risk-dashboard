@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch stock data for companies in the roster and save to Cloud Storage
-Updated to write to Google Cloud Storage
+Uses batch downloading to avoid rate limiting
 """
 
 import yfinance as yf
@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import argparse
 import sys
+import time
 from pathlib import Path
 
 # Add parent directory to path to import storage_utils
@@ -17,16 +18,7 @@ from storage_utils import CloudStorageManager
 
 
 def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
-    """
-    Load company roster from Cloud Storage or local file
-    
-    Args:
-        storage: CloudStorageManager instance (optional)
-        roster_path: Path to roster file
-    
-    Returns:
-        DataFrame with company information
-    """
+    """Load company roster from Cloud Storage or local file"""
     try:
         if storage and storage.file_exists(roster_path):
             print(f"📋 Loading roster from Cloud Storage: {roster_path}")
@@ -37,6 +29,12 @@ def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
         
         # Normalize column names
         df.columns = [c.strip().lower() for c in df.columns]
+        print(f"  📋 Columns found: {list(df.columns)}")
+        
+        # Handle column name variations
+        if 'ticker' in df.columns and 'stock' not in df.columns:
+            df = df.rename(columns={'ticker': 'stock'})
+            print("  ℹ️  Renamed 'ticker' column to 'stock'")
         
         # Clean up data
         df['stock'] = df['stock'].astype(str).str.strip()
@@ -54,51 +52,78 @@ def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
         return pd.DataFrame()
 
 
-def fetch_stock_data_for_company(stock_symbol, company, days_back=30):
+def fetch_batch_with_retry(tickers, days_back=30, max_retries=3):
     """
-    Fetch stock data for a single company
-    
-    Args:
-        stock_symbol: Stock ticker symbol
-        company: Company name
-        days_back: Number of days of historical data to fetch
-    
-    Returns:
-        dict with stock data or None if failed
+    Fetch historical data for a batch of tickers with retry logic.
+    Uses yfinance's batch download which is more efficient and less prone to rate limiting.
     """
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days_back + 10)
+    
+    for attempt in range(max_retries):
+        try:
+            # Batch download - much more efficient than individual requests
+            data = yf.download(
+                tickers=tickers,
+                start=start_date,
+                end=end_date,
+                group_by='ticker',
+                progress=False,
+                threads=True,
+                ignore_tz=True
+            )
+            return data
+        except Exception as e:
+            wait_time = (attempt + 1) * 5  # 5, 10, 15 seconds
+            print(f"  ⚠️  Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"  ⏳ Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+    
+    return None
+
+
+def process_ticker_data(ticker, company, hist_data):
+    """Process historical data for a single ticker into our format"""
     try:
-        stock = yf.Ticker(stock_symbol)
+        # Handle both single-ticker and multi-ticker DataFrames
+        if isinstance(hist_data.columns, pd.MultiIndex):
+            # Multi-ticker: data is grouped by ticker
+            if ticker not in hist_data.columns.get_level_values(0):
+                return None
+            ticker_data = hist_data[ticker].dropna(how='all')
+        else:
+            # Single ticker: columns are just OHLCV
+            ticker_data = hist_data.dropna(how='all')
         
-        # Get historical data
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back + 10)  # Extra buffer
-        hist = stock.history(start=start_date, end=end_date)
-        
-        if hist.empty:
-            print(f"  ⚠️  {company} ({stock_symbol}): No data available")
+        if ticker_data.empty or len(ticker_data) < 2:
             return None
         
         # Get most recent data
-        latest = hist.iloc[-1]
-        previous = hist.iloc[-2] if len(hist) > 1 else latest
+        latest = ticker_data.iloc[-1]
+        previous = ticker_data.iloc[-2]
         
-        # Calculate daily change (overnight gap: yesterday's close to today's open)
+        # Calculate daily change (overnight gap)
         opening_price = latest['Open']
         previous_close = previous['Close']
-        daily_change = ((opening_price - previous_close) / previous_close * 100) if previous_close > 0 else 0
+        
+        if pd.isna(opening_price) or pd.isna(previous_close) or previous_close == 0:
+            return None
+            
+        daily_change = ((opening_price - previous_close) / previous_close * 100)
         
         # Calculate 7-day change
-        week_ago = hist.iloc[-8] if len(hist) >= 8 else hist.iloc[0]
+        week_ago = ticker_data.iloc[-8] if len(ticker_data) >= 8 else ticker_data.iloc[0]
         seven_day_change = ((latest['Close'] - week_ago['Close']) / week_ago['Close'] * 100) if week_ago['Close'] > 0 else 0
         
-        # Get last 30 days of closing prices
-        recent_hist = hist.tail(30)
-        price_history = '|'.join([f"{price:.2f}" for price in recent_hist['Close']])
-        date_history = '|'.join([date.strftime('%Y-%m-%d') for date in recent_hist.index])
-        volume_history = '|'.join([f"{int(vol)}" for vol in recent_hist['Volume']])
+        # Get last 30 days of data
+        recent = ticker_data.tail(30)
+        price_history = '|'.join([f"{p:.2f}" for p in recent['Close'] if not pd.isna(p)])
+        date_history = '|'.join([d.strftime('%Y-%m-%d') for d in recent.index])
+        volume_history = '|'.join([f"{int(v)}" for v in recent['Volume'] if not pd.isna(v)])
         
-        result = {
-            'ticker': stock_symbol,
+        return {
+            'ticker': ticker,
             'company': company,
             'opening_price': round(opening_price, 2),
             'daily_change': round(daily_change, 2),
@@ -109,71 +134,83 @@ def fetch_stock_data_for_company(stock_symbol, company, days_back=30):
             'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        print(f"  ✅ {company} ({stock_symbol}): ${opening_price:.2f} ({daily_change:+.2f}%)")
-        return result
-        
     except Exception as e:
-        print(f"  ❌ {company} ({stock_symbol}): {str(e)}")
+        print(f"  ⚠️  Error processing {ticker}: {e}")
         return None
 
 
-def fetch_all_stock_data(storage=None, roster_path='rosters/main-roster.csv', output_dir='data/stock_prices'):
-    """
-    Fetch stock data for all companies and save to Cloud Storage or local file
-    
-    Args:
-        storage: CloudStorageManager instance (optional)
-        roster_path: Path to roster CSV
-        output_dir: Directory to save stock data
-    """
+def fetch_all_stock_data(storage=None, roster_path='rosters/main-roster.csv', 
+                         output_dir='data/stock_prices', batch_size=100):
+    """Fetch stock data for all companies using batch downloads"""
     print("\n" + "="*60)
-    print("📊 FETCHING STOCK DATA")
+    print("📊 FETCHING STOCK DATA (Batch Mode)")
     print("="*60 + "\n")
     
     # Load roster
     roster_df = load_roster(storage, roster_path)
-    
     if roster_df.empty:
         print("❌ No companies in roster, exiting")
         return
     
-    # Fetch stock data for each company
+    # Create ticker -> company mapping
+    ticker_to_company = dict(zip(roster_df['stock'], roster_df['company']))
+    all_tickers = list(ticker_to_company.keys())
+    
     results = []
-    total = len(roster_df)
+    failed_tickers = []
     
-    for idx, row in roster_df.iterrows():
-        stock = row['stock']
-        company = row['company']
-        
-        print(f"[{idx+1}/{total}] {company} ({stock})")
-        
-        stock_data = fetch_stock_data_for_company(stock, company, days_back=30)
-        
-        if stock_data:
-            results.append(stock_data)
+    # Process in batches
+    num_batches = (len(all_tickers) + batch_size - 1) // batch_size
     
-    # Create DataFrame
+    for batch_num in range(num_batches):
+        start_idx = batch_num * batch_size
+        end_idx = min(start_idx + batch_size, len(all_tickers))
+        batch_tickers = all_tickers[start_idx:end_idx]
+        
+        print(f"\n📦 Batch {batch_num + 1}/{num_batches} ({len(batch_tickers)} tickers)")
+        
+        # Fetch batch data
+        batch_data = fetch_batch_with_retry(batch_tickers)
+        
+        if batch_data is None or batch_data.empty:
+            print(f"  ❌ Batch {batch_num + 1} failed completely")
+            failed_tickers.extend(batch_tickers)
+            continue
+        
+        # Process each ticker in the batch
+        batch_success = 0
+        for ticker in batch_tickers:
+            company = ticker_to_company[ticker]
+            result = process_ticker_data(ticker, company, batch_data)
+            
+            if result:
+                results.append(result)
+                batch_success += 1
+            else:
+                failed_tickers.append(ticker)
+        
+        print(f"  ✅ Batch {batch_num + 1}: {batch_success}/{len(batch_tickers)} successful")
+        
+        # Small delay between batches to avoid rate limiting
+        if batch_num < num_batches - 1:
+            time.sleep(2)
+    
+    # Create DataFrame and save
     if not results:
         print("\n❌ No stock data collected")
         return
     
     results_df = pd.DataFrame(results)
-    
-    # Save to Cloud Storage or local file
     today = datetime.now().strftime('%Y-%m-%d')
     output_path = f"{output_dir}/{today}-stock-data.csv"
     
     try:
         if storage:
-            # Write to Cloud Storage
             storage.write_csv(results_df, output_path, index=False)
             print(f"\n✅ Saved to Cloud Storage: gs://{storage.bucket_name}/{output_path}")
-            
-            # Get public URL
             public_url = storage.get_public_url(output_path)
             print(f"🌐 Public URL: {public_url}")
         else:
-            # Write to local file
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             results_df.to_csv(output_path, index=False)
             print(f"\n✅ Saved locally: {output_path}")
@@ -182,9 +219,12 @@ def fetch_all_stock_data(storage=None, roster_path='rosters/main-roster.csv', ou
         print(f"\n📊 Summary:")
         print(f"   Total companies: {len(roster_df)}")
         print(f"   Successful: {len(results)}")
-        print(f"   Failed: {len(roster_df) - len(results)}")
+        print(f"   Failed: {len(failed_tickers)}")
         
-        # Print some statistics
+        if failed_tickers and len(failed_tickers) <= 20:
+            print(f"   Failed tickers: {', '.join(failed_tickers)}")
+        
+        # Market stats
         avg_change = results_df['daily_change'].mean()
         positive = (results_df['daily_change'] > 0).sum()
         negative = (results_df['daily_change'] < 0).sum()
@@ -202,45 +242,31 @@ def main():
     parser = argparse.ArgumentParser(
         description='Fetch stock data and save to Cloud Storage or local file'
     )
-    parser.add_argument(
-        '--bucket',
-        type=str,
-        default='risk-dashboard',
-        help='GCS bucket name (default: risk-dashboard)'
-    )
-    parser.add_argument(
-        '--local',
-        action='store_true',
-        help='Use local file storage instead of GCS'
-    )
-    parser.add_argument(
-        '--roster',
-        type=str,
-        default='rosters/main-roster.csv',
-        help='Path to roster file (default: rosters/main-roster.csv)'
-    )
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='data/stock_prices',
-        help='Output directory path (default: data/stock_prices)'
-    )
+    parser.add_argument('--bucket', type=str, default='risk-dashboard',
+                        help='GCS bucket name (default: risk-dashboard)')
+    parser.add_argument('--local', action='store_true',
+                        help='Use local file storage instead of GCS')
+    parser.add_argument('--roster', type=str, default='rosters/main-roster.csv',
+                        help='Path to roster file')
+    parser.add_argument('--output-dir', type=str, default='data/stock_prices',
+                        help='Output directory path')
+    parser.add_argument('--batch-size', type=int, default=100,
+                        help='Number of tickers to fetch per batch (default: 100)')
     
     args = parser.parse_args()
     
-    # Initialize storage (GCS by default, local with --local flag)
     storage = None
     if args.local:
-        print("📁 Using local file storage (--local flag)")
+        print("📁 Using local file storage")
     else:
         print(f"☁️  Using Cloud Storage bucket: {args.bucket}")
         storage = CloudStorageManager(args.bucket)
     
-    # Fetch and save stock data
     fetch_all_stock_data(
         storage=storage,
         roster_path=args.roster,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        batch_size=args.batch_size
     )
 
 

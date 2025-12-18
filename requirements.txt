@@ -10,7 +10,7 @@ lxml==5.3.0
 requests==2.32.3
 python-dateutil==2.9.0
 tqdm==4.66.5
-yfinance==0.2.48
+yfinance~=0.2.50
 pytrends==4.9.2
 google-cloud-storage==2.18.2
 flask==3.0.3

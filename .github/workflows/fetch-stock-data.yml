@@ -61,5 +61,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### Files written:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          gsutil ls -l "gs://$GCS_BUCKET/data/stock_prices/${DATE}*" 2>/dev/null || echo "No stock files found"
+          gsutil ls -l "gs://$GCS_BUCKET/data/stock_prices/${DATE}*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No stock files found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

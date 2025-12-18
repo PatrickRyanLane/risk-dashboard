@@ -116,7 +116,7 @@ jobs:
           
           echo "#### Files written to GCS:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          gsutil ls -l "gs://$GCS_BUCKET/data/processed_articles/${DATE_TO_USE}*" 2>/dev/null || echo "No article files found"
-          gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/brand*" 2>/dev/null || echo "No daily counts found"
-          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*brand*" 2>/dev/null || echo "No SERP files found"
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_articles/${DATE_TO_USE}*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No article files found" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/brand*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No daily counts found" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*brand*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No SERP files found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

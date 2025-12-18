@@ -62,5 +62,5 @@ jobs:
           
           echo "#### Output file:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/negative-articles-summary.csv" 2>/dev/null || echo "File not found"
+          gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/negative-articles-summary.csv" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "File not found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
