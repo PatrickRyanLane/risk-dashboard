@@ -8,7 +8,7 @@ Checkpoint: data/checkpoints/YYYY-MM-DD-brand-checkpoint.json
 """
 
 import argparse
-import json, os, sys, time, urllib.parse
+import json, os, re, sys, time, urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +18,30 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# ============================================================================
+# WORD FILTERING RULES
+# Words in titles that should NOT contribute to sentiment (often part of brand names)
+# ============================================================================
+NEUTRALIZE_TITLE_TERMS = [
+    r"\bgrand\b",
+    r"\bdiamond\b",
+    r"\bsell\b",
+    r"\blow\b",
+    r"\bdream\b",
+    r"\bdarling\b",
+    r"\bwells\b", r"\bbest\s+buy\b",
+]
+NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
+
+
+def _strip_neutral_terms(headline: str) -> str:
+    """Remove configured neutral terms from a headline so they don't affect sentiment."""
+    if not headline:
+        return ""
+    # Replace them with a space, then normalize whitespace
+    cleaned = NEUTRALIZE_TITLE_RE.sub(" ", headline)
+    return " ".join(cleaned.split())
 
 # Add parent directory to path to import storage_utils
 sys.path.append(str(Path(__file__).parent.parent))
@@ -75,7 +99,14 @@ def google_news_rss(q):
 
 
 def classify(headline, analyzer):
-    s = analyzer.polarity_scores(headline or "")
+    """Classify sentiment with neutral term stripping for brand names."""
+    # Remove neutral words (e.g., Grand, Diamond, Sell, Low) so they don't skew sentiment
+    cleaned = _strip_neutral_terms(headline or "")
+    
+    # Fall back to original headline if everything got stripped out
+    text_for_sentiment = cleaned if cleaned else (headline or "")
+    
+    s = analyzer.polarity_scores(text_for_sentiment)
     c = s["compound"]
     if c >= 0.25:
         return "positive"

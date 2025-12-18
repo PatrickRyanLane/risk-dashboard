@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import re
 import os, sys
 from datetime import datetime
 from typing import Dict, Tuple, Set
@@ -49,6 +50,51 @@ ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
     "play.google.com",
     "apps.apple.com",
 }
+
+# ============================================================================
+# WORD FILTERING RULES
+# Words/phrases to ignore for title-based sentiment classification
+# ============================================================================
+NEUTRALIZE_TITLE_TERMS = [
+    r"\bkilled\b",
+    r"\bmlm\b",
+    r"\bmad\s+money\b",
+    r"\brate\s+cut\b",
+    r"\bone\s+stop\s+shop\b",
+    r"\bfuneral\b",
+    r"\bcremation\b",
+    r"\bcemetery\b",
+    r"\blimited\b",
+    r"\bsell\b",
+    r"\blow\b",
+    r"\bno\s+organic\b",
+]
+NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
+
+# Force-negative if the title mentions legal trouble
+LEGAL_TROUBLE_TERMS = [
+    r"\blawsuit(s)?\b", r"\bsued\b",
+    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
+    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b"
+    r"\bantitrust\b", r"\bban(s|ed)?\b"
+    r"\brecall\b",
+    r"\blayoffs\b",r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
+    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
+    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b"
+    r"\bdivorce\b", r"\bbankcruptcy\b",
+]
+LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
+
+
+def _title_mentions_legal_trouble(title: str) -> bool:
+    """Return True if title mentions legal trouble terms (force negative)."""
+    return bool(LEGAL_TROUBLE_RE.search(title or ""))
+
+
+def _should_neutralize_title(title: str) -> bool:
+    """Return True if the title contains terms that should neutralize sentiment."""
+    return bool(NEUTRALIZE_TITLE_RE.search(title or ""))
 
 # Argument parsing
 def parse_args() -> argparse.Namespace:
@@ -89,6 +135,59 @@ def _hostname(url: str) -> str:
 
 def _norm_token(s: str) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+
+
+def _is_brand_youtube_channel(company: str, url: str) -> bool:
+    """
+    Treat brand-owned YouTube channels as controlled if the path slug
+    contains the normalized brand token.
+
+    Examples for company="Terakeet" that should be controlled:
+      https://www.youtube.com/user/Terakeet
+      https://www.youtube.com/@TerakeetSyracuse
+      https://www.youtube.com/Terakeet
+    """
+    if not url or not company:
+        return False
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+
+    # Limit to YouTube main hosts so we don't overreach
+    if host not in {"youtube.com", "m.youtube.com"}:
+        return False
+
+    # Normalize company name to a token
+    brand_token = _norm_token(company)
+    if not brand_token:
+        return False
+
+    # Strip leading/trailing slashes from path
+    path = (parsed.path or "").strip("/")
+
+    if not path:
+        # Just youtube.com (homepage) → not clearly brand-owned
+        return False
+
+    # Extract the "slug" part for:
+    #   /user/BRAND
+    #   /@BRANDHANDLE
+    #   /BRAND
+    if path.lower().startswith("user/"):
+        slug = path[5:]  # after "user/"
+    elif path.startswith("@"):
+        slug = path[1:]  # after "@"
+    else:
+        # First path segment (handles /BRAND, /BRAND/..., but avoids /watch, /results, etc.)
+        slug = path.split("/", 1)[0]
+
+    if not slug:
+        return False
+
+    slug_token = _norm_token(slug)
+
+    # Require the brand token to appear in the slug token
+    return bool(slug_token) and brand_token in slug_token
 
 def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[str]]:
     """
@@ -173,10 +272,21 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
     return company_domains
 
 def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
-    """Classify if a URL is controlled by a company"""
+    """
+    Classify if a URL is controlled by a company using multiple rules:
+    (1) Always-controlled platforms (social media, etc.)
+    (2) Domains specific to this company from the roster
+    (3) Domain contains the company's brand token
+    Plus a special rule for brand-owned YouTube channels (path-based).
+    """
     host = _hostname(url)
     if not host:
         return False
+
+    # Special rule: brand-owned YouTube channels (youtube.com/BRAND,
+    # youtube.com/user/BRAND, youtube.com/@BRANDHANDLE)
+    if _is_brand_youtube_channel(company, url):
+        return True
 
     # Rule 1: Always-controlled platforms
     for good in ALWAYS_CONTROLLED_DOMAINS:
@@ -246,9 +356,25 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
 
         controlled = classify_control(company, url, company_domains)
 
-        _, label = vader_label_on_title(analyzer, title)
-        if FORCE_POSITIVE_IF_CONTROLLED and controlled:
-            label = "positive"
+        # --- Sentiment rules (deterministic order) ---
+        host = _hostname(url)
+
+        # 1) Force negative for reddit.com (and subdomains)
+        if host == "reddit.com" or (host and host.endswith(".reddit.com")):
+            label = "negative"
+        # 2) Force negative for legal-trouble titles (lawsuit, sued, settlement, fines, etc.)
+        elif _title_mentions_legal_trouble(title):
+            label = "negative"
+        else:
+            # 3) Neutralize certain brand terms in the title
+            if _should_neutralize_title(title):
+                label = "neutral"
+            else:
+                _, label = vader_label_on_title(analyzer, title)
+
+            # 4) Force positive if controlled — but ONLY if we didn't already force negative above
+            if FORCE_POSITIVE_IF_CONTROLLED and controlled:
+                label = "positive"
 
         processed_rows.append({
             "date": target_date,

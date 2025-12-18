@@ -39,11 +39,11 @@ def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
         df.columns = [c.strip().lower() for c in df.columns]
         
         # Clean up data
-        df['ticker'] = df['ticker'].astype(str).str.strip()
+        df['stock'] = df['stock'].astype(str).str.strip()
         df['company'] = df['company'].astype(str).str.strip()
         
         # Filter out invalid rows
-        df = df[(df['ticker'] != '') & (df['ticker'] != 'nan') & 
+        df = df[(df['stock'] != '') & (df['stock'] != 'nan') & 
                 (df['company'] != '') & (df['company'] != 'nan')]
         
         print(f"✅ Loaded {len(df)} companies from roster")
@@ -54,12 +54,12 @@ def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
         return pd.DataFrame()
 
 
-def fetch_stock_data_for_company(ticker, company, days_back=30):
+def fetch_stock_data_for_company(stock_symbol, company, days_back=30):
     """
     Fetch stock data for a single company
     
     Args:
-        ticker: Stock ticker symbol
+        stock_symbol: Stock ticker symbol
         company: Company name
         days_back: Number of days of historical data to fetch
     
@@ -67,7 +67,7 @@ def fetch_stock_data_for_company(ticker, company, days_back=30):
         dict with stock data or None if failed
     """
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(stock_symbol)
         
         # Get historical data
         end_date = datetime.now()
@@ -75,7 +75,7 @@ def fetch_stock_data_for_company(ticker, company, days_back=30):
         hist = stock.history(start=start_date, end=end_date)
         
         if hist.empty:
-            print(f"  ⚠️  {company} ({ticker}): No data available")
+            print(f"  ⚠️  {company} ({stock_symbol}): No data available")
             return None
         
         # Get most recent data
@@ -98,7 +98,7 @@ def fetch_stock_data_for_company(ticker, company, days_back=30):
         volume_history = '|'.join([f"{int(vol)}" for vol in recent_hist['Volume']])
         
         result = {
-            'ticker': ticker,
+            'ticker': stock_symbol,
             'company': company,
             'opening_price': round(opening_price, 2),
             'daily_change': round(daily_change, 2),
@@ -109,11 +109,11 @@ def fetch_stock_data_for_company(ticker, company, days_back=30):
             'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        print(f"  ✅ {company} ({ticker}): ${opening_price:.2f} ({daily_change:+.2f}%)")
+        print(f"  ✅ {company} ({stock_symbol}): ${opening_price:.2f} ({daily_change:+.2f}%)")
         return result
         
     except Exception as e:
-        print(f"  ❌ {company} ({ticker}): {str(e)}")
+        print(f"  ❌ {company} ({stock_symbol}): {str(e)}")
         return None
 
 
@@ -142,12 +142,12 @@ def fetch_all_stock_data(storage=None, roster_path='rosters/main-roster.csv', ou
     total = len(roster_df)
     
     for idx, row in roster_df.iterrows():
-        ticker = row['ticker']
+        stock = row['stock']
         company = row['company']
         
-        print(f"[{idx+1}/{total}] {company} ({ticker})")
+        print(f"[{idx+1}/{total}] {company} ({stock})")
         
-        stock_data = fetch_stock_data_for_company(ticker, company, days_back=30)
+        stock_data = fetch_stock_data_for_company(stock, company, days_back=30)
         
         if stock_data:
             results.append(stock_data)
