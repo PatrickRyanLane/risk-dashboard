@@ -30,6 +30,7 @@ jobs:
           sparse-checkout: |
             requirements.txt
             scripts/
+            rosters/
             storage_utils.py
             .github/
           sparse-checkout-cone-mode: false
@@ -39,6 +40,7 @@ jobs:
           echo "📂 Workspace contents:"
           ls -la
           echo "✅ storage_utils.py exists:" && test -f storage_utils.py && echo "YES" || echo "NO"
+          echo "✅ rosters/ exists:" && test -d rosters && echo "YES" || echo "NO"
           
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
@@ -85,11 +87,25 @@ jobs:
           ENDIN: ${{ github.event.inputs.end }}
         run: |
           set -euo pipefail
-          END_DATE="${ENDIN:-$(date -u +%F)}"
-          echo "Backfilling CEO SERPs from ${START} to ${END_DATE}"
-          python scripts/process_serps_ceos.py \
-            --backfill "${START}" "${END_DATE}" \
-            --bucket "$GCS_BUCKET"
+          python - <<'PY'
+          import os, sys, subprocess, datetime as dt
+          start = os.environ["START"]
+          end   = os.environ.get("ENDIN") or dt.date.today().isoformat()
+          bucket = os.environ.get("GCS_BUCKET", "risk-dashboard")
+          d = dt.date.fromisoformat(start)
+          end_d = dt.date.fromisoformat(end)
+          while d <= end_d:
+            s = d.isoformat()
+            print(f"[ceo] {s}")
+            rc = subprocess.call([
+              sys.executable, "scripts/process_serps_ceos.py", 
+              "--date", s, 
+              "--bucket", bucket
+            ])
+            if rc != 0:
+              print(f"[ceo][skip] {s} (no raw SERP or non-fatal error)")
+            d += dt.timedelta(days=1)
+          PY
 
       - name: Summary
         if: always()
