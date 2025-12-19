@@ -17,8 +17,6 @@ import re
 import os
 import sys
 
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
 from storage_utils import CloudStorageManager
 
 

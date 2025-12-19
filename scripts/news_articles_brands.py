@@ -3,6 +3,12 @@
 Fetch brand news articles from Google News RSS and analyze sentiment.
 Features: batching, checkpointing, connection pooling, retry logic.
 
+Sentiment rules (applied in order):
+1. Force NEGATIVE if source is Reddit (user content tends to be critical)
+2. Force NEGATIVE if title mentions legal trouble (lawsuits, recalls, etc.)
+3. Force NEUTRAL if title contains brand name words that sound emotional (Grand, Diamond, etc.)
+4. Otherwise, use VADER on the cleaned headline
+
 Output: data/processed_articles/YYYY-MM-DD-brand-articles-modal.csv
 Checkpoint: data/checkpoints/YYYY-MM-DD-brand-checkpoint.json
 """
@@ -21,30 +27,118 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # ============================================================================
 # WORD FILTERING RULES
-# Words in titles that should NOT contribute to sentiment (often part of brand names)
+# These rules help ensure sentiment classification isn't skewed by:
+# 1. Brand names that contain emotional words (e.g., "Best Buy", "Grand Hyatt")
+# 2. Legal/crisis terms that should always be flagged as negative
 # ============================================================================
+
+# Words in titles that should NOT contribute to sentiment (often part of brand names)
+# These get stripped before VADER analysis
 NEUTRALIZE_TITLE_TERMS = [
-    r"\bgrand\b",
-    r"\bdiamond\b",
-    r"\bsell\b",
-    r"\blow\b",
-    r"\bdream\b",
-    r"\bdarling\b",
-    r"\bwells\b", r"\bbest\s+buy\b",
+    r"\bgrand\b",           # Grand Hyatt, Grand Cherokee
+    r"\bdiamond\b",         # Diamond Foods
+    r"\bsell\b",            # Headlines about "selling" aren't inherently negative
+    r"\blow\b",             # Low prices, Lowe's
+    r"\bdream\b",           # DreamWorks
+    r"\bdarling\b",         # Darling Ingredients
+    r"\bwells\b",           # Wells Fargo
+    r"\bbest\s+buy\b",      # Best Buy (positive brand name)
+    r"\bkilled\b",          # Often used hyperbolically in headlines
+    r"\bmlm\b",             # Multi-level marketing discussions
+    r"\bmad\s+money\b",     # Jim Cramer's show
+    r"\brate\s+cut\b",      # Interest rate discussions
+    r"\bone\s+stop\s+shop\b",  # Stop & Shop stores
+    r"\bfuneral\b",         # Service Corporation (funeral services)
+    r"\bcremation\b",       # Service Corporation
+    r"\bcemetery\b",        # Service Corporation
+    r"\blimited\b",         # The Limited Brands
+    r"\bno\s+organic\b",    # About organic food availability
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
+# Force-NEGATIVE if the title mentions legal trouble or crisis situations
+# These override any other sentiment classification
+LEGAL_TROUBLE_TERMS = [
+    # Legal actions
+    r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b",
+    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
+    # Regulatory bodies (usually means trouble)
+    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
+    # Corporate crises
+    r"\bantitrust\b", r"\bban(s|ned)?\b",
+    r"\brecall(s|ed)?\b",
+    r"\blayoff(s)?\b", r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
+    # Investigations
+    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
+    # Scandals
+    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
+    r"\bdivorce\b", r"\bbankruptcy\b",
+]
+LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
+
+
+def _title_mentions_legal_trouble(title: str) -> bool:
+    """
+    Return True if title mentions legal trouble terms.
+    
+    Why: Headlines about lawsuits, recalls, regulatory actions, etc. should
+    always be classified as negative for reputation risk purposes, regardless
+    of the overall tone of the headline.
+    
+    Example: "Company settles lawsuit for $50M" might sound neutral to VADER,
+    but it's clearly negative for the company's reputation.
+    """
+    return bool(LEGAL_TROUBLE_RE.search(title or ""))
+
 
 def _strip_neutral_terms(headline: str) -> str:
-    """Remove configured neutral terms from a headline so they don't affect sentiment."""
+    """
+    Remove configured neutral terms from a headline so they don't affect sentiment.
+    
+    Why: Many brand names contain words that VADER interprets as emotional.
+    For example, "Best Buy reports quarterly earnings" would get a positive
+    score because of "Best" - but that's just the company name!
+    
+    This function removes those terms before sentiment analysis.
+    """
     if not headline:
         return ""
     # Replace them with a space, then normalize whitespace
     cleaned = NEUTRALIZE_TITLE_RE.sub(" ", headline)
     return " ".join(cleaned.split())
 
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
+
+def _should_neutralize_title(title: str) -> bool:
+    """
+    Return True if the title contains terms that should neutralize sentiment.
+    
+    Used as a secondary check - if the entire cleaned title becomes empty
+    or very short after stripping, we return neutral instead of guessing.
+    """
+    return bool(NEUTRALIZE_TITLE_RE.search(title or ""))
+
+
+def _is_reddit_source(source: str) -> bool:
+    """
+    Return True if the article source is Reddit.
+    
+    Why: Reddit discussions about companies tend to be negative/critical.
+    For reputation risk monitoring, we treat all Reddit content as negative
+    to match the SERP processing logic.
+    
+    Args:
+        source: The source name from the RSS feed (e.g., "Reddit", "reddit.com")
+    
+    Returns:
+        True if source appears to be Reddit
+    """
+    if not source:
+        return False
+    source_lower = source.lower().strip()
+    return "reddit" in source_lower
+
+
 from storage_utils import CloudStorageManager
 
 # Paths
@@ -98,19 +192,49 @@ def google_news_rss(q):
     return f"https://news.google.com/rss/search?q={qs}&hl=en-US&gl=US&ceid=US:en"
 
 
-def classify(headline, analyzer):
-    """Classify sentiment with neutral term stripping for brand names."""
-    # Remove neutral words (e.g., Grand, Diamond, Sell, Low) so they don't skew sentiment
+def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = "") -> str:
+    """
+    Classify sentiment with multi-stage filtering for brand news.
+    
+    The classification follows this priority order:
+    1. NEGATIVE: If source is Reddit (user-generated content tends to be critical)
+    2. NEGATIVE: If headline mentions legal trouble (lawsuits, recalls, etc.)
+    3. NEUTRAL: If headline only contains neutral brand terms
+    4. VADER: Use sentiment analysis on cleaned headline
+    
+    Args:
+        headline: The article title to classify
+        analyzer: VADER SentimentIntensityAnalyzer instance
+        source: The article source (e.g., "Reddit", "CNN")
+    
+    Returns:
+        "positive", "negative", or "neutral"
+    """
+    # Step 1: Check if source is Reddit → force NEGATIVE
+    # Reddit discussions about companies tend to be critical/negative
+    if _is_reddit_source(source):
+        return "negative"
+    
+    # Step 2: Check for legal trouble terms → force NEGATIVE
+    # This catches headlines that might sound neutral but indicate reputation risk
+    if _title_mentions_legal_trouble(headline):
+        return "negative"
+    
+    # Step 3: Strip neutral brand-name terms before sentiment analysis
     cleaned = _strip_neutral_terms(headline or "")
     
-    # Fall back to original headline if everything got stripped out
-    text_for_sentiment = cleaned if cleaned else (headline or "")
+    # If nothing meaningful remains after stripping, return neutral
+    if not cleaned or len(cleaned.split()) < 2:
+        return "neutral"
     
-    s = analyzer.polarity_scores(text_for_sentiment)
-    c = s["compound"]
-    if c >= 0.25:
+    # Step 4: Run VADER sentiment on the cleaned headline
+    scores = analyzer.polarity_scores(cleaned)
+    compound = scores["compound"]
+    
+    # Unified thresholds: positive ≥0.15, negative ≤-0.10
+    if compound >= 0.15:
         return "positive"
-    if c <= -0.05:
+    if compound <= -0.10:
         return "negative"
     return "neutral"
 
@@ -131,7 +255,7 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str) -> lis
         except Exception:
             pass
         source = (item.source.text or "").strip() if item.source else ""
-        sent = classify(title, analyzer)
+        sent = classify(title, analyzer, source)
         out.append({
             "company": brand,
             "title": title,

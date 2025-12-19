@@ -25,8 +25,6 @@ import pandas as pd
 import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
 from storage_utils import CloudStorageManager
 
 # Config / constants
@@ -56,18 +54,26 @@ ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
 # Words/phrases to ignore for title-based sentiment classification
 # ============================================================================
 NEUTRALIZE_TITLE_TERMS = [
-    r"\bkilled\b",
-    r"\bmlm\b",
-    r"\bmad\s+money\b",
-    r"\brate\s+cut\b",
-    r"\bone\s+stop\s+shop\b",
-    r"\bfuneral\b",
-    r"\bcremation\b",
-    r"\bcemetery\b",
-    r"\blimited\b",
-    r"\bsell\b",
-    r"\blow\b",
-    r"\bno\s+organic\b",
+    # Brand names that contain emotional-sounding words
+    r"\bgrand\b",           # Grand Hyatt, Grand Cherokee
+    r"\bdiamond\b",         # Diamond Foods
+    r"\bdream\b",           # DreamWorks
+    r"\bdarling\b",         # Darling Ingredients
+    r"\bwells\b",           # Wells Fargo
+    r"\bbest\s+buy\b",      # Best Buy
+    # Common headline words that skew sentiment
+    r"\bkilled\b",          # Often used hyperbolically
+    r"\bmlm\b",             # Multi-level marketing discussions
+    r"\bmad\s+money\b",     # Jim Cramer's show
+    r"\brate\s+cut\b",      # Interest rate discussions
+    r"\bone\s+stop\s+shop\b",  # Stop & Shop stores
+    r"\bfuneral\b",         # Service Corporation (funeral services)
+    r"\bcremation\b",       # Service Corporation
+    r"\bcemetery\b",        # Service Corporation
+    r"\blimited\b",         # The Limited Brands
+    r"\bsell\b",            # Headlines about "selling" aren't inherently negative
+    r"\blow\b",             # Low prices, Lowe's
+    r"\bno\s+organic\b",    # About organic food availability
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
@@ -312,9 +318,10 @@ def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]
 def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[float, str]:
     s = analyzer.polarity_scores(title or "")
     c = s.get("compound", 0.0)
-    if c >= 0.2:
+    # Unified thresholds: positive ≥0.15, negative ≤-0.10
+    if c >= 0.15:
         lab = "positive"
-    elif c <= -0.1:
+    elif c <= -0.10:
         lab = "negative"
     else:
         lab = "neutral"

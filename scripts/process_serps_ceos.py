@@ -27,8 +27,6 @@ import pandas as pd
 import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
 from storage_utils import CloudStorageManager
 
 # Config
@@ -464,9 +462,10 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
                 label = "neutral"
             else:
                 score = analyzer.polarity_scores(cleaned_title)["compound"]
-                if score >= 0.05:
+                # Unified thresholds: positive ≥0.15, negative ≤-0.10
+                if score >= 0.15:
                     label = "positive"
-                elif score <= -0.15:
+                elif score <= -0.10:
                     label = "negative"
                 else:
                     label = "neutral"

@@ -5,12 +5,18 @@
 Builds daily CEO articles from Google News RSS.
 Features: batching, checkpointing, connection pooling, retry logic.
 
+Sentiment rules (applied in order):
+1. Force NEGATIVE if source is Reddit (user content tends to be critical)
+2. Force NEGATIVE if title mentions CEO-specific trouble terms (fired, ousted, compensation, etc.)
+3. Force NEUTRAL if title contains CEO name words that sound emotional (Rob, Savage, etc.)
+4. Otherwise, use VADER on the cleaned headline
+
 Output: data/processed_articles/YYYY-MM-DD-ceo-articles-modal.csv
 Checkpoint: data/checkpoints/YYYY-MM-DD-ceo-checkpoint.json
 """
 
 from __future__ import annotations
-import os, time, html, sys, argparse, json
+import os, time, html, sys, argparse, json, re
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import quote_plus, urlparse
@@ -22,8 +28,112 @@ from urllib3.util.retry import Retry
 import feedparser
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Add parent directory to path to import storage_utils
-sys.path.append(str(Path(__file__).parent.parent))
+# ============================================================================
+# CEO-SPECIFIC WORD FILTERING RULES
+# These rules help ensure sentiment classification isn't skewed by:
+# 1. CEO names that contain emotional words (e.g., "Rob Walton", "Dan Savage")
+# 2. CEO-specific crisis terms that should always be flagged as negative
+# ============================================================================
+
+# Words in CEO headlines that should be STRIPPED before sentiment analysis
+# Often these are parts of names or common phrases that would skew VADER
+NEUTRALIZE_TITLE_TERMS = [
+    r"\bflees\b",           # Often used figuratively or in names
+    r"\bsavage\b",          # Common surname (e.g., Dan Savage)
+    r"\brob\b",             # Common first name (e.g., Rob Walton)
+    r"\bnicholas\s+lower\b", # Specific CEO name combination
+    r"\bmad\s+money\b",     # Jim Cramer's show
+    r"\bno\s+organic\b",    # About organic food availability
+]
+NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
+
+# CEO-specific terms that should ALWAYS trigger NEGATIVE classification
+# These indicate reputation risk for a CEO specifically
+ALWAYS_NEGATIVE_TERMS = [
+    # Compensation scrutiny (common CEO negative coverage)
+    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b",
+    # Corporate governance issues
+    r"\bmandate\b",
+    # Leadership changes (usually negative for the departing CEO)
+    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
+    # Skepticism/scrutiny language
+    r"\bstill\b",  # "CEO still hasn't..." implies criticism
+    r"\bturnaround\b",  # Company in trouble
+    # Personal accusations
+    r"\bface\b", r"\baccused\b", r"\bcommitted\b",
+    r"\baware\b",  # "CEO was aware of..." implies cover-up
+    # Financial/personal troubles
+    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
+    # Labor relations
+    r"\bunion\s+buster\b",
+    # Termination (in any direction)
+    r"\bfired\b", r"\bfiring\b", r"\bfires\b",
+    r"(?<!t)\bax(e|ed|es)?\b",  # "axed" but not "taxes"
+    r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
+    # Stock performance
+    r"\bplummeting\b",
+]
+ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
+
+
+def _should_force_negative_title(title: str) -> bool:
+    """
+    Return True if title contains CEO-specific negative terms.
+    
+    Why: CEOs face unique reputational risks. Headlines about compensation,
+    ousting, or accusations are almost always negative for the CEO's reputation,
+    even if VADER might score them neutrally.
+    
+    Example: "CEO pay rises to $50M amid layoffs" might be neutral to VADER,
+    but it's clearly negative for the CEO's reputation.
+    """
+    return bool(ALWAYS_NEGATIVE_RE.search(title or ""))
+
+
+def _should_neutralize_title(title: str) -> bool:
+    """
+    Return True if the title contains terms that should neutralize sentiment.
+    Used as a check before deciding to return neutral.
+    """
+    return bool(NEUTRALIZE_TITLE_RE.search(str(title or "")))
+
+
+def _strip_neutral_terms(title: str) -> str:
+    """
+    Remove neutral terms from title before sentiment analysis.
+    
+    Why: Some CEO names contain words that VADER interprets as emotional.
+    For example, "Rob Walton announces new initiative" would get a negative
+    score because VADER sees "rob" as stealing. This strips those terms.
+    
+    Returns the cleaned title with normalized whitespace.
+    """
+    s = str(title or "")
+    s = NEUTRALIZE_TITLE_RE.sub(" ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _is_reddit_source(source: str) -> bool:
+    """
+    Return True if the article source is Reddit.
+    
+    Why: Reddit discussions about CEOs tend to be negative/critical.
+    For reputation risk monitoring, we treat all Reddit content as negative
+    to match the SERP processing logic.
+    
+    Args:
+        source: The source name from the RSS feed (e.g., "Reddit", "reddit.com")
+    
+    Returns:
+        True if source appears to be Reddit
+    """
+    if not source:
+        return False
+    source_lower = source.lower().strip()
+    return "reddit" in source_lower
+
+
 from storage_utils import CloudStorageManager
 
 # Paths
@@ -221,12 +331,57 @@ def fetch_rss(session: requests.Session, query: str) -> feedparser.FeedParserDic
     return feedparser.parse(resp.content)
 
 
-def label_sentiment(analyzer: SentimentIntensityAnalyzer, text: str) -> str:
-    s = analyzer.polarity_scores(text or "")
-    c = s.get("compound", 0.0)
-    if c >= 0.25:
+def label_sentiment(analyzer: SentimentIntensityAnalyzer, title: str, source: str = "") -> str:
+    """
+    Classify sentiment with multi-stage filtering for CEO news.
+    
+    The classification follows this priority order:
+    1. NEGATIVE: If source is Reddit (user-generated content tends to be critical)
+    2. NEGATIVE: If headline mentions CEO-specific trouble terms
+    3. NEUTRAL: If headline only contains neutral name/phrase terms
+    4. VADER: Use sentiment analysis on cleaned headline
+    
+    Args:
+        analyzer: VADER SentimentIntensityAnalyzer instance
+        title: The article title to classify
+        source: The article source (e.g., "Reddit", "CNN")
+    
+    Returns:
+        "positive", "negative", or "neutral"
+    """
+    # Step 1: Check if source is Reddit → force NEGATIVE
+    # Reddit discussions about CEOs tend to be critical/negative
+    if _is_reddit_source(source):
+        return "negative"
+    
+    # Step 2: Check for CEO-specific negative terms → force NEGATIVE
+    # These catch headlines that indicate reputation risk for the CEO
+    if _should_force_negative_title(title):
+        return "negative"
+    
+    # Step 3: Check if title should be neutralized entirely
+    # (e.g., consists mainly of name parts that sound emotional)
+    if _should_neutralize_title(title):
+        # Strip the neutral terms and check what's left
+        cleaned = _strip_neutral_terms(title)
+        if not cleaned or len(cleaned.split()) < 2:
+            return "neutral"
+    else:
+        cleaned = title
+    
+    # Step 4: Run VADER on the (potentially cleaned) title
+    cleaned = _strip_neutral_terms(title) if title else ""
+    
+    if not cleaned:
+        return "neutral"
+    
+    scores = analyzer.polarity_scores(cleaned)
+    compound = scores.get("compound", 0.0)
+    
+    # Unified thresholds: positive ≥0.15, negative ≤-0.10
+    if compound >= 0.15:
         return "positive"
-    if c <= -0.05:
+    if compound <= -0.10:
         return "negative"
     return "neutral"
 
@@ -261,7 +416,7 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         source = extract_source(entry)
         if not title:
             continue
-        sent = label_sentiment(analyzer, title)
+        sent = label_sentiment(analyzer, title, source)
         rows.append({
             "ceo": ceo,
             "company": company,
