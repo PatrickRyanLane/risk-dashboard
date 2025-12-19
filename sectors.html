@@ -299,7 +299,7 @@ async function loadStockData() {
     let stockData = {};
     
     try {
-      const response = await fetch(`data/stock_prices/${today}-stock-data.csv`, {cache:'no-store'});
+      const response = await fetch(getDataUrl(`data/stock_prices/${today}-stock-data.csv`), {cache:'no-store'});
       const text = await response.text();
       stockData = parseStockCSV(text);
     } catch {
@@ -308,7 +308,7 @@ async function loadStockData() {
       yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
       const yesterday = yesterdayUTC.toISOString().split('T')[0];
       
-      const response = await fetch(`data/stock_prices/${yesterday}-stock-data.csv`, {cache:'no-store'});
+      const response = await fetch(getDataUrl(`data/stock_prices/${yesterday}-stock-data.csv`), {cache:'no-store'});
       const text = await response.text();
       stockData = parseStockCSV(text);
     }
