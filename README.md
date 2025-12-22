@@ -8,8 +8,8 @@ This system automatically:
 - Fetches daily news articles about brands and CEOs from Google News RSS
 - Analyzes sentiment using VADER (positive, neutral, negative)
 - Processes SERP data to track search engine visibility
-- Generates interactive dashboards for visualization
-- Sends email alerts for significant negative coverage
+- Saves generated .csv files to GCS risk-dashboard bucket
+// Currently not sending // - Sends email alerts for significant negative coverage
 
 ## Workflows
 
@@ -36,9 +36,6 @@ See [WORKFLOWS.md](WORKFLOWS.md) for detailed workflow documentation.
 
 ## Key Files
 
-- `rosters/main-roster.csv` - Master list of companies and CEOs to monitor
-- `brand-dashboard.html` - Brand sentiment visualization
-- `ceo-dashboard.html` - CEO sentiment visualization
 - `scripts/` - Python automation scripts
 - `.github/workflows/` - GitHub Actions automation
 
