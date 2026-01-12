@@ -13,6 +13,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
 from storage_utils import CloudStorageManager
+import re
+from difflib import get_close_matches
 
 # --- CONFIG ---
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
@@ -27,17 +29,88 @@ MIN_NEGATIVE_ARTICLES = 3  # The absolute floor (user requirement: ">= 3 total a
 PERCENTILE_CUTOFF = 0.80   # The relative threshold (80th percentile)
 ALERT_COOLDOWN_HOURS = 168  
 
+def normalize_name(name):
+    """
+    Strips legal suffixes to find the 'core' brand name.
+    Example: "Apple Inc." -> "Apple"
+    """
+    if not name: return ""
+    name = str(name).strip()
+    
+    # Common suffixes to remove (case insensitive)
+    suffixes = [
+        ' Inc.', ' Inc', ' Corporation', ' Corp.', ' Corp', 
+        ' Company', ' Co.', ' Co', ' LLC', ' L.L.C.', ' Ltd.', ' Ltd', 
+        ' PLC', ' plc', ' Group', ' Holdings', ' .com'
+    ]
+    
+    # Sort by length (desc) so we catch "L.L.C." before "L.C."
+    for suffix in sorted(suffixes, key=len, reverse=True):
+        if name.lower().endswith(suffix.lower()):
+            name = name[:-len(suffix)].strip()
+            break
+            
+    # Remove special chars (keep spaces/alphanumeric)
+    name = re.sub(r'[^\w\s]', '', name)
+    return name
+
 def get_salesforce_owner(brand_name):
-    """Finds the account owner email for a brand in Salesforce."""
+    """
+    Finds account owner with a 2-step lookup (Exact -> Fuzzy).
+    """
+    if not brand_name: return None, None
+    
     try:
         sf = Salesforce(username=SF_USERNAME, password=SF_PASSWORD, security_token=SF_TOKEN)
-        query = f"SELECT Owner.Email, Owner.Name FROM Account WHERE Name = '{brand_name}' LIMIT 1"
+        
+        # ---------------------------------------------------------
+        # ATTEMPT 1: Exact Match (The "Perfect" Match)
+        # ---------------------------------------------------------
+        # Escape single quotes in brand names (e.g., "McDonald's")
+        safe_name = brand_name.replace("'", "\\'")
+        query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name = '{safe_name}' LIMIT 1"
         result = sf.query(query)
         
         if result['totalSize'] > 0:
             owner = result['records'][0]['Owner']
+            print(f"   ✅ Found exact match in Salesforce: {result['records'][0]['Name']}")
             return owner['Email'], owner['Name']
+
+        # ---------------------------------------------------------
+        # ATTEMPT 2: Fuzzy/Core Match (The "Smart" Match)
+        # ---------------------------------------------------------
+        core_name = normalize_name(brand_name)
+        if len(core_name) < 3: 
+            # Too short to fuzzy match safely (e.g. "GE") -> Give up
+            print(f"   ⚠️ Exact match failed and name '{core_name}' too short for fuzzy search.")
+            return None, None
+            
+        print(f"   🔄 Exact match failed. Trying fuzzy search for '{core_name}'...")
+        
+        # Search for any account *containing* the core name
+        # We fetch up to 5 candidates to pick the best one
+        safe_core = core_name.replace("'", "\\'")
+        fuzzy_query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name LIKE '%{safe_core}%' LIMIT 5"
+        fuzzy_result = sf.query(fuzzy_query)
+        
+        if fuzzy_result['totalSize'] == 0:
+            return None, None
+            
+        # Python Logic: Find the closest string match among the candidates
+        # This prevents searching for "Apple" and accidentally matching "Pineapple Corp"
+        candidate_names = [rec['Name'] for rec in fuzzy_result['records']]
+        best_matches = get_close_matches(brand_name, candidate_names, n=1, cutoff=0.6)
+        
+        if best_matches:
+            best_name = best_matches[0]
+            # Find the record that corresponds to this name
+            match_rec = next(r for r in fuzzy_result['records'] if r['Name'] == best_name)
+            owner = match_rec['Owner']
+            print(f"   ✅ Fuzzy match success: '{brand_name}' matched to '{best_name}'")
+            return owner['Email'], owner['Name']
+
         return None, None
+
     except Exception as e:
         print(f"⚠️ Salesforce lookup failed for {brand_name}: {e}")
         return None, None
