@@ -25,7 +25,7 @@ FALLBACK_SLACK_ID = "UT1EC3ENR"
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 3  # The absolute floor (user requirement: ">= 3 total articles")
 PERCENTILE_CUTOFF = 0.80   # The relative threshold (80th percentile)
-ALERT_COOLDOWN_HOURS = 24  
+ALERT_COOLDOWN_HOURS = 168  
 
 def get_salesforce_owner(brand_name):
     """Finds the account owner email for a brand in Salesforce."""
