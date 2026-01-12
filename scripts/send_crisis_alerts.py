@@ -2,19 +2,19 @@
 """
 Reads aggregated negative articles and sends Slack alerts to Salesforce account owners.
 Tracks alert history in GCS to prevent spamming.
-Implements Dynamic Thresholding: Alerts only on 80th percentile spikes with min volume of 3.
+Implements Dynamic Thresholding & Type-Specific Alerts (Brand vs CEO).
 """
 
 import os
 import json
 import argparse
 import requests
-import pandas as pd
+import urllib.parse
+import re
+from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
 from storage_utils import CloudStorageManager
-import re
-from difflib import get_close_matches
 
 # --- CONFIG ---
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
@@ -25,134 +25,104 @@ SLACK_CHANNEL = "#crisis-alerts"
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
 
 # Configurable Floors
-MIN_NEGATIVE_ARTICLES = 3  # The absolute floor (user requirement: ">= 3 total articles")
-PERCENTILE_CUTOFF = 0.80   # The relative threshold (80th percentile)
+MIN_NEGATIVE_ARTICLES = 3
+PERCENTILE_CUTOFF = 0.80
 ALERT_COOLDOWN_HOURS = 168  
 
 def normalize_name(name):
-    """
-    Strips legal suffixes to find the 'core' brand name.
-    Example: "Apple Inc." -> "Apple"
-    """
+    """Strips legal suffixes to find the 'core' brand name."""
     if not name: return ""
     name = str(name).strip()
-    
-    # Common suffixes to remove (case insensitive)
     suffixes = [
         ' Inc.', ' Inc', ' Corporation', ' Corp.', ' Corp', 
         ' Company', ' Co.', ' Co', ' LLC', ' L.L.C.', ' Ltd.', ' Ltd', 
         ' PLC', ' plc', ' Group', ' Holdings', ' .com'
     ]
-    
-    # Sort by length (desc) so we catch "L.L.C." before "L.C."
     for suffix in sorted(suffixes, key=len, reverse=True):
         if name.lower().endswith(suffix.lower()):
             name = name[:-len(suffix)].strip()
             break
-            
-    # Remove special chars (keep spaces/alphanumeric)
     name = re.sub(r'[^\w\s]', '', name)
     return name
 
 def get_salesforce_owner(brand_name):
-    """
-    Finds account owner using a 3-step Cascade:
-    1. Exact Match
-    2. Token/Prefix Match (catches "Cigna" -> "Cigna Healthcare")
-    3. Fuzzy Match (catches "Lowe's" -> "Lowes")
-    """
+    """Finds account owner using Exact -> Token -> Fuzzy matching."""
     if not brand_name: return None, None
-    
     try:
         sf = Salesforce(username=SF_USERNAME, password=SF_PASSWORD, security_token=SF_TOKEN)
         
-        # --- ATTEMPT 1: Exact Match ---
+        # 1. Exact Match
         safe_name = brand_name.replace("'", "\\'")
         query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name = '{safe_name}' LIMIT 1"
         result = sf.query(query)
-        
         if result['totalSize'] > 0:
-            owner = result['records'][0]['Owner']
-            print(f"   ✅ Found exact match: {result['records'][0]['Name']}")
-            return owner['Email'], owner['Name']
+            return result['records'][0]['Owner']['Email'], result['records'][0]['Owner']['Name']
 
-        # --- PREPARE FOR FUZZY SEARCH ---
+        # 2. Token/Prefix Match
         core_name = normalize_name(brand_name)
         if len(core_name) < 2: return None, None
         
-        # Fetch candidates that *contain* the core name
         safe_core = core_name.replace("'", "\\'")
         fuzzy_query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name LIKE '%{safe_core}%' LIMIT 10"
         fuzzy_result = sf.query(fuzzy_query)
-        
-        if fuzzy_result['totalSize'] == 0:
-            return None, None
+        if fuzzy_result['totalSize'] == 0: return None, None
             
         candidates = fuzzy_result['records']
         core_lower = core_name.lower()
-
-        # --- ATTEMPT 2: Token/Prefix Match (The Fix for Cigna) ---
-        # We look for the brand appearing as a distinct word or prefix
-        # "Cigna" matches "Cigna Healthcare" (Prefix)
-        # "Delta" matches "Delta Airlines" (Prefix)
-        # "Gap" matches "The Gap" (Word)
-        # "Apple" does NOT match "Applebee's" (Not a distinct word)
         
         for rec in candidates:
-            sf_name = rec['Name']
-            sf_lower = sf_name.lower()
-            
-            # Rule A: Starts with brand (most reliable)
-            # Check if it starts with "Cigna " (space) or is exactly "Cigna"
+            sf_lower = rec['Name'].lower()
             if sf_lower == core_lower or sf_lower.startswith(core_lower + " "):
-                print(f"   ✅ Prefix match found: '{brand_name}' -> '{sf_name}'")
                 return rec['Owner']['Email'], rec['Owner']['Name']
-                
-            # Rule B: Whole Word Containment
-            # Matches "The Cigna Group" but avoids "Uncignal"
-            # We pad with spaces to ensure we match whole words
             if f" {core_lower} " in f" {sf_lower} ":
-                print(f"   ✅ Word match found: '{brand_name}' -> '{sf_name}'")
                 return rec['Owner']['Email'], rec['Owner']['Name']
 
-        # --- ATTEMPT 3: Difflib Fuzzy Match (Fallback) ---
-        # Useful for typos or slight variations not caught above
+        # 3. Fuzzy Fallback
         candidate_names = [r['Name'] for r in candidates]
         best_matches = get_close_matches(brand_name, candidate_names, n=1, cutoff=0.6)
-        
         if best_matches:
-            best_name = best_matches[0]
-            match_rec = next(r for r in candidates if r['Name'] == best_name)
-            print(f"   ✅ Fuzzy match found: '{brand_name}' -> '{best_name}'")
+            match_rec = next(r for r in candidates if r['Name'] == best_matches[0])
             return match_rec['Owner']['Email'], match_rec['Owner']['Name']
 
-        print(f"   ❌ No valid match found for '{brand_name}' in {len(candidates)} candidates.")
         return None, None
-
     except Exception as e:
         print(f"⚠️ Salesforce lookup failed for {brand_name}: {e}")
         return None, None
 
 def get_slack_user_id(email):
-    """Exchanges email for Slack User ID to allow tagging."""
     if not email: return None
     try:
         url = "https://slack.com/api/users.lookupByEmail"
         headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
         resp = requests.get(url, headers=headers, params={"email": email})
         data = resp.json()
-        if data.get("ok"):
-            return data['user']['id']
-    except Exception as e:
-        print(f"⚠️ Slack lookup failed: {e}")
+        if data.get("ok"): return data['user']['id']
+    except Exception: pass
     return None
 
-def send_slack_alert(brand, count, p80, headlines, owner_slack_id, owner_name):
+def send_slack_alert(brand, ceo_name, article_type, count, p80_val, headlines, owner_slack_id, owner_name):
     """
-    Sends a structured Block Kit message to Slack.
+    Sends a Block Kit alert. 
+    Customizes title/link based on whether it's a CEO or Brand crisis.
     """
     
-    # 1. Determine who to tag
+    # 1. Customize Content based on Type
+    if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
+        # CEO CRISIS MODE
+        alert_title = f"🚨 CEO Crisis: {ceo_name}"
+        sub_context = f"Company: {brand}"
+        # Point to the CEO tab
+        safe_filter = urllib.parse.quote(ceo_name)
+        dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=ceos&company={safe_filter}"
+    else:
+        # BRAND CRISIS MODE
+        alert_title = f"🚨 Brand Crisis: {brand}"
+        sub_context = "Category: Corporate Brand"
+        # Point to the Brand tab
+        safe_filter = urllib.parse.quote(brand)
+        dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=brands&company={safe_filter}"
+
+    # 2. Determine Recipient
     if owner_slack_id:
         mention_text = f"<@{owner_slack_id}>"
     elif owner_name:
@@ -160,27 +130,23 @@ def send_slack_alert(brand, count, p80, headlines, owner_slack_id, owner_name):
     else:
         mention_text = f"<@{FALLBACK_SLACK_ID}> (Salesforce Missing)"
 
-    # 2. Format Headlines (Bullet points)
-    # Truncate to avoid making the message too long
+    # 3. Format Headlines
     headline_text = ""
     if headlines:
         raw_heads = str(headlines).split('|')
         for hl in raw_heads[:3]: 
-            # Clean up potential double quotes or extra whitespace
             clean_hl = hl.strip().strip('"')
             headline_text += f"• {clean_hl}\n"
-        
         if len(raw_heads) > 3:
             headline_text += f"_...and {len(raw_heads) - 3} more_"
 
-    # 3. Construct the "Block Kit" Payload
-    # This creates a visually rich card instead of just text
+    # 4. Construct Blocks
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"🚨 Crisis Alert: {brand}",
+                "text": alert_title,
                 "emoji": True
             }
         },
@@ -188,12 +154,10 @@ def send_slack_alert(brand, count, p80, headlines, owner_slack_id, owner_name):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Attention:* {mention_text}\n*Status:* :chart_with_upwards_trend: Unusual Negative Surge Detected"
+                "text": f"*Attention:* {mention_text}\n*Context:* {sub_context}"
             }
         },
-        {
-            "type": "divider"
-        },
+        { "type": "divider" },
         {
             "type": "section",
             "fields": [
@@ -203,7 +167,7 @@ def send_slack_alert(brand, count, p80, headlines, owner_slack_id, owner_name):
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Normal Baseline (P80):*\n< {p80:.1f} Articles"
+                    "text": f"*Normal Baseline (P80):*\n< {p80_val:.1f} Articles"
                 }
             ]
         },
@@ -219,26 +183,18 @@ def send_slack_alert(brand, count, p80, headlines, owner_slack_id, owner_name):
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "View the full <https://your-dashboard-url.com|Risk Dashboard> for analysis."
+                    "text": f"View analysis on the <{dashboard_url}|Risk Dashboard>."
                 }
             ]
         }
     ]
 
-    # 4. Send Payload (Using 'blocks' instead of just 'text')
-    try:
-        requests.post(
-            "https://slack.com/api/chat.postMessage",
-            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-            json={
-                "channel": SLACK_CHANNEL,
-                "text": f"Crisis Alert for {brand}", # Fallback for notifications
-                "blocks": blocks
-            }
-        )
-        print(f"✅ Alert sent for {brand}")
-    except Exception as e:
-        print(f"⚠️ Failed to send Slack alert for {brand}: {e}")
+    requests.post(
+        "https://slack.com/api/chat.postMessage",
+        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+        json={"channel": SLACK_CHANNEL, "text": alert_title, "blocks": blocks}
+    )
+    print(f"✅ Alert sent for {alert_title}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -247,7 +203,7 @@ def main():
 
     storage = CloudStorageManager(args.bucket)
     
-    # 1. Load Data (This file contains 90 days of history)
+    # 1. Load Data
     summary_path = "data/daily_counts/negative-articles-summary.csv"
     if not storage.file_exists(summary_path):
         print("No negative summary file found. Exiting.")
@@ -264,13 +220,10 @@ def main():
         except:
             print("Could not read history, starting fresh.")
 
-    # --- [NEW] CALCULATE DYNAMIC THRESHOLDS ---
-    # Group by company and calculate the 80th percentile of 'negative_count'
-    # This creates a dictionary: {'Nike': 5.2, 'Apple': 12.0, ...}
-    print("📊 Calculating 80th percentile thresholds based on 90-day history...")
+    # Calculate P80 Thresholds (Per company, regardless of type for now)
+    print("📊 Calculating 80th percentile thresholds...")
     percentiles = df.groupby('company')['negative_count'].quantile(PERCENTILE_CUTOFF).to_dict()
 
-    # 3. Process Today's Alerts
     current_time = datetime.now()
     updates_made = False
     
@@ -279,37 +232,39 @@ def main():
         count = row['negative_count']
         headlines = row['top_headlines']
         
-        # A. DATE FILTER: Only look at "Today" (or last 24h)
+        # Extract Type and CEO
+        # The column in your CSV is 'article_type' (ceo/brand)
+        # The column 'ceo' holds the name
+        article_type = str(row.get('article_type', 'brand')).lower().strip()
+        ceo_name = str(row.get('ceo', '')).strip()
+
+        # A. DATE FILTER
         date_str = str(row['date']) 
         row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
         if row_date < datetime.now().date() - timedelta(days=1):
             continue
 
-        # B. DYNAMIC THRESHOLD CHECK
-        # Get this brand's specific 80th percentile (default to 0 if new brand)
+        # B. THRESHOLD CHECK
         p80 = percentiles.get(brand, 0)
+        if count < MIN_NEGATIVE_ARTICLES: continue
+        if count < p80: continue
 
-        # THE FORMULA: 
-        # 1. Must be >= 3 total negative articles (Floor)
-        # 2. Must be > The brand's 80th percentile (Relative Spike)
-        if count < MIN_NEGATIVE_ARTICLES:
-            continue
-            
-        if count < p80:
-            # It's negative, but "normal" for this brand
-            continue
-
-        # C. COOLDOWN CHECK
-        last_alert = history.get(brand)
+        # C. COOLDOWN CHECK (Updated to use Composite Key)
+        # Key is now "Apple_brand" or "Apple_ceo"
+        # This allows a CEO crisis to alert even if the Brand alerted recently
+        history_key = f"{brand}_{article_type}"
+        
+        last_alert = history.get(history_key)
         if last_alert:
             last_date = datetime.fromisoformat(last_alert)
             if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
-                print(f"Skipping {brand} (Cooling down since {last_date})")
+                print(f"Skipping {history_key} (Cooling down)")
                 continue
 
         # --- TRIGGER ALERT ---
-        print(f"🚀 Triggering alert for {brand} (Count: {count} >= P80: {p80:.1f})...")
+        print(f"🚀 Triggering alert for {history_key}...")
         
+        # Salesforce lookup always uses BRAND name
         owner_email, owner_name = get_salesforce_owner(brand)
 
         # --- 🧪 TEST OVERRIDE ---
@@ -319,13 +274,14 @@ def main():
         
         slack_id = get_slack_user_id(owner_email)
         
-        # Pass p80 to the alert function so we can show it in the message
-        send_slack_alert(brand, count, p80, headlines, slack_id, owner_name)
+        send_slack_alert(
+            brand, ceo_name, article_type, count, p80, headlines, 
+            slack_id, owner_name
+        )
         
-        history[brand] = current_time.isoformat()
+        history[history_key] = current_time.isoformat()
         updates_made = True
 
-    # 4. Save State
     if updates_made:
         storage.write_text(json.dumps(history, indent=2), history_path)
         print("💾 Alert history updated.")
