@@ -129,39 +129,98 @@ def get_slack_user_id(email):
         print(f"⚠️ Slack lookup failed: {e}")
     return None
 
-def send_slack_alert(brand, count, p80_val, headlines, owner_slack_id, owner_name):
-    """Sends the formatted alert with context about the spike."""
+def send_slack_alert(brand, count, p80, headlines, owner_slack_id, owner_name):
+    """
+    Sends a structured Block Kit message to Slack.
+    """
     
+    # 1. Determine who to tag
     if owner_slack_id:
-        mention = f"<@{owner_slack_id}>"
+        mention_text = f"<@{owner_slack_id}>"
     elif owner_name:
-        mention = f"{owner_name} (Email lookup failed)"
+        mention_text = f"{owner_name} (Email lookup failed)"
     else:
-        mention = f"<@{FALLBACK_SLACK_ID}> (Salesforce Missing)"
+        mention_text = f"<@{FALLBACK_SLACK_ID}> (Salesforce Missing)"
 
+    # 2. Format Headlines (Bullet points)
+    # Truncate to avoid making the message too long
     headline_text = ""
     if headlines:
-        for hl in str(headlines).split('|')[:3]: 
-            headline_text += f"• {hl}\n"
+        raw_heads = str(headlines).split('|')
+        for hl in raw_heads[:3]: 
+            # Clean up potential double quotes or extra whitespace
+            clean_hl = hl.strip().strip('"')
+            headline_text += f"• {clean_hl}\n"
+        
+        if len(raw_heads) > 3:
+            headline_text += f"_...and {len(raw_heads) - 3} more_"
 
-    message = {
-        "channel": SLACK_CHANNEL,
-        "text": (
-            f"🚨 **CRISIS ALERT: {brand}**\n"
-            f"**Attn:** {mention}\n\n"
-            f"**Issue:** Negative news surge detected.\n"
-            f"**Volume:** {count} negative articles (Normal 80% range: < {p80_val:.1f})\n\n"
-            f"**Top Headlines:**\n{headline_text}\n"
-            f"_Check the dashboard for full details._"
+    # 3. Construct the "Block Kit" Payload
+    # This creates a visually rich card instead of just text
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"🚨 Crisis Alert: {brand}",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Attention:* {mention_text}\n*Status:* :chart_with_upwards_trend: Unusual Negative Surge Detected"
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Today's Volume:*\n{count} Articles"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Normal Baseline (P80):*\n< {p80:.1f} Articles"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Top Headlines:*\n{headline_text}"
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "View the full <https://your-dashboard-url.com|Risk Dashboard> for analysis."
+                }
+            ]
+        }
+    ]
+
+    # 4. Send Payload (Using 'blocks' instead of just 'text')
+    try:
+        requests.post(
+            "https://slack.com/api/chat.postMessage",
+            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+            json={
+                "channel": SLACK_CHANNEL,
+                "text": f"Crisis Alert for {brand}", # Fallback for notifications
+                "blocks": blocks
+            }
         )
-    }
-
-    requests.post(
-        "https://slack.com/api/chat.postMessage",
-        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-        json=message
-    )
-    print(f"✅ Alert sent for {brand} to {mention}")
+        print(f"✅ Alert sent for {brand}")
+    except Exception as e:
+        print(f"⚠️ Failed to send Slack alert for {brand}: {e}")
 
 def main():
     parser = argparse.ArgumentParser()
