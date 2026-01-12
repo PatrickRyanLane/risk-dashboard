@@ -233,11 +233,11 @@ def main():
         # --- TRIGGER ALERT ---
         print(f"🚀 Triggering alert for {brand} (Count: {count} >= P80: {p80:.1f})...")
         
-        # owner_email, owner_name = get_salesforce_owner(brand)
+        owner_email, owner_name = get_salesforce_owner(brand)
 
         # --- 🧪 TEST OVERRIDE ---
-        owner_email = "plane@terakeet.com" 
-        owner_name = "Pat Lane"
+        # owner_email = "plane@terakeet.com" 
+        # owner_name = "Pat Lane"
         # ------------------------
         
         slack_id = get_slack_user_id(owner_email)
