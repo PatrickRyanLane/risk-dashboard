@@ -56,59 +56,77 @@ def normalize_name(name):
 
 def get_salesforce_owner(brand_name):
     """
-    Finds account owner with a 2-step lookup (Exact -> Fuzzy).
+    Finds account owner using a 3-step Cascade:
+    1. Exact Match
+    2. Token/Prefix Match (catches "Cigna" -> "Cigna Healthcare")
+    3. Fuzzy Match (catches "Lowe's" -> "Lowes")
     """
     if not brand_name: return None, None
     
     try:
         sf = Salesforce(username=SF_USERNAME, password=SF_PASSWORD, security_token=SF_TOKEN)
         
-        # ---------------------------------------------------------
-        # ATTEMPT 1: Exact Match (The "Perfect" Match)
-        # ---------------------------------------------------------
-        # Escape single quotes in brand names (e.g., "McDonald's")
+        # --- ATTEMPT 1: Exact Match ---
         safe_name = brand_name.replace("'", "\\'")
         query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name = '{safe_name}' LIMIT 1"
         result = sf.query(query)
         
         if result['totalSize'] > 0:
             owner = result['records'][0]['Owner']
-            print(f"   ✅ Found exact match in Salesforce: {result['records'][0]['Name']}")
+            print(f"   ✅ Found exact match: {result['records'][0]['Name']}")
             return owner['Email'], owner['Name']
 
-        # ---------------------------------------------------------
-        # ATTEMPT 2: Fuzzy/Core Match (The "Smart" Match)
-        # ---------------------------------------------------------
+        # --- PREPARE FOR FUZZY SEARCH ---
         core_name = normalize_name(brand_name)
-        if len(core_name) < 3: 
-            # Too short to fuzzy match safely (e.g. "GE") -> Give up
-            print(f"   ⚠️ Exact match failed and name '{core_name}' too short for fuzzy search.")
-            return None, None
-            
-        print(f"   🔄 Exact match failed. Trying fuzzy search for '{core_name}'...")
+        if len(core_name) < 2: return None, None
         
-        # Search for any account *containing* the core name
-        # We fetch up to 5 candidates to pick the best one
+        # Fetch candidates that *contain* the core name
         safe_core = core_name.replace("'", "\\'")
-        fuzzy_query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name LIKE '%{safe_core}%' LIMIT 5"
+        fuzzy_query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name LIKE '%{safe_core}%' LIMIT 10"
         fuzzy_result = sf.query(fuzzy_query)
         
         if fuzzy_result['totalSize'] == 0:
             return None, None
             
-        # Python Logic: Find the closest string match among the candidates
-        # This prevents searching for "Apple" and accidentally matching "Pineapple Corp"
-        candidate_names = [rec['Name'] for rec in fuzzy_result['records']]
+        candidates = fuzzy_result['records']
+        core_lower = core_name.lower()
+
+        # --- ATTEMPT 2: Token/Prefix Match (The Fix for Cigna) ---
+        # We look for the brand appearing as a distinct word or prefix
+        # "Cigna" matches "Cigna Healthcare" (Prefix)
+        # "Delta" matches "Delta Airlines" (Prefix)
+        # "Gap" matches "The Gap" (Word)
+        # "Apple" does NOT match "Applebee's" (Not a distinct word)
+        
+        for rec in candidates:
+            sf_name = rec['Name']
+            sf_lower = sf_name.lower()
+            
+            # Rule A: Starts with brand (most reliable)
+            # Check if it starts with "Cigna " (space) or is exactly "Cigna"
+            if sf_lower == core_lower or sf_lower.startswith(core_lower + " "):
+                print(f"   ✅ Prefix match found: '{brand_name}' -> '{sf_name}'")
+                return rec['Owner']['Email'], rec['Owner']['Name']
+                
+            # Rule B: Whole Word Containment
+            # Matches "The Cigna Group" but avoids "Uncignal"
+            # We pad with spaces to ensure we match whole words
+            if f" {core_lower} " in f" {sf_lower} ":
+                print(f"   ✅ Word match found: '{brand_name}' -> '{sf_name}'")
+                return rec['Owner']['Email'], rec['Owner']['Name']
+
+        # --- ATTEMPT 3: Difflib Fuzzy Match (Fallback) ---
+        # Useful for typos or slight variations not caught above
+        candidate_names = [r['Name'] for r in candidates]
         best_matches = get_close_matches(brand_name, candidate_names, n=1, cutoff=0.6)
         
         if best_matches:
             best_name = best_matches[0]
-            # Find the record that corresponds to this name
-            match_rec = next(r for r in fuzzy_result['records'] if r['Name'] == best_name)
-            owner = match_rec['Owner']
-            print(f"   ✅ Fuzzy match success: '{brand_name}' matched to '{best_name}'")
-            return owner['Email'], owner['Name']
+            match_rec = next(r for r in candidates if r['Name'] == best_name)
+            print(f"   ✅ Fuzzy match found: '{brand_name}' -> '{best_name}'")
+            return match_rec['Owner']['Email'], match_rec['Owner']['Name']
 
+        print(f"   ❌ No valid match found for '{brand_name}' in {len(candidates)} candidates.")
         return None, None
 
     except Exception as e:
