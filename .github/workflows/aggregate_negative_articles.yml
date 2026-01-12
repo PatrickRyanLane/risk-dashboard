@@ -58,10 +58,8 @@ jobs:
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
           SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
         run: |
           echo "🚀 Checking for crises and sending alerts..."
-          # Using the bucket env var defined at the job level
           python scripts/send_crisis_alerts.py --bucket "$GCS_BUCKET"
       
       - name: Summary
