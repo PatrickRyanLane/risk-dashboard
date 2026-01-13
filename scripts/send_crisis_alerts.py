@@ -28,7 +28,7 @@ FALLBACK_SLACK_ID = "UT1EC3ENR"
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 3
 PERCENTILE_CUTOFF = 0.80
-ALERT_COOLDOWN_HOURS = 24  
+ALERT_COOLDOWN_HOURS = 168  
 
 def normalize_name(name):
     """Strips legal suffixes to find the 'core' brand name."""
