@@ -27,7 +27,7 @@ FALLBACK_SLACK_ID = "UT1EC3ENR"
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
-PERCENTILE_CUTOFF = 0.95
+PERCENTILE_CUTOFF = 0.97
 ALERT_COOLDOWN_HOURS = 168  
 
 def normalize_name(name):
@@ -101,7 +101,7 @@ def get_slack_user_id(email):
     except Exception: pass
     return None
 
-def send_slack_alert(brand, ceo_name, article_type, count, p95_val, headlines, owner_slack_id, owner_name):
+def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name):
     """
     Sends a Block Kit alert. 
     Customizes title/link based on whether it's a CEO or Brand crisis.
@@ -118,7 +118,13 @@ def send_slack_alert(brand, ceo_name, article_type, count, p95_val, headlines, o
     else:
         # BRAND CRISIS MODE
         alert_title = f"🚨 Brand Crisis: {brand}"
-        sub_context = "Category: Corporate Brand"
+        
+        # Check if we have a valid CEO name before displaying it
+        if ceo_name and ceo_name.lower() != 'nan':
+             sub_context = f"CEO: {ceo_name}"
+        else:
+             sub_context = "Category: Corporate Brand"  # Fallback if CEO is missing
+        
         # Point to the Brand tab
         safe_filter = urllib.parse.quote(brand)
         dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=brands&company={safe_filter}"
@@ -164,11 +170,11 @@ def send_slack_alert(brand, ceo_name, article_type, count, p95_val, headlines, o
             "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*Today's Volume:*\n{count} Articles"
+                    "text": f"*Today's Negative Artivle Volume:*\n{count} Articles"
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Normal Baseline (P95):*\n< {p95_val:.1f} Articles"
+                    "text": f"*Normal Negative Article Baseline (P97):*\n< {p97_val:.1f} Articles"
                 }
             ]
         },
@@ -224,14 +230,14 @@ def main():
     # --- CALCULATE THRESHOLDS & DATA MATURITY ---
     print("📊 Calculating thresholds...")
     
-    # We calculate counts to know if we have enough history to trust the P95
-    # If a company appears < 10 times, P95 is statistically noisy.
+    # We calculate counts to know if we have enough history to trust the P97
+    # If a company appears < 10 times, P97 is statistically noisy.
     brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
     ceo_stats = df[df['article_type'] == 'ceo'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
 
     # Config for "New" Companies (Low History)
-    MIN_HISTORY_POINTS = 14   # Need 14 days of data to trust P95
-    HARD_FLOOR_NEW_CO = 20    # If < 14 days history, require 15 articles to alert (Stricter)
+    MIN_HISTORY_POINTS = 14   # Need 14 days of data to trust P97
+    HARD_FLOOR_NEW_CO = 15    # If < 14 days history, require 15 articles to alert (Stricter)
 
     current_time = datetime.now()
     updates_made = False
@@ -261,17 +267,17 @@ def main():
         company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
         
         history_points = company_stats['count']
-        p95 = company_stats['<lambda_0>']
+        p97 = company_stats['<lambda_0>']
 
         # LOGIC:
-        # 1. If we have lots of history (>= 14 days), use the P95 and the normal floor (5).
-        # 2. If history is thin (< 14 days), ignore P95 and use the STRICT Hard Floor (15).
+        # 1. If we have lots of history (>= 14 days), use the P97 and the normal floor (5).
+        # 2. If history is thin (< 14 days), ignore P97 and use the STRICT Hard Floor (15).
         
         if history_points >= MIN_HISTORY_POINTS:
-            # Mature Data: Use P95 + Standard Floor
+            # Mature Data: Use P97 + Standard Floor
             if count < MIN_NEGATIVE_ARTICLES: continue
-            if count < p95: continue
-            threshold_msg = f"P95 ({p95:.1f})"
+            if count < p97: continue
+            threshold_msg = f"P97 ({p97:.1f})"
         else:
             # Immature Data: Use Strict Floor Only
             if count < HARD_FLOOR_NEW_CO: continue
@@ -298,7 +304,7 @@ def main():
         slack_id = get_slack_user_id(owner_email)
         
         send_slack_alert(
-            brand, ceo_name, article_type, count, p95 if history_points >= MIN_HISTORY_POINTS else HARD_FLOOR_NEW_CO, 
+            brand, ceo_name, article_type, count, p97 if history_points >= MIN_HISTORY_POINTS else HARD_FLOOR_NEW_CO, 
             headlines, slack_id, owner_name
         )
         
