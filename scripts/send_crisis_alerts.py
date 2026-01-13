@@ -26,7 +26,7 @@ SLACK_CHANNEL = "#crisis-alerts"
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
 
 # Configurable Floors
-MIN_NEGATIVE_ARTICLES = 5
+MIN_NEGATIVE_ARTICLES = 20
 PERCENTILE_CUTOFF = 0.95
 ALERT_COOLDOWN_HOURS = 168  
 
@@ -221,16 +221,17 @@ def main():
         except:
             print("Could not read history, starting fresh.")
 
-    # --- [FIXED] CALCULATE DYNAMIC THRESHOLDS PER TYPE ---
-    print("📊 Calculating 95th percentile thresholds (Separating Brand vs CEO)...")
+    # --- CALCULATE THRESHOLDS & DATA MATURITY ---
+    print("📊 Calculating thresholds...")
     
-    # Filter for brand rows only and calc thresholds
-    brand_df = df[df['article_type'] == 'brand']
-    brand_percentiles = brand_df.groupby('company')['negative_count'].quantile(PERCENTILE_CUTOFF).to_dict()
-    
-    # Filter for ceo rows only and calc thresholds
-    ceo_df = df[df['article_type'] == 'ceo']
-    ceo_percentiles = ceo_df.groupby('company')['negative_count'].quantile(PERCENTILE_CUTOFF).to_dict()
+    # We calculate counts to know if we have enough history to trust the P95
+    # If a company appears < 10 times, P95 is statistically noisy.
+    brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
+    ceo_stats = df[df['article_type'] == 'ceo'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
+
+    # Config for "New" Companies (Low History)
+    MIN_HISTORY_POINTS = 14   # Need 14 days of data to trust P95
+    HARD_FLOOR_NEW_CO = 20    # If < 14 days history, require 15 articles to alert (Stricter)
 
     current_time = datetime.now()
     updates_made = False
@@ -240,36 +241,47 @@ def main():
         count = row['negative_count']
         headlines = row['top_headlines']
         
-        # Extract Type and CEO
-        # The column in your CSV is 'article_type' (ceo/brand)
-        # The column 'ceo' holds the name
         article_type = str(row.get('article_type', 'brand')).lower().strip()
         ceo_name = str(row.get('ceo', '')).strip()
 
-        # A. DATE FILTER
+        # A. STRICT DATE FILTER (Last 48 Hours Only)
         date_str = str(row['date']) 
         row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        if row_date < datetime.now().date() - timedelta(days=1):
+        
+        # NOTE: Using server time. If simulating 2026 data on 2025 server, 
+        # you must hardcode this like: server_now = datetime(2026, 1, 13).date()
+        server_now = datetime.now().date()
+        
+        if row_date != server_now and row_date != server_now - timedelta(days=1):
             continue
 
-        # --- [FIXED] THRESHOLD CHECK ---
-        # Select the correct baseline history based on the row type
-        if article_type == 'ceo':
-            p95 = ceo_percentiles.get(brand, 0)
-        else:
-            p95 = brand_percentiles.get(brand, 0)
-            
-        if count < MIN_NEGATIVE_ARTICLES: continue
-        if count < p95: continue
-
-        # C. COOLDOWN CHECK (WITH MIGRATION LOGIC)
-        history_key = f"{brand}_{article_type}"
+        # B. DYNAMIC THRESHOLD CHECK
+        # Retrieve stats based on type
+        stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
+        company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
         
-        # Check for new-style key first
+        history_points = company_stats['count']
+        p95 = company_stats['<lambda_0>']
+
+        # LOGIC:
+        # 1. If we have lots of history (>= 14 days), use the P95 and the normal floor (5).
+        # 2. If history is thin (< 14 days), ignore P95 and use the STRICT Hard Floor (15).
+        
+        if history_points >= MIN_HISTORY_POINTS:
+            # Mature Data: Use P95 + Standard Floor
+            if count < MIN_NEGATIVE_ARTICLES: continue
+            if count < p95: continue
+            threshold_msg = f"P95 ({p95:.1f})"
+        else:
+            # Immature Data: Use Strict Floor Only
+            if count < HARD_FLOOR_NEW_CO: continue
+            threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
+
+        # C. COOLDOWN CHECK
+        history_key = f"{brand}_{article_type}"
         last_alert = history.get(history_key)
         
-        # If not found AND it's a brand alert, check for the old-style key ("Nike")
-        # This prevents re-alerting on brands that are already in cooldown
+        # Migration check for old keys
         if not last_alert and article_type == 'brand':
             last_alert = history.get(brand)
 
@@ -280,31 +292,19 @@ def main():
                 continue
 
         # --- TRIGGER ALERT ---
-        print(f"🚀 Triggering alert for {history_key} (Count: {count} >= P95: {p95:.1f})...")
+        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg} | Hist: {history_points} days")
         
         owner_email, owner_name = get_salesforce_owner(brand)
-
-        # --- 🧪 TEST OVERRIDE ---
-        # owner_email = "plane@terakeet.com" 
-        # owner_name = "Pat Lane"
-        # ------------------------
-        
         slack_id = get_slack_user_id(owner_email)
         
         send_slack_alert(
-            brand, ceo_name, article_type, count, p95, headlines, 
-            slack_id, owner_name
+            brand, ceo_name, article_type, count, p95 if history_points >= MIN_HISTORY_POINTS else HARD_FLOOR_NEW_CO, 
+            headlines, slack_id, owner_name
         )
         
-        # Save using the NEW key format
         history[history_key] = current_time.isoformat()
         updates_made = True
-
-        # --- [NEW] POLITE PAUSE ---
-        # Sleep for 2 seconds to respect Slack/Salesforce API rate limits
-        # This adds negligible time to the job but prevents 429 "Too Many Requests" errors.
         time.sleep(2) 
-        # --------------------------
 
     if updates_made:
         storage.write_text(json.dumps(history, indent=2), history_path)
