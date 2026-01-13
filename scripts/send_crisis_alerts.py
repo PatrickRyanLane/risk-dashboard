@@ -11,6 +11,7 @@ import argparse
 import requests
 import urllib.parse
 import re
+import time
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
@@ -27,7 +28,7 @@ FALLBACK_SLACK_ID = "UT1EC3ENR"
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 3
 PERCENTILE_CUTOFF = 0.80
-ALERT_COOLDOWN_HOURS = 168  
+ALERT_COOLDOWN_HOURS = 24  
 
 def normalize_name(name):
     """Strips legal suffixes to find the 'core' brand name."""
@@ -220,9 +221,16 @@ def main():
         except:
             print("Could not read history, starting fresh.")
 
-    # Calculate P80 Thresholds (Per company, regardless of type for now)
-    print("📊 Calculating 80th percentile thresholds...")
-    percentiles = df.groupby('company')['negative_count'].quantile(PERCENTILE_CUTOFF).to_dict()
+    # --- [FIXED] CALCULATE DYNAMIC THRESHOLDS PER TYPE ---
+    print("📊 Calculating 80th percentile thresholds (Separating Brand vs CEO)...")
+    
+    # Filter for brand rows only and calc thresholds
+    brand_df = df[df['article_type'] == 'brand']
+    brand_percentiles = brand_df.groupby('company')['negative_count'].quantile(PERCENTILE_CUTOFF).to_dict()
+    
+    # Filter for ceo rows only and calc thresholds
+    ceo_df = df[df['article_type'] == 'ceo']
+    ceo_percentiles = ceo_df.groupby('company')['negative_count'].quantile(PERCENTILE_CUTOFF).to_dict()
 
     current_time = datetime.now()
     updates_made = False
@@ -244,17 +252,27 @@ def main():
         if row_date < datetime.now().date() - timedelta(days=1):
             continue
 
-        # B. THRESHOLD CHECK
-        p80 = percentiles.get(brand, 0)
+        # --- [FIXED] THRESHOLD CHECK ---
+        # Select the correct baseline history based on the row type
+        if article_type == 'ceo':
+            p80 = ceo_percentiles.get(brand, 0)
+        else:
+            p80 = brand_percentiles.get(brand, 0)
+            
         if count < MIN_NEGATIVE_ARTICLES: continue
         if count < p80: continue
 
-        # C. COOLDOWN CHECK (Updated to use Composite Key)
-        # Key is now "Apple_brand" or "Apple_ceo"
-        # This allows a CEO crisis to alert even if the Brand alerted recently
+        # C. COOLDOWN CHECK (WITH MIGRATION LOGIC)
         history_key = f"{brand}_{article_type}"
         
+        # Check for new-style key first
         last_alert = history.get(history_key)
+        
+        # If not found AND it's a brand alert, check for the old-style key ("Nike")
+        # This prevents re-alerting on brands that are already in cooldown
+        if not last_alert and article_type == 'brand':
+            last_alert = history.get(brand)
+
         if last_alert:
             last_date = datetime.fromisoformat(last_alert)
             if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
@@ -262,9 +280,8 @@ def main():
                 continue
 
         # --- TRIGGER ALERT ---
-        print(f"🚀 Triggering alert for {history_key}...")
+        print(f"🚀 Triggering alert for {history_key} (Count: {count} >= P80: {p80:.1f})...")
         
-        # Salesforce lookup always uses BRAND name
         owner_email, owner_name = get_salesforce_owner(brand)
 
         # --- 🧪 TEST OVERRIDE ---
@@ -279,8 +296,15 @@ def main():
             slack_id, owner_name
         )
         
+        # Save using the NEW key format
         history[history_key] = current_time.isoformat()
         updates_made = True
+
+        # --- [NEW] POLITE PAUSE ---
+        # Sleep for 2 seconds to respect Slack/Salesforce API rate limits
+        # This adds negligible time to the job but prevents 429 "Too Many Requests" errors.
+        time.sleep(2) 
+        # --------------------------
 
     if updates_made:
         storage.write_text(json.dumps(history, indent=2), history_path)
