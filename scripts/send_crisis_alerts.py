@@ -101,7 +101,7 @@ def get_slack_user_id(email):
     except Exception: pass
     return None
 
-def send_slack_alert(brand, ceo_name, article_type, count, p80_val, headlines, owner_slack_id, owner_name):
+def send_slack_alert(brand, ceo_name, article_type, count, p95_val, headlines, owner_slack_id, owner_name):
     """
     Sends a Block Kit alert. 
     Customizes title/link based on whether it's a CEO or Brand crisis.
@@ -168,7 +168,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p80_val, headlines, o
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Normal Baseline (P80):*\n< {p80_val:.1f} Articles"
+                    "text": f"*Normal Baseline (P95):*\n< {p95_val:.1f} Articles"
                 }
             ]
         },
@@ -222,7 +222,7 @@ def main():
             print("Could not read history, starting fresh.")
 
     # --- [FIXED] CALCULATE DYNAMIC THRESHOLDS PER TYPE ---
-    print("📊 Calculating 80th percentile thresholds (Separating Brand vs CEO)...")
+    print("📊 Calculating 95th percentile thresholds (Separating Brand vs CEO)...")
     
     # Filter for brand rows only and calc thresholds
     brand_df = df[df['article_type'] == 'brand']
@@ -255,12 +255,12 @@ def main():
         # --- [FIXED] THRESHOLD CHECK ---
         # Select the correct baseline history based on the row type
         if article_type == 'ceo':
-            p80 = ceo_percentiles.get(brand, 0)
+            p95 = ceo_percentiles.get(brand, 0)
         else:
-            p80 = brand_percentiles.get(brand, 0)
+            p95 = brand_percentiles.get(brand, 0)
             
         if count < MIN_NEGATIVE_ARTICLES: continue
-        if count < p80: continue
+        if count < p95: continue
 
         # C. COOLDOWN CHECK (WITH MIGRATION LOGIC)
         history_key = f"{brand}_{article_type}"
@@ -280,7 +280,7 @@ def main():
                 continue
 
         # --- TRIGGER ALERT ---
-        print(f"🚀 Triggering alert for {history_key} (Count: {count} >= P80: {p80:.1f})...")
+        print(f"🚀 Triggering alert for {history_key} (Count: {count} >= P95: {p95:.1f})...")
         
         owner_email, owner_name = get_salesforce_owner(brand)
 
@@ -292,7 +292,7 @@ def main():
         slack_id = get_slack_user_id(owner_email)
         
         send_slack_alert(
-            brand, ceo_name, article_type, count, p80, headlines, 
+            brand, ceo_name, article_type, count, p95, headlines, 
             slack_id, owner_name
         )
         
