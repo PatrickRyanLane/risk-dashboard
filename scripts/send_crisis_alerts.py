@@ -12,6 +12,7 @@ import requests
 import urllib.parse
 import re
 import time
+import hashlib
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
@@ -28,7 +29,37 @@ FALLBACK_SLACK_ID = "UT1EC3ENR"
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
 PERCENTILE_CUTOFF = 0.97
-ALERT_COOLDOWN_HOURS = 168  
+ALERT_COOLDOWN_HOURS = 168
+
+# Manual color mapping for your VIPs
+OWNER_COLORS = {
+    "Shannon Buell": "#a589e8", # TK Purple
+    
+    "Ken Schiefer": "#ff8261", # TK Salmon
+    "Kenneth Schiefer": "#ff8261", # TK Salmon
+    
+    "Mac Cummings":  "#6fb210", # TK Green
+    "Maclaren Cummings":  "#6fb210", # TK Green
+
+    "Brittney Lee":  "#58dbed", # TK Light Blue
+    "Chris Loman":   "#00586d", # TK Dark Blue
+    "Fall Back":     "#ffc32e",  # Default (TK Yellow)
+}
+
+def get_owner_color(owner_name):
+    """Returns a specific color for VIPs, or the Fall Back yellow for EVERYONE else."""
+    
+    # 1. Safety check for empty names
+    if not owner_name:
+        return OWNER_COLORS["Fall Back"]
+    
+    # 2. Check if VIP exists in our map
+    for vip, color in OWNER_COLORS.items():
+        if vip.lower() in owner_name.lower():
+            return color
+            
+    # 3. If they are not in the list, return standard Yellow (instead of generating a random hash)
+    return OWNER_COLORS["Fall Back"]
 
 def normalize_name(name):
     """Strips legal suffixes to find the 'core' brand name."""
@@ -170,7 +201,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
             "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*Today's Negative Artivle Volume:*\n{count} Articles"
+                    "text": f"*Today's Negative Article Volume:*\n{count} Articles"
                 },
                 {
                     "type": "mrkdwn",
@@ -196,10 +227,25 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
         }
     ]
 
+    # --- NEW: Get Color & Wrap in Attachment ---
+    alert_color = get_owner_color(owner_name)
+
+    # The payload changes: we send 'attachments' instead of top-level 'blocks'
+    payload = {
+        "channel": SLACK_CHANNEL,
+        "text": alert_title, # Fallback text for mobile notifications
+        "attachments": [
+            {
+                "color": alert_color,
+                "blocks": blocks
+            }
+        ]
+    }
+
     requests.post(
         "https://slack.com/api/chat.postMessage",
         headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-        json={"channel": SLACK_CHANNEL, "text": alert_title, "blocks": blocks}
+        json=payload
     )
     print(f"✅ Alert sent for {alert_title}")
 

@@ -470,8 +470,8 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
                 else:
                     label = "neutral"
 
-        # 4) Force positive if controlled (but not if already negative)
-        if label != "negative" and FORCE_POSITIVE_IF_CONTROLLED and controlled:
+        # 4) Force positive if controlled
+        if FORCE_POSITIVE_IF_CONTROLLED and controlled:
             label = "positive"
 
         processed_rows.append({
