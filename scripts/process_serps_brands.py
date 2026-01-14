@@ -55,40 +55,50 @@ ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
 # ============================================================================
 NEUTRALIZE_TITLE_TERMS = [
     # Brand names that contain emotional-sounding words
-    r"\bgrand\b",           # Grand Hyatt, Grand Cherokee
-    r"\bdiamond\b",         # Diamond Foods
-    r"\bdream\b",           # DreamWorks
-    r"\bdarling\b",         # Darling Ingredients
-    r"\bwells\b",           # Wells Fargo
-    r"\bbest\s+buy\b",      # Best Buy
-    # Common headline words that skew sentiment
-    r"\bkilled\b",          # Often used hyperbolically
-    r"\bmlm\b",             # Multi-level marketing discussions
-    r"\bmad\s+money\b",     # Jim Cramer's show
-    r"\brate\s+cut\b",      # Interest rate discussions
-    r"\bone\s+stop\s+shop\b",  # Stop & Shop stores
-    r"\bfuneral\b",         # Service Corporation (funeral services)
-    r"\bcremation\b",       # Service Corporation
-    r"\bcemetery\b",        # Service Corporation
-    r"\blimited\b",         # The Limited Brands
-    r"\bsell\b",            # Headlines about "selling" aren't inherently negative
-    r"\blow\b",             # Low prices, Lowe's
-    r"\bno\s+organic\b",    # About organic food availability
+    r"(?i)\bgrand\b",           # Grand Hyatt, Grand Cherokee
+    r"(?i)\bdiamond\b",         # Diamond Foods
+    r"(?i)\bsell\b",            # Headlines about "selling" aren't inherently negative
+    r"(?i)\blow\b",             # Low prices, Lowe's
+    r"(?i)\bdream\b",           # DreamWorks
+    r"(?i)\bdarling\b",         # Darling Ingredients
+    r"(?i)\bwells\b",           # Wells Fargo
+    r"(?i)\bbest\s+buy\b",      # Best Buy (positive brand name)
+    r"(?i)\bkilled\b",          # Often used hyperbolically in headlines
+    r"(?i)\bmlm\b",             # Multi-level marketing discussions
+    r"(?i)\bmad\s+money\b",     # Jim Cramer's show
+    r"(?i)\brate\s+cut\b",      # Interest rate discussions
+    r"(?i)\bone\s+stop\s+shop\b",  # Stop & Shop stores
+    r"(?i)\bfuneral\b",         # Service Corporation (funeral services)
+    r"(?i)\bcremation\b",       # Service Corporation
+    r"(?i)\bcemetery\b",        # Service Corporation
+    r"(?i)\blimited\b",         # The Limited Brands
+    r"(?i)\bno\s+organic\b",    # About organic food availability
+    r"(?i)\brob\b",        # Potentially a person's name
+    r"(?i)\blower\b",      # CEO with last name Lower
+    r"(?i)\benergy\b",     # Lot of brands with energy in their name   
+    r"(?i)\brebel\b",      # Potential product name
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 # Force-negative if the title mentions legal trouble
 LEGAL_TROUBLE_TERMS = [
-    r"\blawsuit(s)?\b", r"\bsued\b",
-    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
-    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b"
-    r"\bantitrust\b", r"\bban(s|ed)?\b"
-    r"\brecall\b",
-    r"\blayoffs\b",r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
-    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
-    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
-    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b"
-    r"\bdivorce\b", r"\bbankcruptcy\b",
+    # Legal actions
+    r"(?i)\blawsuit(s)?\b", r"(?i)\bsued\b", r"(?i)\bsuing\b", r"(?i)\blegal\b",
+    r"(?i)\bsettlement(s)?\b", r"(?i)\bfine(d)?\b", r"(?i)\bclass[- ]action\b",
+    # Regulatory bodies (usually means trouble)
+    r"(?i)\bftc\b", r"(?i)\bsec\b", r"(?i)\bdoj\b", r"(?i)\bcfpb\b",
+    # Corporate crises
+    r"(?i)\bantitrust\b", r"(?i)\bban(s|ned)?\b", r"(?i)\bdata leaks?\b",
+    r"(?i)\brecall(s|ed)?\b",
+    r"(?i)\blayoff(s)?\b", r"(?i)\bexit(s)?\b", r"(?i)\bstep\s+down\b", r"(?i)\bsteps\s+down\b",
+    # Investigations
+    r"(?i)\bprobe(s|d)?\b", r"(?i)\binvestigation(s)?\b",
+    r"(?i)\bsanction(s|ed)?\b", r"(?i)\bpenalt(y|ies)\b",
+    # Scandals
+    r"(?i)\bfraud\b", r"(?i)\bembezzl(e|ement)\b", r"(?i)\baccused\b", r"(?i)\bcommitted\b",
+    r"(?i)\bdivorce\b", r"(?i)\bbankruptcy\b", r"(?i)\bapologizes\b", r"(?i)\bapology\b",
+    #Financial Terms
+    r"(?i)\bcontroversy\b", r"(?i)\bheadwinds\b",
 ]
 LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
@@ -147,11 +157,6 @@ def _is_brand_youtube_channel(company: str, url: str) -> bool:
     """
     Treat brand-owned YouTube channels as controlled if the path slug
     contains the normalized brand token.
-
-    Examples for company="Terakeet" that should be controlled:
-      https://www.youtube.com/user/Terakeet
-      https://www.youtube.com/@TerakeetSyracuse
-      https://www.youtube.com/Terakeet
     """
     if not url or not company:
         return False
@@ -159,58 +164,44 @@ def _is_brand_youtube_channel(company: str, url: str) -> bool:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower().replace("www.", "")
 
-    # Limit to YouTube main hosts so we don't overreach
     if host not in {"youtube.com", "m.youtube.com"}:
         return False
 
-    # Normalize company name to a token
     brand_token = _norm_token(company)
     if not brand_token:
         return False
 
-    # Strip leading/trailing slashes from path
     path = (parsed.path or "").strip("/")
 
     if not path:
-        # Just youtube.com (homepage) → not clearly brand-owned
         return False
 
-    # Extract the "slug" part for:
-    #   /user/BRAND
-    #   /@BRANDHANDLE
-    #   /BRAND
     if path.lower().startswith("user/"):
-        slug = path[5:]  # after "user/"
+        slug = path[5:]
     elif path.startswith("@"):
-        slug = path[1:]  # after "@"
+        slug = path[1:]
     else:
-        # First path segment (handles /BRAND, /BRAND/..., but avoids /watch, /results, etc.)
         slug = path.split("/", 1)[0]
 
     if not slug:
         return False
 
     slug_token = _norm_token(slug)
-
-    # Require the brand token to appear in the slug token
     return bool(slug_token) and brand_token in slug_token
 
 def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[str]]:
     """
     Load controlled domains from roster, keyed by company name.
-    Returns: Dict[company_name, Set[domain_names]]
     """
     company_domains: Dict[str, Set[str]] = {}
 
     try:
         if storage:
-            # Read from Cloud Storage
             if not storage.file_exists(path):
                 print(f"[WARN] Roster not found in Cloud Storage at {path}")
                 return company_domains
             df = storage.read_csv(path)
         else:
-            # Read from local file
             roster_file = Path(path)
             if not roster_file.exists():
                 print(f"[WARN] Roster not found at {roster_file}")
@@ -219,7 +210,6 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
         
         cols = {c.strip().lower(): c for c in df.columns}
         
-        # Find company and website columns
         company_col = None
         for key in ["company"]:
             if key in cols:
@@ -254,7 +244,6 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
             if company not in company_domains:
                 company_domains[company] = set()
             
-            # Split on pipe character
             urls = val.split("|")
             
             for url in urls:
@@ -279,33 +268,24 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
 
 def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
     """
-    Classify if a URL is controlled by a company using multiple rules:
-    (1) Always-controlled platforms (social media, etc.)
-    (2) Domains specific to this company from the roster
-    (3) Domain contains the company's brand token
-    Plus a special rule for brand-owned YouTube channels (path-based).
+    Classify if a URL is controlled by a company.
     """
     host = _hostname(url)
     if not host:
         return False
 
-    # Special rule: brand-owned YouTube channels (youtube.com/BRAND,
-    # youtube.com/user/BRAND, youtube.com/@BRANDHANDLE)
     if _is_brand_youtube_channel(company, url):
         return True
 
-    # Rule 1: Always-controlled platforms
     for good in ALWAYS_CONTROLLED_DOMAINS:
         if host == good or host.endswith("." + good):
             return True
 
-    # Rule 2: Company-specific roster domains
     company_specific_domains = company_domains.get(company, set())
     for rd in company_specific_domains:
         if host == rd or host.endswith("." + rd):
             return True
 
-    # Rule 3: Domain contains the brand token
     brand_token = _norm_token(company)
     if brand_token:
         host_parts = host.split('.')
@@ -315,17 +295,20 @@ def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]
 
     return False
 
-def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[float, str]:
+def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> str:
+    """
+    Apply VADER with custom thresholds.
+    Unified thresholds: positive >= 0.15, negative <= -0.10
+    """
     s = analyzer.polarity_scores(title or "")
     c = s.get("compound", 0.0)
-    # Unified thresholds: positive ≥0.15, negative ≤-0.10
+    
     if c >= 0.15:
-        lab = "positive"
+        return "positive"
     elif c <= -0.10:
-        lab = "negative"
+        return "negative"
     else:
-        lab = "neutral"
-    return c, lab
+        return "neutral"
 
 def process_for_date(storage, target_date: str, roster_path: str) -> None:
     print(f"[INFO] Processing brand SERPs for {target_date} …")
@@ -366,20 +349,22 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         # --- Sentiment rules (deterministic order) ---
         host = _hostname(url)
 
-        # 1) Force negative for reddit.com (and subdomains)
+        # 1) Force negative for reddit.com
         if host == "reddit.com" or (host and host.endswith(".reddit.com")):
             label = "negative"
-        # 2) Force negative for legal-trouble titles (lawsuit, sued, settlement, fines, etc.)
+        # 2) Force negative for Legal/Trouble terms
         elif _title_mentions_legal_trouble(title):
             label = "negative"
+        # 3) Neutralize certain terms
+        elif _should_neutralize_title(title):
+            label = "neutral"
         else:
-            # 3) Neutralize certain brand terms in the title
-            if _should_neutralize_title(title):
-                label = "neutral"
-            else:
-                _, label = vader_label_on_title(analyzer, title)
+            # 4) VADER analysis on the raw title
+            label = vader_label_on_title(analyzer, title)
 
-            # 4) Force positive if controlled — but ONLY if we didn't already force negative above
+            # 5) Force positive if controlled — but ONLY if we didn't already force negative above
+            # (Note: This is applied after VADER but before final assignment, 
+            # effectively overriding VADER but NOT overriding steps 1-3)
             if FORCE_POSITIVE_IF_CONTROLLED and controlled:
                 label = "positive"
 

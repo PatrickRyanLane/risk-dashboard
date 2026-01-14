@@ -67,28 +67,44 @@ CONTROLLED_PATH_KEYWORDS = {
 # CEO-SPECIFIC WORD FILTERING RULES
 # ============================================================================
 NEUTRALIZE_TITLE_TERMS = [
-    r"\bflees\b",
-    r"\bsavage\b",
-    r"\brob\b",
-    r"\bnicholas\s+lower\b",
-    r"\bmad\s+money\b",
-    r"\bno\s+organic\b",
+    r"(?i)\bflees\b",           # Often used figuratively or in names
+    r"(?i)\bsavage\b",          # Common surname (e.g., Dan Savage)
+    r"(?i)\brob\b",             # Common first name (e.g., Rob Walton)
+    r"(?i)\bnicholas\s+lower\b", # Specific CEO name combination
+    r"(?i)\bmad\s+money\b",     # Jim Cramer's show
+    r"(?i)\bno\s+organic\b",    # About organic food availability
+    r"(?i)\brob\b",        # Potentially a person's name
+    r"(?i)\blower\b",      # CEO with last name Lower
+    r"(?i)\benergy\b",     # Lot of brands with energy in their name   
+    r"(?i)\brebel\b",      # Potential product name
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 ALWAYS_NEGATIVE_TERMS = [
-    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b",
-    r"\bmandate\b",
-    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
-    r"\bstill\b",
-    r"\bturnaround\b",
-    r"\bface\b", r"\baccused\b", r"\bcommitted\b",
-    r"\baware\b",
-    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
-    r"\bunion\s+buster\b",
-    r"\bfired\b", r"\bfiring\b", r"\bfires\b"
-    r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
-    r"\bplummeting\b",
+    # Compensation scrutiny (common CEO negative coverage)
+    r"(?i)\bpaid\b", r"(?i)\bcompensation\b", r"(?i)\bpay\b", r"(?i)\bnet worth\b",
+    # Corporate governance issues
+    r"(?i)\bmandate\b",
+    # Leadership changes (usually negative for the departing CEO)
+    r"(?i)\bexit(s)?\b", r"(?i)\bstep\s+down\b", r"(?i)\bsteps\s+down\b", r"(?i)\bremoved\b",
+    # Skepticism/scrutiny language
+    r"(?i)\bstill\b",  # "CEO still hasn't..." implies criticism
+    r"(?i)\bturnaround\b",  # Company in trouble
+    # Personal accusations
+    r"(?i)\bface\b", r"(?i)\bcontroversy\b", r"(?i)\baccused\b", r"(?i)\bcommitted\b", r"(?i)\bapologizes\b", r"(?i)\bapology\b",
+    r"(?i)\baware\b",  # "CEO was aware of..." implies cover-up
+    # Financial/personal troubles
+    r"(?i)\bloss\b", r"(?i)\bdivorce\b", r"(?i)\bbankruptcy\b",
+    # Data security
+    r"(?i)\bdata leaks?\b",
+    # Labor relations
+    r"(?i)\bunion\s+buster\b",
+    # Termination (in any direction)
+    r"(?i)\bfired\b", r"(?i)\bfiring\b", r"(?i)\bfires\b",
+    r"(?<!t)\bax(e|ed|es)?\b",  # "axed" but not "taxes"
+    r"(?i)\bsack(ed|s)?\b", r"(?i)\boust(ed)?\b",
+    # Stock performance
+    r"(?i)\bplummeting\b",
 ]
 ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), re.IGNORECASE)
 
@@ -109,12 +125,20 @@ def _should_neutralize_title(title: str) -> bool:
     return bool(NEUTRALIZE_TITLE_RE.search(str(title or "")))
 
 
-def strip_neutral_terms_from_title(title: str) -> str:
-    """Remove neutral terms from title before sentiment analysis."""
-    s = str(title or "")
-    s = NEUTRALIZE_TITLE_RE.sub(" ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> str:
+    """
+    Apply VADER with custom thresholds.
+    Unified thresholds: positive >= 0.15, negative <= -0.10
+    """
+    s = analyzer.polarity_scores(title or "")
+    c = s.get("compound", 0.0)
+    
+    if c >= 0.15:
+        return "positive"
+    elif c <= -0.10:
+        return "negative"
+    else:
+        return "neutral"
 
 
 def norm(s: str) -> str:
@@ -182,11 +206,6 @@ def fetch_csv_from_s3(url: str) -> pd.DataFrame | None:
 def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict, Dict, Dict]:
     """
     Load roster data including alias maps for resolving CEO queries.
-    
-    Returns:
-        alias_map: Dict[normalized_alias, (ceo_name, company_name)]
-        ceo_to_company: Dict[ceo_name, company_name]
-        company_domains: Dict[company_name, Set[domains]]
     """
     alias_map = {}
     ceo_to_company = {}
@@ -314,8 +333,6 @@ def normalize_raw_columns(df: pd.DataFrame) -> pd.DataFrame:
 def resolve_ceo_company(query_alias: str, alias_map: Dict, ceo_to_company: Dict) -> Tuple[str, str]:
     """
     Resolve a query alias to (ceo_name, company_name).
-    
-    Tries exact match first, then fuzzy matching based on token overlap.
     """
     qn = norm(query_alias)
     
@@ -342,12 +359,7 @@ def resolve_ceo_company(query_alias: str, alias_map: Dict, ceo_to_company: Dict)
 # ============================================================================
 def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
     """
-    Classify if a URL is controlled by a company using multiple rules:
-    (0) Rule 0: Explicitly uncontrolled domains (return False immediately)
-    (1) Rule 1: Always-controlled social platforms
-    (2) Rule 2: Company-specific domains from roster
-    (3) Rule 3: Domain contains the company token
-    (4) Rule 4: Controlled path keywords
+    Classify if a URL is controlled by a company.
     """
     try:
         parsed = urlparse(url or "")
@@ -456,23 +468,13 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         elif _should_neutralize_title(title):
             label = "neutral"
         else:
-            # VADER with neutral terms stripped
-            cleaned_title = strip_neutral_terms_from_title(title)
-            if not cleaned_title:
-                label = "neutral"
-            else:
-                score = analyzer.polarity_scores(cleaned_title)["compound"]
-                # Unified thresholds: positive ≥0.15, negative ≤-0.10
-                if score >= 0.15:
-                    label = "positive"
-                elif score <= -0.10:
-                    label = "negative"
-                else:
-                    label = "neutral"
+            # 4) VADER analysis on the raw title
+            # (Neutral terms are already handled by step 3)
+            label = vader_label_on_title(analyzer, title)
 
-        # 4) Force positive if controlled
-        if FORCE_POSITIVE_IF_CONTROLLED and controlled:
-            label = "positive"
+            # 5) Force positive if controlled
+            if FORCE_POSITIVE_IF_CONTROLLED and controlled:
+                label = "positive"
 
         processed_rows.append({
             "date": target_date,
