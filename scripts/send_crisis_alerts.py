@@ -14,14 +14,13 @@ import re
 import time
 import hashlib
 import random
-import pandas as pd # remove after test
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
 from storage_utils import CloudStorageManager
 
 # --- CONFIG ---
-DRY_RUN = True  # <--- SET TO TRUE FOR TESTING
+DRY_RUN = False  # <--- SET TO TRUE FOR TESTING
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
@@ -237,48 +236,24 @@ def main():
     parser.add_argument('--bucket', default='risk-dashboard')
     args = parser.parse_args()
 
-
-    print("⚠️ RUNNING IN MOCK MODE (No Google Cloud Connection) ⚠️")
+    storage = CloudStorageManager(args.bucket)
     
-    # --- MOCK STORAGE & DATA ---
-    # 1. Create fake 400 rows of data to test the flood
-    data = []
-    for i in range(400):
-        data.append({
-            "company": f"Company_{i}", 
-            "negative_count": random.randint(10, 200), # Random severity
-            "top_headlines": "Bad news|More bad news",
-            "article_type": "brand",
-            "ceo": "nan",
-            "date": datetime.now().strftime('%Y-%m-%d') # Make date today so it qualifies
-        })
+    # 1. Load Data
+    summary_path = "data/daily_counts/negative-articles-summary.csv"
+    if not storage.file_exists(summary_path):
+        print("No negative summary file found. Exiting.")
+        return
     
-    df = pd.DataFrame(data)
+    df = storage.read_csv(summary_path)
     
-    # 2. Create empty history (or add fake history if you want to test leftovers)
+    # 2. Load History
+    history_path = "data/alert_history.json"
     history = {}
-    
-    # --- END MOCK ---
-
-
-    # storage = CloudStorageManager(args.bucket) # uncomment when done with test
-    
-    # # 1. Load Data
-    # summary_path = "data/daily_counts/negative-articles-summary.csv"
-    # if not storage.file_exists(summary_path):
-    #     print("No negative summary file found. Exiting.")
-    #     return
-    
-    # df = storage.read_csv(summary_path)
-    
-    # # 2. Load History
-    # history_path = "data/alert_history.json"
-    # history = {} #/uncomment when done with test
-    # if storage.file_exists(history_path):
-    #     try:
-    #         history = json.loads(storage.read_text(history_path))
-    #     except:
-    #         print("Could not read history, starting fresh.")
+    if storage.file_exists(history_path):
+        try:
+            history = json.loads(storage.read_text(history_path))
+        except:
+            print("Could not read history, starting fresh.")
 
     # --- CALCULATE DAILY BUDGET ---
     current_time = datetime.now()
