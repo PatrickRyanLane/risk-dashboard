@@ -25,7 +25,7 @@ SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
 SF_TOKEN = os.getenv('SF_SECURITY_TOKEN')
-SLACK_CHANNEL = "#crisis-alerts" 
+SLACK_CHANNEL = "U02D6ES227J" 
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
 
 # Configurable Floors
