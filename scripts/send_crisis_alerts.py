@@ -2,7 +2,7 @@
 """
 Reads aggregated negative articles and sends Slack alerts to Salesforce account owners.
 Tracks alert history in GCS to prevent spamming.
-Implements Dynamic Thresholding & Type-Specific Alerts (Brand vs CEO).
+Implements Dynamic Thresholding, Type-Specific Alerts, DAILY VOLUME CAPS, and JITTER.
 """
 
 import os
@@ -13,12 +13,14 @@ import urllib.parse
 import re
 import time
 import hashlib
+import random
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
 from storage_utils import CloudStorageManager
 
 # --- CONFIG ---
+DRY_RUN = True  # <--- SET TO TRUE FOR TESTING
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
@@ -31,38 +33,31 @@ MIN_NEGATIVE_ARTICLES = 13
 PERCENTILE_CUTOFF = 0.97
 ALERT_COOLDOWN_HOURS = 168
 
+# --- FLOOD PROTECTION ---
+MAX_ALERTS_PER_DAY = 3  # Strict limit: Max 20 alerts per 24-hour rolling window
+
 # Manual color mapping for your VIPs
 OWNER_COLORS = {
-    "Shannon Buell": "#a589e8", # TK Purple
-    
-    "Ken Schiefer": "#ff8261", # TK Salmon
-    "Kenneth Schiefer": "#ff8261", # TK Salmon
-    
-    "Mac Cummings":  "#6fb210", # TK Green
-    "Maclaren Cummings":  "#6fb210", # TK Green
-
-    "Brittney Lee":  "#58dbed", # TK Light Blue
-    "Chris Loman":   "#00586d", # TK Dark Blue
-    "Fall Back":     "#ffc32e",  # Default (TK Yellow)
+    "Shannon Buell": "#a589e8", 
+    "Ken Schiefer": "#ff8261", 
+    "Kenneth Schiefer": "#ff8261", 
+    "Mac Cummings":  "#6fb210", 
+    "Maclaren Cummings":  "#6fb210", 
+    "Brittney Lee":  "#58dbed", 
+    "Chris Loman":   "#00586d", 
+    "Fall Back":     "#ffc32e",  
 }
 
 def get_owner_color(owner_name):
     """Returns a specific color for VIPs, or the Fall Back yellow for EVERYONE else."""
-    
-    # 1. Safety check for empty names
     if not owner_name:
         return OWNER_COLORS["Fall Back"]
-    
-    # 2. Check if VIP exists in our map
     for vip, color in OWNER_COLORS.items():
         if vip.lower() in owner_name.lower():
             return color
-            
-    # 3. If they are not in the list, return standard Yellow (instead of generating a random hash)
     return OWNER_COLORS["Fall Back"]
 
 def normalize_name(name):
-    """Strips legal suffixes to find the 'core' brand name."""
     if not name: return ""
     name = str(name).strip()
     suffixes = [
@@ -78,7 +73,6 @@ def normalize_name(name):
     return name
 
 def get_salesforce_owner(brand_name):
-    """Finds account owner using Exact -> Token -> Fuzzy matching."""
     if not brand_name: return None, None
     try:
         sf = Salesforce(username=SF_USERNAME, password=SF_PASSWORD, security_token=SF_TOKEN)
@@ -133,34 +127,22 @@ def get_slack_user_id(email):
     return None
 
 def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name):
-    """
-    Sends a Block Kit alert. 
-    Customizes title/link based on whether it's a CEO or Brand crisis.
-    """
+    """Sends a Block Kit alert."""
     
-    # 1. Customize Content based on Type
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
-        # CEO CRISIS MODE
         alert_title = f"🚨 CEO Crisis: {ceo_name}"
         sub_context = f"Company: {brand}"
-        # Point to the CEO tab
         safe_filter = urllib.parse.quote(ceo_name)
         dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=ceos&company={safe_filter}"
     else:
-        # BRAND CRISIS MODE
         alert_title = f"🚨 Brand Crisis: {brand}"
-        
-        # Check if we have a valid CEO name before displaying it
         if ceo_name and ceo_name.lower() != 'nan':
              sub_context = f"CEO: {ceo_name}"
         else:
-             sub_context = "Category: Corporate Brand"  # Fallback if CEO is missing
-        
-        # Point to the Brand tab
+             sub_context = "Category: Corporate Brand"
         safe_filter = urllib.parse.quote(brand)
         dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=brands&company={safe_filter}"
 
-    # 2. Determine Recipient
     if owner_slack_id:
         mention_text = f"<@{owner_slack_id}>"
     elif owner_name:
@@ -168,7 +150,6 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
     else:
         mention_text = f"<@{FALLBACK_SLACK_ID}> (Salesforce Missing)"
 
-    # 3. Format Headlines
     headline_text = ""
     if headlines:
         raw_heads = str(headlines).split('|')
@@ -178,7 +159,6 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
         if len(raw_heads) > 3:
             headline_text += f"_...and {len(raw_heads) - 3} more_"
 
-    # 4. Construct Blocks
     blocks = [
         {
             "type": "header",
@@ -227,13 +207,10 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
         }
     ]
 
-    # --- NEW: Get Color & Wrap in Attachment ---
     alert_color = get_owner_color(owner_name)
-
-    # The payload changes: we send 'attachments' instead of top-level 'blocks'
     payload = {
         "channel": SLACK_CHANNEL,
-        "text": alert_title, # Fallback text for mobile notifications
+        "text": alert_title,
         "attachments": [
             {
                 "color": alert_color,
@@ -241,6 +218,11 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
             }
         ]
     }
+
+    # --- DRY RUN CHECK ---
+    if DRY_RUN:
+        print(f"👀 [DRY RUN] Would send Slack alert for: {brand} (Owner: {owner_name})")
+        return # <--- Stop here, do not run requests.post
 
     requests.post(
         "https://slack.com/api/chat.postMessage",
@@ -273,22 +255,50 @@ def main():
         except:
             print("Could not read history, starting fresh.")
 
-    # --- CALCULATE THRESHOLDS & DATA MATURITY ---
-    print("📊 Calculating thresholds...")
+    # --- CALCULATE DAILY BUDGET ---
+    current_time = datetime.now()
+    one_day_ago = current_time - timedelta(days=1)
     
-    # We calculate counts to know if we have enough history to trust the P97
-    # If a company appears < 10 times, P97 is statistically noisy.
+    recent_alerts_count = 0
+    for timestamp_str in history.values():
+        try:
+            t_alert = datetime.fromisoformat(timestamp_str)
+            if t_alert > one_day_ago:
+                recent_alerts_count += 1
+        except ValueError:
+            pass
+            
+    alerts_remaining_today = MAX_ALERTS_PER_DAY - recent_alerts_count
+    
+    print(f"📉 Daily Alert Budget: {MAX_ALERTS_PER_DAY} total.")
+    print(f"🕒 Used in last 24h: {recent_alerts_count}")
+    print(f"✅ Remaining capacity: {alerts_remaining_today}")
+
+    if alerts_remaining_today <= 0:
+        print("⛔ Daily alert limit reached. Exiting script to prevent flood.")
+        return
+
+    # --- SORT BY PRIORITY ---
+    # Sort by 'negative_count' descending so we prioritize the BIGGEST crises first
+    print("📊 Sorting data by severity (negative count)...")
+    if 'negative_count' in df.columns:
+        df.sort_values(by='negative_count', ascending=False, inplace=True)
+
+    # --- CALCULATE THRESHOLDS & DATA MATURITY ---
     brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
     ceo_stats = df[df['article_type'] == 'ceo'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
 
-    # Config for "New" Companies (Low History)
-    MIN_HISTORY_POINTS = 14   # Need 14 days of data to trust P97
-    HARD_FLOOR_NEW_CO = 15    # If < 14 days history, require 15 articles to alert (Stricter)
+    MIN_HISTORY_POINTS = 14   
+    HARD_FLOOR_NEW_CO = 15    
 
-    current_time = datetime.now()
     updates_made = False
     
     for _, row in df.iterrows():
+        # FLOOD PROTECTION CHECK
+        if alerts_remaining_today <= 0:
+            print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
+            break
+
         brand = row['company']
         count = row['negative_count']
         headlines = row['top_headlines']
@@ -298,34 +308,27 @@ def main():
 
         # A. STRICT DATE FILTER (Last 48 Hours Only)
         date_str = str(row['date']) 
-        row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        
-        # NOTE: Using server time. If simulating 2026 data on 2025 server, 
-        # you must hardcode this like: server_now = datetime(2026, 1, 13).date()
+        try:
+            row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except:
+            continue
+            
         server_now = datetime.now().date()
-        
         if row_date != server_now and row_date != server_now - timedelta(days=1):
             continue
 
         # B. DYNAMIC THRESHOLD CHECK
-        # Retrieve stats based on type
         stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
         company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
         
         history_points = company_stats['count']
         p97 = company_stats['<lambda_0>']
-
-        # LOGIC:
-        # 1. If we have lots of history (>= 14 days), use the P97 and the normal floor (5).
-        # 2. If history is thin (< 14 days), ignore P97 and use the STRICT Hard Floor (15).
         
         if history_points >= MIN_HISTORY_POINTS:
-            # Mature Data: Use P97 + Standard Floor
             if count < MIN_NEGATIVE_ARTICLES: continue
             if count < p97: continue
             threshold_msg = f"P97 ({p97:.1f})"
         else:
-            # Immature Data: Use Strict Floor Only
             if count < HARD_FLOOR_NEW_CO: continue
             threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
 
@@ -333,18 +336,17 @@ def main():
         history_key = f"{brand}_{article_type}"
         last_alert = history.get(history_key)
         
-        # Migration check for old keys
         if not last_alert and article_type == 'brand':
             last_alert = history.get(brand)
 
         if last_alert:
             last_date = datetime.fromisoformat(last_alert)
             if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
-                print(f"Skipping {history_key} (Cooling down)")
+                # Silent skip
                 continue
 
         # --- TRIGGER ALERT ---
-        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg} | Hist: {history_points} days")
+        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg}")
         
         owner_email, owner_name = get_salesforce_owner(brand)
         slack_id = get_slack_user_id(owner_email)
@@ -353,14 +355,34 @@ def main():
             brand, ceo_name, article_type, count, p97 if history_points >= MIN_HISTORY_POINTS else HARD_FLOOR_NEW_CO, 
             headlines, slack_id, owner_name
         )
+                
+        # --- JITTER IMPLEMENTATION ---
+        jitter_seconds = random.randint(0, 6 * 3600)
+        effective_timestamp = current_time + timedelta(seconds=jitter_seconds)
         
-        history[history_key] = current_time.isoformat()
+        if DRY_RUN:
+            print(f"   [Test] Jitter applied: {jitter_seconds/3600:.1f} hours.")
+            print(f"   [Test] Next unlock time would be: {effective_timestamp}")
+        else:
+            history[history_key] = effective_timestamp.isoformat()
+            
         updates_made = True
-        time.sleep(2) 
+        
+        # Decrement Budget
+        alerts_remaining_today -= 1
+        
+        # --- DRY RUN SLEEP ---
+        # Don't sleep for 2 seconds in testing, it's annoying.
+        if not DRY_RUN:
+            time.sleep(2) 
 
+    # --- SAVE CHECK ---
     if updates_made:
-        storage.write_text(json.dumps(history, indent=2), history_path)
-        print("💾 Alert history updated.")
+        if DRY_RUN:
+            print("🚫 [DRY RUN] Skipping save to 'alert_history.json'. No changes made.")
+        else:
+            storage.write_text(json.dumps(history, indent=2), history_path)
+            print("💾 Alert history updated.")
 
 if __name__ == "__main__":
     main()
