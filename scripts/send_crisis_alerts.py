@@ -14,6 +14,7 @@ import re
 import time
 import hashlib
 import random
+import pandas as pd # remove after test
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
@@ -236,19 +237,43 @@ def main():
     parser.add_argument('--bucket', default='risk-dashboard')
     args = parser.parse_args()
 
-    storage = CloudStorageManager(args.bucket)
+
+    print("⚠️ RUNNING IN MOCK MODE (No Google Cloud Connection) ⚠️")
     
-    # 1. Load Data
-    summary_path = "data/daily_counts/negative-articles-summary.csv"
-    if not storage.file_exists(summary_path):
-        print("No negative summary file found. Exiting.")
-        return
+    # --- MOCK STORAGE & DATA ---
+    # 1. Create fake 400 rows of data to test the flood
+    data = []
+    for i in range(400):
+        data.append({
+            "company": f"Company_{i}", 
+            "negative_count": random.randint(10, 200), # Random severity
+            "top_headlines": "Bad news|More bad news",
+            "article_type": "brand",
+            "ceo": "nan",
+            "date": datetime.now().strftime('%Y-%m-%d') # Make date today so it qualifies
+        })
     
-    df = storage.read_csv(summary_path)
+    df = pd.DataFrame(data)
     
-    # 2. Load History
-    history_path = "data/alert_history.json"
+    # 2. Create empty history (or add fake history if you want to test leftovers)
     history = {}
+    
+    # --- END MOCK ---
+
+
+    # storage = CloudStorageManager(args.bucket) # uncomment when done with test
+    
+    # # 1. Load Data
+    # summary_path = "data/daily_counts/negative-articles-summary.csv"
+    # if not storage.file_exists(summary_path):
+    #     print("No negative summary file found. Exiting.")
+    #     return
+    
+    # df = storage.read_csv(summary_path)
+    
+    # # 2. Load History
+    # history_path = "data/alert_history.json"
+    # history = {} #/uncomment when done with test
     if storage.file_exists(history_path):
         try:
             history = json.loads(storage.read_text(history_path))
