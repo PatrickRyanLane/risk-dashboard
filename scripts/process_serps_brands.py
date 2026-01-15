@@ -55,50 +55,50 @@ ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
 # ============================================================================
 NEUTRALIZE_TITLE_TERMS = [
     # Brand names that contain emotional-sounding words
-    r"(?i)\bgrand\b",           # Grand Hyatt, Grand Cherokee
-    r"(?i)\bdiamond\b",         # Diamond Foods
-    r"(?i)\bsell\b",            # Headlines about "selling" aren't inherently negative
-    r"(?i)\blow\b",             # Low prices, Lowe's
-    r"(?i)\bdream\b",           # DreamWorks
-    r"(?i)\bdarling\b",         # Darling Ingredients
-    r"(?i)\bwells\b",           # Wells Fargo
-    r"(?i)\bbest\s+buy\b",      # Best Buy (positive brand name)
-    r"(?i)\bkilled\b",          # Often used hyperbolically in headlines
-    r"(?i)\bmlm\b",             # Multi-level marketing discussions
-    r"(?i)\bmad\s+money\b",     # Jim Cramer's show
-    r"(?i)\brate\s+cut\b",      # Interest rate discussions
-    r"(?i)\bone\s+stop\s+shop\b",  # Stop & Shop stores
-    r"(?i)\bfuneral\b",         # Service Corporation (funeral services)
-    r"(?i)\bcremation\b",       # Service Corporation
-    r"(?i)\bcemetery\b",        # Service Corporation
-    r"(?i)\blimited\b",         # The Limited Brands
-    r"(?i)\bno\s+organic\b",    # About organic food availability
-    r"(?i)\brob\b",        # Potentially a person's name
-    r"(?i)\blower\b",      # CEO with last name Lower
-    r"(?i)\benergy\b",     # Lot of brands with energy in their name   
-    r"(?i)\brebel\b",      # Potential product name
+    r"\bgrand\b",           # Grand Hyatt, Grand Cherokee
+    r"\bdiamond\b",         # Diamond Foods
+    r"\bsell\b",            # Headlines about "selling" aren't inherently negative
+    r"\blow\b",             # Low prices, Lowe's
+    r"\bdream\b",           # DreamWorks
+    r"\bdarling\b",         # Darling Ingredients
+    r"\bwells\b",           # Wells Fargo
+    r"\bbest\s+buy\b",      # Best Buy (positive brand name)
+    r"\bkilled\b",          # Often used hyperbolically in headlines
+    r"\bmlm\b",             # Multi-level marketing discussions
+    r"\bmad\s+money\b",     # Jim Cramer's show
+    r"\brate\s+cut\b",      # Interest rate discussions
+    r"\bone\s+stop\s+shop\b",  # Stop & Shop stores
+    r"\bfuneral\b",         # Service Corporation (funeral services)
+    r"\bcremation\b",       # Service Corporation
+    r"\bcemetery\b",        # Service Corporation
+    r"\blimited\b",         # The Limited Brands
+    r"\bno\s+organic\b",    # About organic food availability
+    r"\brob\b",        # Potentially a person's name
+    r"\blower\b",      # CEO with last name Lower
+    r"\benergy\b",     # Lot of brands with energy in their name   
+    r"\brebel\b",      # Potential product name
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 # Force-negative if the title mentions legal trouble
 LEGAL_TROUBLE_TERMS = [
     # Legal actions
-    r"(?i)\blawsuit(s)?\b", r"(?i)\bsued\b", r"(?i)\bsuing\b", r"(?i)\blegal\b",
-    r"(?i)\bsettlement(s)?\b", r"(?i)\bfine(d)?\b", r"(?i)\bclass[- ]action\b",
+    r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
+    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
     # Regulatory bodies (usually means trouble)
-    r"(?i)\bftc\b", r"(?i)\bsec\b", r"(?i)\bdoj\b", r"(?i)\bcfpb\b",
+    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
     # Corporate crises
-    r"(?i)\bantitrust\b", r"(?i)\bban(s|ned)?\b", r"(?i)\bdata leaks?\b",
-    r"(?i)\brecall(s|ed)?\b",
-    r"(?i)\blayoff(s)?\b", r"(?i)\bexit(s)?\b", r"(?i)\bstep\s+down\b", r"(?i)\bsteps\s+down\b",
+    r"\bantitrust\b", r"\bban(s|ned)?\b", r"\bdata leaks?\b",
+    r"\brecall(s|ed)?\b",
+    r"\blayoff(s)?\b", r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
     # Investigations
-    r"(?i)\bprobe(s|d)?\b", r"(?i)\binvestigation(s)?\b",
-    r"(?i)\bsanction(s|ed)?\b", r"(?i)\bpenalt(y|ies)\b",
+    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
     # Scandals
-    r"(?i)\bfraud\b", r"(?i)\bembezzl(e|ement)\b", r"(?i)\baccused\b", r"(?i)\bcommitted\b",
-    r"(?i)\bdivorce\b", r"(?i)\bbankruptcy\b", r"(?i)\bapologizes\b", r"(?i)\bapology\b",
+    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
+    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b",
     #Financial Terms
-    r"(?i)\bcontroversy\b", r"(?i)\bheadwinds\b",
+    r"\bcontroversy\b", r"\bheadwinds\b",
 ]
 LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 

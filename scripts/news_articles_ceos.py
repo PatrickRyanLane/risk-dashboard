@@ -27,43 +27,44 @@ from storage_utils import CloudStorageManager
 # ============================================================================
 # WORD FILTERING RULES
 # ============================================================================
+# REMOVED (?i) prefixes because re.IGNORECASE is used in re.compile
 NEUTRALIZE_TITLE_TERMS = [
-    r"(?i)\bflees\b",           # Often used figuratively or in names
-    r"(?i)\bsavage\b",          # Common surname (e.g., Dan Savage)
-    r"(?i)\brob\b",             # Common first name (e.g., Rob Walton)
-    r"(?i)\bnicholas\s+lower\b", # Specific CEO name combination
-    r"(?i)\bmad\s+money\b",     # Jim Cramer's show
-    r"(?i)\bno\s+organic\b",    # About organic food availability
-    r"(?i)\brob\b",        # Potentially a person's name
-    r"(?i)\blower\b",      # CEO with last name Lower
-    r"(?i)\benergy\b",     # Lot of brands with energy in their name   
-    r"(?i)\brebel\b",      # Potential product name
+    r"\bflees\b",           # Often used figuratively or in names
+    r"\bsavage\b",          # Common surname (e.g., Dan Savage)
+    r"\brob\b",             # Common first name (e.g., Rob Walton)
+    r"\bnicholas\s+lower\b", # Specific CEO name combination
+    r"\bmad\s+money\b",     # Jim Cramer's show
+    r"\bno\s+organic\b",    # About organic food availability
+    r"\brob\b",        # Potentially a person's name
+    r"\blower\b",      # CEO with last name Lower
+    r"\benergy\b",     # Lot of brands with energy in their name   
+    r"\brebel\b",      # Potential product name
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 ALWAYS_NEGATIVE_TERMS = [
     # Compensation scrutiny
-    r"(?i)\bpaid\b", r"(?i)\bcompensation\b", r"(?i)\bpay\b", r"(?i)\bnet worth\b",
+    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b", r"\bnet worth\b",
     # Corporate governance
-    r"(?i)\bmandate\b",
+    r"\bmandate\b",
     # Leadership changes
-    r"(?i)\bexit(s)?\b", r"(?i)\bstep\s+down\b", r"(?i)\bsteps\s+down\b", r"(?i)\bremoved\b",
+    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
     # Skepticism/scrutiny
-    r"(?i)\bstill\b", r"(?i)\bturnaround\b",
+    r"\bstill\b", r"\bturnaround\b",
     # Personal accusations
-    r"(?i)\bface\b", r"(?i)\bcontroversy\b", r"(?i)\baccused\b", r"(?i)\bcommitted\b", 
-    r"(?i)\bapologizes\b", r"(?i)\bapology\b", r"(?i)\baware\b",
+    r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b", 
+    r"\bapologizes\b", r"\bapology\b", r"\baware\b",
     # Financial/personal troubles
-    r"(?i)\bloss\b", r"(?i)\bdivorce\b", r"(?i)\bbankruptcy\b",
+    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
     # Data security
-    r"(?i)\bdata leaks?\b",
+    r"\bdata leaks?\b",
     # Labor relations
-    r"(?i)\bunion\s+buster\b",
+    r"\bunion\s+buster\b",
     # Termination
-    r"(?i)\bfired\b", r"(?i)\bfiring\b", r"(?i)\bfires\b",
-    r"(?<!t)\bax(e|ed|es)?\b", r"(?i)\bsack(ed|s)?\b", r"(?i)\boust(ed)?\b",
+    r"\bfired\b", r"\bfiring\b", r"\bfires\b",
+    r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
     # Stock performance
-    r"(?i)\bplummeting\b",
+    r"\bplummeting\b",
 ]
 ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
 
