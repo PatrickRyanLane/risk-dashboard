@@ -274,11 +274,11 @@ def main():
     # # 2. Load History
     # history_path = "data/alert_history.json"
     # history = {} #/uncomment when done with test
-    if storage.file_exists(history_path):
-        try:
-            history = json.loads(storage.read_text(history_path))
-        except:
-            print("Could not read history, starting fresh.")
+    # if storage.file_exists(history_path):
+    #     try:
+    #         history = json.loads(storage.read_text(history_path))
+    #     except:
+    #         print("Could not read history, starting fresh.")
 
     # --- CALCULATE DAILY BUDGET ---
     current_time = datetime.now()
