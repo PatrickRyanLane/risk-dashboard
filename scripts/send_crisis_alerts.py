@@ -257,7 +257,7 @@ def main():
 
     # --- CALCULATE DAILY BUDGET ---
     current_time = datetime.now()
-    one_day_ago = current_time - timedelta(days=1)
+    one_day_ago = current_time - timedelta(hours=20) # ensures a fresh 20 alert budget every morning.
     
     recent_alerts_count = 0
     for timestamp_str in history.values():
