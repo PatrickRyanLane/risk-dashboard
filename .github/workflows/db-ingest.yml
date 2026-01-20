@@ -6,6 +6,9 @@ on:
       date:
         description: "YYYY-MM-DD (defaults to today UTC)"
         required: false
+      days_back:
+        description: "Backfill N days (overrides date if set)"
+        required: false
   schedule:
     - cron: "30 14 * * *"  # 09:30 ET (EST). Update for DST if desired.
 
@@ -44,12 +47,19 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           RUN_DATE="${{ github.event.inputs.date }}"
+          DAYS_BACK="${{ github.event.inputs.days_back }}"
           if [ -z "$RUN_DATE" ]; then
             RUN_DATE=$(date -u +%F)
           fi
-          python -m src.bulk_ingest \
-            --data-dir gs://risk-dashboard/data \
-            --date "$RUN_DATE"
+          if [ -n "$DAYS_BACK" ]; then
+            python -m src.bulk_ingest \
+              --data-dir gs://risk-dashboard/data \
+              --days-back "$DAYS_BACK"
+          else
+            python -m src.bulk_ingest \
+              --data-dir gs://risk-dashboard/data \
+              --date "$RUN_DATE"
+          fi
 
       - name: Cleanup GCP creds
         if: always()
