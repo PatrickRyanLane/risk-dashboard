@@ -35,7 +35,7 @@ jobs:
 
       - name: Write GCP credentials
         run: |
-          echo "${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}" > /tmp/gcp.json
+          echo "${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}" > /tmp/gcp.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp.json" >> $GITHUB_ENV
 
       - name: Run bulk ingest
