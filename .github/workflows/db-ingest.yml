@@ -1,0 +1,56 @@
+name: Ingest CSVs to Supabase
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "YYYY-MM-DD (defaults to today UTC)"
+        required: false
+  schedule:
+    - cron: "30 14 * * *"  # 09:30 ET (EST). Update for DST if desired.
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout risk-dashboard
+        uses: actions/checkout@v4
+
+      - name: Checkout risk-dashboard-database
+        uses: actions/checkout@v4
+        with:
+          repository: PatrickRyanLane/risk-dashboard-database
+          path: risk-dashboard-database
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        working-directory: risk-dashboard-database
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write GCP credentials
+        run: |
+          echo "${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}" > /tmp/gcp.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp.json" >> $GITHUB_ENV
+
+      - name: Run bulk ingest
+        working-directory: risk-dashboard-database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RUN_DATE="${{ github.event.inputs.date }}"
+          if [ -z "$RUN_DATE" ]; then
+            RUN_DATE=$(date -u +%F)
+          fi
+          python -m src.bulk_ingest \
+            --data-dir gs://risk-dashboard/data \
+            --date "$RUN_DATE"
+
+      - name: Cleanup GCP creds
+        if: always()
+        run: rm -f /tmp/gcp.json
