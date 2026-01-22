@@ -1,4 +1,4 @@
-name: Ingest CSVs to Supabase
+name: Ingest CSVs to Postgres Database
 
 on:
   workflow_dispatch:
