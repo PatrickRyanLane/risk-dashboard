@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import re
 import os, sys
 from datetime import datetime
@@ -26,6 +27,7 @@ import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
+from llm_utils import is_uncertain, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
 
 # Config / constants
 S3_URL_TEMPLATE = (
@@ -38,6 +40,10 @@ OUT_DAILY_DIR = "data/processed_serps"
 OUT_ROLLUP = "data/daily_counts/brand-serps-daily-counts-chart.csv"
 
 FORCE_POSITIVE_IF_CONTROLLED = True
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_MAX_CALLS = int(os.getenv("LLM_MAX_CALLS", "200"))
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_CACHE_DIR = "data/llm_cache"
 
 ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
     "facebook.com",
@@ -102,6 +108,21 @@ LEGAL_TROUBLE_TERMS = [
 ]
 LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
+FINANCE_TERMS = [
+    r"\bearnings\b", r"\beps\b", r"\brevenue\b", r"\bguidance\b", r"\bforecast\b",
+    r"\bprice target\b", r"\bupgrade\b", r"\bdowngrade\b", r"\bdividend\b",
+    r"\bbuyback\b", r"\bshares?\b", r"\bstock\b", r"\bmarket cap\b",
+    r"\bquarterly\b", r"\bfiscal\b", r"\bprofit\b", r"\bEBITDA\b",
+    r"\b10-q\b", r"\b10-k\b", r"\bsec\b", r"\bipo\b"
+]
+FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
+FINANCE_SOURCES = {
+    "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
+    "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
+    "investorplace.com", "nasdaq.com", "foolcdn.com"
+}
+TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
+
 
 def _title_mentions_legal_trouble(title: str) -> bool:
     """Return True if title mentions legal trouble terms (force negative)."""
@@ -111,6 +132,17 @@ def _title_mentions_legal_trouble(title: str) -> bool:
 def _should_neutralize_title(title: str) -> bool:
     """Return True if the title contains terms that should neutralize sentiment."""
     return bool(NEUTRALIZE_TITLE_RE.search(title or ""))
+
+def _is_financial_routine(title: str, snippet: str = "", url: str = "") -> bool:
+    hay = f"{title} {snippet}".strip()
+    if FINANCE_TERMS_RE.search(hay):
+        return True
+    if TICKER_RE.search(title or ""):
+        return True
+    host = _hostname(url)
+    if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
+        return True
+    return False
 
 # Argument parsing
 def parse_args() -> argparse.Namespace:
@@ -274,6 +306,17 @@ def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]
     if not host:
         return False
 
+    path = ""
+    try:
+        path = (urlparse(url).path or "").lower()
+    except Exception:
+        path = ""
+
+    if host == "facebook.com":
+        return "/posts/" not in path
+    if host == "instagram.com":
+        return "/p/" not in path
+
     if _is_brand_youtube_channel(company, url):
         return True
 
@@ -295,7 +338,7 @@ def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]
 
     return False
 
-def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> str:
+def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[str, float]:
     """
     Apply VADER with custom thresholds.
     Unified thresholds: positive >= 0.15, negative <= -0.10
@@ -304,11 +347,11 @@ def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> st
     c = s.get("compound", 0.0)
     
     if c >= 0.15:
-        return "positive"
+        return "positive", c
     elif c <= -0.10:
-        return "negative"
+        return "negative", c
     else:
-        return "neutral"
+        return "neutral", c
 
 def process_for_date(storage, target_date: str, roster_path: str) -> None:
     print(f"[INFO] Processing brand SERPs for {target_date} …")
@@ -327,6 +370,15 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             raw[col] = ""
 
     analyzer = SentimentIntensityAnalyzer()
+    llm_cache_path = f"{LLM_CACHE_DIR}/{target_date}-brand-serps.json"
+    if storage:
+        try:
+            llm_cache = json.loads(storage.read_text(llm_cache_path)) if storage.file_exists(llm_cache_path) else {}
+        except Exception:
+            llm_cache = {}
+    else:
+        llm_cache = load_json_cache(llm_cache_path)
+    llm_calls = {"count": 0}
 
     processed_rows = []
     for _, row in raw.iterrows():
@@ -348,25 +400,61 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
 
         # --- Sentiment rules (deterministic order) ---
         host = _hostname(url)
+        compound = None
+        forced_reason = ""
 
         # 1) Force negative for reddit.com
         if host == "reddit.com" or (host and host.endswith(".reddit.com")):
             label = "negative"
+            forced_reason = "reddit"
         # 2) Force negative for Legal/Trouble terms
         elif _title_mentions_legal_trouble(title):
             label = "negative"
-        # 3) Neutralize certain terms
+            forced_reason = "legal"
+        # 3) Neutralize routine financial coverage
+        elif _is_financial_routine(title, snippet, url):
+            label = "neutral"
+            forced_reason = "finance"
+        # 4) Neutralize certain terms
         elif _should_neutralize_title(title):
             label = "neutral"
+            forced_reason = "neutral_terms"
         else:
             # 4) VADER analysis on the raw title
-            label = vader_label_on_title(analyzer, title)
+            label, compound = vader_label_on_title(analyzer, title)
 
             # 5) Force positive if controlled — but ONLY if we didn't already force negative above
             # (Note: This is applied after VADER but before final assignment, 
             # effectively overriding VADER but NOT overriding steps 1-3)
             if FORCE_POSITIVE_IF_CONTROLLED and controlled:
                 label = "positive"
+
+        finance_routine = _is_financial_routine(title, snippet, url)
+        is_forced = bool(forced_reason)
+        uncertain, uncertain_reason = is_uncertain(
+            label,
+            finance_routine,
+            is_forced,
+            compound,
+            title,
+            title
+        )
+        llm_label = ""
+        llm_severity = ""
+        llm_reason = ""
+        llm_key = url or title
+        if uncertain and LLM_API_KEY and llm_calls["count"] < LLM_MAX_CALLS:
+            if llm_key in llm_cache:
+                cached = llm_cache.get(llm_key, {})
+            else:
+                prompt = build_risk_prompt("brand", company, title, snippet, "", url)
+                cached = call_llm_json(prompt, LLM_API_KEY, LLM_MODEL)
+                llm_cache[llm_key] = cached
+                llm_calls["count"] += 1
+            if isinstance(cached, dict):
+                llm_label = cached.get("label", "")
+                llm_severity = cached.get("severity", "")
+                llm_reason = cached.get("reason", "")
 
         processed_rows.append({
             "date": target_date,
@@ -377,6 +465,12 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             "snippet": snippet,
             "sentiment": label,
             "controlled": controlled,
+            "finance_routine": finance_routine,
+            "uncertain": uncertain,
+            "uncertain_reason": uncertain_reason,
+            "llm_label": llm_label,
+            "llm_severity": llm_severity,
+            "llm_reason": llm_reason,
         })
 
     if not processed_rows:
@@ -389,11 +483,13 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     try:
         if storage:
             storage.write_csv(rows_df, row_out_path, index=False)
+            storage.write_text(json.dumps(llm_cache, ensure_ascii=True), llm_cache_path)
             print(f"[OK] Wrote row-level SERPs to Cloud Storage: {row_out_path}")
         else:
             out_file = Path(row_out_path)
             out_file.parent.mkdir(parents=True, exist_ok=True)
             rows_df.to_csv(out_file, index=False)
+            save_json_cache(llm_cache_path, llm_cache)
             print(f"[OK] Wrote row-level SERPs: {out_file}")
     except Exception as e:
         print(f"[ERROR] Failed to write row-level SERPs: {e}")

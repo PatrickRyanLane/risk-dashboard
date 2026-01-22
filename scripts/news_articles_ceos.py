@@ -23,6 +23,7 @@ import feedparser
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
+from llm_utils import is_uncertain, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -68,6 +69,21 @@ ALWAYS_NEGATIVE_TERMS = [
 ]
 ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
 
+FINANCE_TERMS = [
+    r"\bearnings\b", r"\beps\b", r"\brevenue\b", r"\bguidance\b", r"\bforecast\b",
+    r"\bprice target\b", r"\bupgrade\b", r"\bdowngrade\b", r"\bdividend\b",
+    r"\bbuyback\b", r"\bshares?\b", r"\bstock\b", r"\bmarket cap\b",
+    r"\bquarterly\b", r"\bfiscal\b", r"\bprofit\b", r"\bEBITDA\b",
+    r"\b10-q\b", r"\b10-k\b", r"\bsec\b", r"\bipo\b"
+]
+FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
+FINANCE_SOURCES = {
+    "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
+    "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
+    "investorplace.com", "nasdaq.com", "foolcdn.com"
+}
+TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
+
 
 def _should_force_negative_title(title: str) -> bool:
     """Return True if title contains CEO-specific negative terms."""
@@ -88,6 +104,24 @@ def _is_reddit_source(source: str) -> bool:
         return False
     return "reddit" in source.lower()
 
+def _hostname(url: str) -> str:
+    try:
+        host = (urlparse(url or "").hostname or "").lower()
+        return host.replace("www.", "")
+    except Exception:
+        return ""
+
+def _is_financial_routine(title: str, url: str = "", source: str = "") -> bool:
+    hay = f"{title} {source}".strip()
+    if FINANCE_TERMS_RE.search(hay):
+        return True
+    if TICKER_RE.search(title or ""):
+        return True
+    host = _hostname(url)
+    if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
+        return True
+    return False
+
 
 # Paths
 BASE = Path(__file__).parent.parent
@@ -102,6 +136,10 @@ RSS_TMPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:
 MAX_PER_ALIAS = int(os.getenv("ARTICLES_MAX_PER_ALIAS", "25"))
 SLEEP_SEC = float(os.getenv("ARTICLES_SLEEP_SEC", "0.25"))
 DEFAULT_BATCH_SIZE = int(os.getenv("ARTICLES_BATCH_SIZE", "100"))
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_MAX_CALLS = int(os.getenv("LLM_MAX_CALLS", "200"))
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_CACHE_DIR = "data/llm_cache"
 
 
 def create_session() -> requests.Session:
@@ -129,35 +167,55 @@ def fetch_rss(session: requests.Session, query: str) -> feedparser.FeedParserDic
     return feedparser.parse(resp.content)
 
 
-def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "") -> str:
+def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = ""):
     """
     Classify sentiment with multi-stage filtering.
     """
+    flags = {
+        "is_reddit": False,
+        "is_forced": False,
+        "is_finance": False,
+        "forced_reason": "",
+        "compound": None,
+        "cleaned": "",
+    }
     # 1. Force NEGATIVE for Reddit
     if _is_reddit_source(source):
-        return "negative"
+        flags["is_reddit"] = True
+        flags["forced_reason"] = "reddit"
+        return "negative", flags
+
+    # 2. Neutralize routine financial coverage
+    if _is_financial_routine(title, url, source):
+        flags["is_finance"] = True
+        flags["forced_reason"] = "finance"
+        return "neutral", flags
     
-    # 2. Force NEGATIVE for CEO trouble terms
+    # 3. Force NEGATIVE for CEO trouble terms
     if _should_force_negative_title(title):
-        return "negative"
+        flags["is_forced"] = True
+        flags["forced_reason"] = "ceo_terms"
+        return "negative", flags
     
-    # 3. Strip neutral terms
+    # 4. Strip neutral terms
     cleaned = _strip_neutral_terms(title or "")
+    flags["cleaned"] = cleaned
     
     # If nothing meaningful remains, neutral
     if not cleaned or len(cleaned.split()) < 2:
-        return "neutral"
+        return "neutral", flags
     
-    # 4. VADER on cleaned headline
+    # 5. VADER on cleaned headline
     scores = analyzer.polarity_scores(cleaned)
     compound = scores.get("compound", 0.0)
+    flags["compound"] = compound
     
     # Unified thresholds
     if compound >= 0.15:
-        return "positive"
+        return "positive", flags
     if compound <= -0.10:
-        return "negative"
-    return "neutral"
+        return "negative", flags
+    return "neutral", flags
 
 
 def extract_source(entry) -> str:
@@ -175,7 +233,8 @@ def extract_source(entry) -> str:
         return ""
 
 
-def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, company: str, analyzer) -> list[dict]:
+def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, company: str, analyzer,
+                             llm_cache: dict, llm_calls: dict) -> list[dict]:
     try:
         feed = fetch_rss(session, alias)
     except Exception as e:
@@ -190,7 +249,34 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         if not title:
             continue
             
-        sent = classify(title, analyzer, source)
+        finance_routine = _is_financial_routine(title, link, source)
+        sent, flags = classify(title, analyzer, source, link)
+        finance_routine = flags.get("is_finance", False)
+        is_forced = bool(flags.get("forced_reason"))
+        uncertain, uncertain_reason = is_uncertain(
+            sent,
+            finance_routine,
+            is_forced,
+            flags.get("compound"),
+            flags.get("cleaned", ""),
+            title
+        )
+        llm_label = ""
+        llm_severity = ""
+        llm_reason = ""
+        llm_key = link or title
+        if uncertain and LLM_API_KEY and llm_calls["count"] < LLM_MAX_CALLS:
+            if llm_key in llm_cache:
+                cached = llm_cache.get(llm_key, {})
+            else:
+                prompt = build_risk_prompt("ceo", ceo, title, "", source, link)
+                cached = call_llm_json(prompt, LLM_API_KEY, LLM_MODEL)
+                llm_cache[llm_key] = cached
+                llm_calls["count"] += 1
+            if isinstance(cached, dict):
+                llm_label = cached.get("label", "")
+                llm_severity = cached.get("severity", "")
+                llm_reason = cached.get("reason", "")
         
         rows.append({
             "ceo": ceo,
@@ -199,6 +285,12 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
             "url": link,
             "source": source,
             "sentiment": sent,
+            "finance_routine": finance_routine,
+            "uncertain": uncertain,
+            "uncertain_reason": uncertain_reason,
+            "llm_label": llm_label,
+            "llm_severity": llm_severity,
+            "llm_reason": llm_reason,
         })
     return rows
 
@@ -320,6 +412,7 @@ def main() -> int:
     out_date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     output_path = f"{args.output_dir}/{out_date}-ceo-articles-modal.csv"
     checkpoint_path = f"{CHECKPOINT_DIR}/{out_date}-ceo-checkpoint.json"
+    llm_cache_path = f"{LLM_CACHE_DIR}/{out_date}-ceo-articles.json"
     
     storage = None
     if args.local:
@@ -343,6 +436,15 @@ def main() -> int:
         ckpt = load_checkpoint(storage, checkpoint_path, out_date)
         all_rows = ckpt.get("articles", [])
         start_index = ckpt.get("last_index", -1) + 1
+
+    if storage:
+        try:
+            llm_cache = json.loads(storage.read_text(llm_cache_path)) if storage.file_exists(llm_cache_path) else {}
+        except Exception:
+            llm_cache = {}
+    else:
+        llm_cache = load_json_cache(llm_cache_path)
+    llm_calls = {"count": 0}
     
     end_index = min(start_index + args.batch_size, len(roster))
     
@@ -362,7 +464,7 @@ def main() -> int:
         if not alias: continue
             
         print(f"[{i + 1}/{len(roster)}] {alias}")
-        rows = build_articles_for_alias(session, alias, row["ceo"], row["company"], analyzer)
+        rows = build_articles_for_alias(session, alias, row["ceo"], row["company"], analyzer, llm_cache, llm_calls)
         all_rows.extend(rows)
         
         if (i + 1) % args.checkpoint_interval == 0:
@@ -385,11 +487,13 @@ def main() -> int:
         try:
             if storage:
                 storage.write_csv(df, output_path, index=False)
+                storage.write_text(json.dumps(llm_cache, ensure_ascii=True), llm_cache_path)
                 print(f"✅ Saved to Cloud Storage: {output_path}")
             else:
                 out = Path(output_path)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 df.to_csv(out, index=False)
+                save_json_cache(llm_cache_path, llm_cache)
                 print(f"✅ Saved locally: {out}")
             delete_checkpoint(storage, checkpoint_path)
         except Exception as e:

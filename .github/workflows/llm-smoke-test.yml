@@ -1,0 +1,43 @@
+name: LLM Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: LLM provider (openai or gemini)
+        required: false
+        default: gemini
+      model:
+        description: LLM model name
+        required: false
+        default: gemini-1.5-flash
+
+jobs:
+  llm_smoke_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f scripts/requirements.txt ]; then
+            pip install -r scripts/requirements.txt
+          else
+            pip install requests
+          fi
+
+      - name: Run LLM smoke test
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_PROVIDER: ${{ inputs.provider }}
+          LLM_MODEL: ${{ inputs.model }}
+        run: python3 scripts/llm_smoke_test.py

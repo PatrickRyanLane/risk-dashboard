@@ -18,6 +18,7 @@ from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
 from storage_utils import CloudStorageManager
+from llm_utils import build_summary_prompt, call_llm_text
 
 # --- CONFIG ---
 DRY_RUN = False  # <--- SET TO TRUE FOR TESTING
@@ -27,6 +28,10 @@ SF_PASSWORD = os.getenv('SF_PASSWORD')
 SF_TOKEN = os.getenv('SF_SECURITY_TOKEN')
 SLACK_CHANNEL = "#crisis-alerts" 
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_SUMMARY_MAX_CALLS = int(os.getenv("LLM_SUMMARY_MAX_CALLS", "20"))
+LLM_CACHE_DIR = "data/llm_cache"
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -126,7 +131,7 @@ def get_slack_user_id(email):
     except Exception: pass
     return None
 
-def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name):
+def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name, summary_text=""):
     """Sends a Block Kit alert."""
     
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
@@ -196,6 +201,13 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
                 "text": f"*Top Headlines:*\n{headline_text}"
             }
         },
+        *([{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Summary:*\n{summary_text}"
+            }
+        }] if summary_text else []),
         {
             "type": "context",
             "elements": [
@@ -292,6 +304,15 @@ def main():
     HARD_FLOOR_NEW_CO = 15    
 
     updates_made = False
+    llm_cache_path = f"{LLM_CACHE_DIR}/{current_time.date()}-crisis-summary.json"
+    if storage.file_exists(llm_cache_path):
+        try:
+            llm_cache = json.loads(storage.read_text(llm_cache_path))
+        except Exception:
+            llm_cache = {}
+    else:
+        llm_cache = {}
+    llm_calls = 0
     
     for _, row in df.iterrows():
         # FLOOD PROTECTION CHECK
@@ -351,9 +372,22 @@ def main():
         owner_email, owner_name = get_salesforce_owner(brand)
         slack_id = get_slack_user_id(owner_email)
         
+        summary_text = ""
+        llm_key = f"{brand}|{ceo_name}|{article_type}|{date_str}"
+        if LLM_API_KEY and llm_calls < LLM_SUMMARY_MAX_CALLS:
+            if llm_key in llm_cache:
+                summary_text = llm_cache.get(llm_key, "")
+            else:
+                raw_heads = str(headlines).split('|')
+                clean_heads = [h.strip().strip('"') for h in raw_heads if h.strip()]
+                prompt = build_summary_prompt(article_type, ceo_name if article_type == "ceo" else brand, clean_heads[:5])
+                summary_text = call_llm_text(prompt, LLM_API_KEY, LLM_MODEL)
+                llm_cache[llm_key] = summary_text
+                llm_calls += 1
+
         send_slack_alert(
             brand, ceo_name, article_type, count, p97 if history_points >= MIN_HISTORY_POINTS else HARD_FLOOR_NEW_CO, 
-            headlines, slack_id, owner_name
+            headlines, slack_id, owner_name, summary_text
         )
                 
         # --- JITTER IMPLEMENTATION ---
@@ -382,6 +416,7 @@ def main():
             print("🚫 [DRY RUN] Skipping save to 'alert_history.json'. No changes made.")
         else:
             storage.write_text(json.dumps(history, indent=2), history_path)
+            storage.write_text(json.dumps(llm_cache, indent=2), llm_cache_path)
             print("💾 Alert history updated.")
 
 if __name__ == "__main__":
