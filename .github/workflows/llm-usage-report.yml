@@ -45,10 +45,10 @@ jobs:
           RUN_DATE: ${{ inputs.date }}
         run: |
           mkdir -p data/processed_articles data/processed_serps
-          gsutil cp -n "gs://risk-dashboard/data/processed_articles/${RUN_DATE}-brand-articles-table.csv" data/processed_articles/ || true
-          gsutil cp -n "gs://risk-dashboard/data/processed_articles/${RUN_DATE}-ceo-articles-table.csv" data/processed_articles/ || true
-          gsutil cp -n "gs://risk-dashboard/data/processed_serps/${RUN_DATE}-brand-serps-table.csv" data/processed_serps/ || true
-          gsutil cp -n "gs://risk-dashboard/data/processed_serps/${RUN_DATE}-ceo-serps-table.csv" data/processed_serps/ || true
+          gsutil cp -n "gs://risk-dashboard/data/processed_articles/${RUN_DATE}-brand-articles-modal.csv" data/processed_articles/ || true
+          gsutil cp -n "gs://risk-dashboard/data/processed_articles/${RUN_DATE}-ceo-articles-modal.csv" data/processed_articles/ || true
+          gsutil cp -n "gs://risk-dashboard/data/processed_serps/${RUN_DATE}-brand-serps-modal.csv" data/processed_serps/ || true
+          gsutil cp -n "gs://risk-dashboard/data/processed_serps/${RUN_DATE}-ceo-serps-modal.csv" data/processed_serps/ || true
 
       - name: Run usage report
         env:
