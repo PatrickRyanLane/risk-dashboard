@@ -233,7 +233,8 @@ def fetch_all_stock_data(storage=None, roster_path='rosters/main-roster.csv',
         print(f"   Positive: {positive} ({positive/len(results)*100:.1f}%)")
         print(f"   Negative: {negative} ({negative/len(results)*100:.1f}%)")
         try:
-            upsert_stock_df(results_df)
+            db_count = upsert_stock_df(results_df)
+            print(f"✅ DB upserted {db_count} stock price rows")
         except Exception as e:
             print(f"⚠️ DB upsert failed: {e}")
         

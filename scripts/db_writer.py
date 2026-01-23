@@ -60,10 +60,10 @@ def fetch_ceo_map(cur) -> Dict[Tuple[str, str], str]:
     return {(name, company_id): cid for name, company_id, cid in cur.fetchall()}
 
 
-def upsert_articles_mentions(df, entity_type: str, date_str: str) -> None:
+def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
     conn = get_conn()
     if conn is None or df is None or df.empty:
-        return
+        return 0
 
     now = datetime.now(timezone.utc)
     articles = {}
@@ -116,7 +116,7 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> None:
 
     if not articles or not mentions:
         conn.close()
-        return
+        return 0
 
     scored_at = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
@@ -194,12 +194,13 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> None:
                     """, insert_rows, page_size=1000)
 
     conn.close()
+    return len(mentions)
 
 
-def upsert_serp_results(df, entity_type: str, date_str: str) -> None:
+def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
     conn = get_conn()
     if conn is None or df is None or df.empty:
-        return
+        return 0
 
     now = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
@@ -279,7 +280,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> None:
 
     if not run_rows or not result_rows:
         conn.close()
-        return
+        return 0
 
     run_id_map = {}
     with conn:
@@ -337,6 +338,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> None:
                 """, insert_rows, page_size=1000)
 
     conn.close()
+    return len(result_rows)
 
 
 def _parse_dates_and_values(date_history: str, value_history: str) -> List[Tuple]:
@@ -358,10 +360,10 @@ def _parse_dates_and_values(date_history: str, value_history: str) -> List[Tuple
     return out
 
 
-def upsert_stock_df(df) -> None:
+def upsert_stock_df(df) -> int:
     conn = get_conn()
     if conn is None or df is None or df.empty:
-        return
+        return 0
 
     daily_rows = []
     snapshot_rows = []
@@ -412,7 +414,7 @@ def upsert_stock_df(df) -> None:
 
     if not daily_rows and not snapshot_rows:
         conn.close()
-        return
+        return 0
 
     with conn:
         with conn.cursor() as cur:
@@ -439,12 +441,13 @@ def upsert_stock_df(df) -> None:
                 """, snapshot_rows, page_size=1000)
 
     conn.close()
+    return len(daily_rows)
 
 
-def upsert_trends_df(df) -> None:
+def upsert_trends_df(df) -> int:
     conn = get_conn()
     if conn is None or df is None or df.empty:
-        return
+        return 0
 
     daily_rows = []
     snapshot_rows = []
@@ -477,7 +480,7 @@ def upsert_trends_df(df) -> None:
 
     if not daily_rows and not snapshot_rows:
         conn.close()
-        return
+        return 0
 
     with conn:
         with conn.cursor() as cur:
@@ -507,3 +510,4 @@ def upsert_trends_df(df) -> None:
                 """, snapshot_rows, page_size=1000)
 
     conn.close()
+    return len(daily_rows)

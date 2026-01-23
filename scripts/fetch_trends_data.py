@@ -197,7 +197,8 @@ def fetch_all_trends_data(storage=None, roster_path='rosters/main-roster.csv',
         print(f"   Average interest: {avg_interest:.1f}")
         print(f"   High interest (≥50): {high_interest}")
         try:
-            upsert_trends_df(results_df)
+            db_count = upsert_trends_df(results_df)
+            print(f"✅ DB upserted {db_count} trends rows")
         except Exception as e:
             print(f"⚠️ DB upsert failed: {e}")
         

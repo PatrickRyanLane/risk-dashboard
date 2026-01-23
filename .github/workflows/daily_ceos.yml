@@ -66,6 +66,7 @@ jobs:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
           ARTICLES_MAX_PER_ALIAS: "25"
           ARTICLES_SLEEP_SEC: "0.35"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
           echo "🚀 Running news_articles_ceos.py for ${DATE_TO_RUN}"
@@ -87,6 +88,7 @@ jobs:
       - name: Process CEO SERPs (→ GCS)
         env:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
           echo "🔍 Processing CEO SERPs for ${DATE_TO_RUN}"
@@ -112,4 +114,9 @@ jobs:
           gsutil ls -l "gs://$GCS_BUCKET/data/processed_articles/${DATE_TO_USE}*ceo*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO article files" >> $GITHUB_STEP_SUMMARY
           gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/ceo*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO counts" >> $GITHUB_STEP_SUMMARY
           gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*ceo*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO SERP files" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### DB write status:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "Check logs for: ✅ DB upserted ... rows" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

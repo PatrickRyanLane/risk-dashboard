@@ -69,6 +69,7 @@ jobs:
       - name: Build brand articles (→ GCS)
         env:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
@@ -93,6 +94,7 @@ jobs:
       - name: Process brand SERPs (→ GCS)
         env:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
@@ -119,4 +121,9 @@ jobs:
           gsutil ls -l "gs://$GCS_BUCKET/data/processed_articles/${DATE_TO_USE}*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No article files found" >> $GITHUB_STEP_SUMMARY
           gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/brand*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No daily counts found" >> $GITHUB_STEP_SUMMARY
           gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*brand*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No SERP files found" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### DB write status:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "Check logs for: ✅ DB upserted ... rows" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

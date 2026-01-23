@@ -466,7 +466,8 @@ def main() -> int:
                 df.to_csv(out, index=False)
                 print(f"✅ Saved locally: {out}")
             try:
-                upsert_articles_mentions(df, "ceo", out_date)
+                db_count = upsert_articles_mentions(df, "ceo", out_date)
+                print(f"✅ DB upserted {db_count} CEO article rows")
             except Exception as e:
                 print(f"⚠️ DB upsert failed: {e}")
             delete_checkpoint(storage, checkpoint_path)

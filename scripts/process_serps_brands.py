@@ -466,7 +466,8 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         return
 
     try:
-        upsert_serp_results(rows_df, "company", target_date)
+        db_count = upsert_serp_results(rows_df, "company", target_date)
+        print(f"[OK] DB upserted {db_count} brand SERP rows")
     except Exception as e:
         print(f"[WARN] DB upsert failed: {e}")
 
