@@ -40,7 +40,7 @@ PERCENTILE_CUTOFF = 0.97
 ALERT_COOLDOWN_HOURS = 168
 
 # --- FLOOD PROTECTION ---
-MAX_ALERTS_PER_DAY = 5  # Strict limit: Max 20 alerts per 24-hour rolling window
+MAX_ALERTS_PER_DAY = 6  # Strict limit: Max 20 alerts per 24-hour rolling window
 
 # Manual color mapping for your VIPs
 OWNER_COLORS = {
