@@ -36,6 +36,21 @@ def is_uncertain(label: str, is_finance: bool, is_forced: bool, compound: float 
     return False, ""
 
 
+def uncertainty_priority(compound: float | None, title: str) -> float:
+    """
+    Higher score = more uncertain. Emphasize near-zero compound + short titles.
+    """
+    score = 0.0
+    if compound is None:
+        score += 1.0
+    else:
+        score += 1.0 - min(abs(compound), 1.0)
+    words = len([w for w in (title or "").split() if w])
+    if words <= 6:
+        score += 0.5
+    return score
+
+
 def build_risk_prompt(entity_type: str, entity_name: str, title: str,
                       snippet: str = "", source: str = "", url: str = "") -> dict:
     """

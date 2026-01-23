@@ -27,7 +27,7 @@ import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
-from llm_utils import is_uncertain, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
+from llm_utils import is_uncertain, uncertainty_priority, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
 
 # Config / constants
 S3_URL_TEMPLATE = (
@@ -381,6 +381,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     llm_calls = {"count": 0}
 
     processed_rows = []
+    pending_llm = []
     for _, row in raw.iterrows():
         company = str(row.get("company", "") or "").strip()
         if not company:
@@ -443,18 +444,15 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         llm_severity = ""
         llm_reason = ""
         llm_key = url or title
-        if uncertain and LLM_API_KEY and llm_calls["count"] < LLM_MAX_CALLS:
-            if llm_key in llm_cache:
-                cached = llm_cache.get(llm_key, {})
-            else:
-                prompt = build_risk_prompt("brand", company, title, snippet, "", url)
-                cached = call_llm_json(prompt, LLM_API_KEY, LLM_MODEL)
-                llm_cache[llm_key] = cached
-                llm_calls["count"] += 1
-            if isinstance(cached, dict):
-                llm_label = cached.get("label", "")
-                llm_severity = cached.get("severity", "")
-                llm_reason = cached.get("reason", "")
+        if uncertain and LLM_API_KEY:
+            priority = uncertainty_priority(compound, title)
+            prompt = build_risk_prompt("brand", company, title, snippet, "", url)
+            pending_llm.append({
+                "idx": len(processed_rows),
+                "key": llm_key,
+                "priority": priority,
+                "prompt": prompt,
+            })
 
         processed_rows.append({
             "date": target_date,
@@ -472,6 +470,21 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             "llm_severity": llm_severity,
             "llm_reason": llm_reason,
         })
+    if pending_llm and LLM_API_KEY:
+        pending_llm.sort(key=lambda x: x["priority"], reverse=True)
+        for item in pending_llm:
+            if item["key"] in llm_cache:
+                cached = llm_cache.get(item["key"], {})
+            elif llm_calls["count"] < LLM_MAX_CALLS:
+                cached = call_llm_json(item["prompt"], LLM_API_KEY, LLM_MODEL)
+                llm_cache[item["key"]] = cached
+                llm_calls["count"] += 1
+            else:
+                continue
+            if isinstance(cached, dict):
+                processed_rows[item["idx"]]["llm_label"] = cached.get("label", "")
+                processed_rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
+                processed_rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
 
     if not processed_rows:
         print(f"[WARN] No processed rows for {target_date}.")

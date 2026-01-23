@@ -21,7 +21,7 @@ from bs4 import BeautifulSoup
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
-from llm_utils import is_uncertain, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
+from llm_utils import is_uncertain, uncertainty_priority, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -233,6 +233,7 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
         soup = BeautifulSoup(r.text, "html.parser")
     
     out = []
+    pending_llm = []
     for item in soup.find_all("item"):
         title = (item.title.text or "").strip()
         link = (item.link.text or "").strip()
@@ -260,18 +261,15 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
         llm_severity = ""
         llm_reason = ""
         llm_key = link or title
-        if uncertain and LLM_API_KEY and llm_calls["count"] < LLM_MAX_CALLS:
-            if llm_key in llm_cache:
-                cached = llm_cache.get(llm_key, {})
-            else:
-                prompt = build_risk_prompt("brand", brand, title, "", source, link)
-                cached = call_llm_json(prompt, LLM_API_KEY, LLM_MODEL)
-                llm_cache[llm_key] = cached
-                llm_calls["count"] += 1
-            if isinstance(cached, dict):
-                llm_label = cached.get("label", "")
-                llm_severity = cached.get("severity", "")
-                llm_reason = cached.get("reason", "")
+        if uncertain and LLM_API_KEY:
+            priority = uncertainty_priority(flags.get("compound"), flags.get("cleaned", "") or title)
+            prompt = build_risk_prompt("brand", brand, title, "", source, link)
+            pending_llm.append({
+                "idx": len(out),
+                "key": llm_key,
+                "priority": priority,
+                "prompt": prompt,
+            })
         
         out.append({
             "company": brand,
@@ -287,6 +285,22 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
             "llm_severity": llm_severity,
             "llm_reason": llm_reason
         })
+    if pending_llm and LLM_API_KEY:
+        pending_llm.sort(key=lambda x: x["priority"], reverse=True)
+        for item in pending_llm:
+            if item["key"] in llm_cache:
+                cached = llm_cache.get(item["key"], {})
+            elif llm_calls["count"] < LLM_MAX_CALLS:
+                cached = call_llm_json(item["prompt"], LLM_API_KEY, LLM_MODEL)
+                llm_cache[item["key"]] = cached
+                llm_calls["count"] += 1
+            else:
+                continue
+            if isinstance(cached, dict):
+                out[item["idx"]]["llm_label"] = cached.get("label", "")
+                out[item["idx"]]["llm_severity"] = cached.get("severity", "")
+                out[item["idx"]]["llm_reason"] = cached.get("reason", "")
+
     return out[:MAX_PER_ALIAS]
 
 

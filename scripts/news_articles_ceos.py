@@ -23,7 +23,7 @@ import feedparser
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
-from llm_utils import is_uncertain, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
+from llm_utils import is_uncertain, uncertainty_priority, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -242,6 +242,7 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         return []
 
     rows = []
+    pending_llm = []
     for entry in (feed.entries or [])[:MAX_PER_ALIAS]:
         title = html.unescape(entry.get("title", "")).strip()
         link = (entry.get("link") or entry.get("id") or "").strip()
@@ -265,18 +266,15 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         llm_severity = ""
         llm_reason = ""
         llm_key = link or title
-        if uncertain and LLM_API_KEY and llm_calls["count"] < LLM_MAX_CALLS:
-            if llm_key in llm_cache:
-                cached = llm_cache.get(llm_key, {})
-            else:
-                prompt = build_risk_prompt("ceo", ceo, title, "", source, link)
-                cached = call_llm_json(prompt, LLM_API_KEY, LLM_MODEL)
-                llm_cache[llm_key] = cached
-                llm_calls["count"] += 1
-            if isinstance(cached, dict):
-                llm_label = cached.get("label", "")
-                llm_severity = cached.get("severity", "")
-                llm_reason = cached.get("reason", "")
+        if uncertain and LLM_API_KEY:
+            priority = uncertainty_priority(flags.get("compound"), flags.get("cleaned", "") or title)
+            prompt = build_risk_prompt("ceo", ceo, title, "", source, link)
+            pending_llm.append({
+                "idx": len(rows),
+                "key": llm_key,
+                "priority": priority,
+                "prompt": prompt,
+            })
         
         rows.append({
             "ceo": ceo,
@@ -292,6 +290,22 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
             "llm_severity": llm_severity,
             "llm_reason": llm_reason,
         })
+    if pending_llm and LLM_API_KEY:
+        pending_llm.sort(key=lambda x: x["priority"], reverse=True)
+        for item in pending_llm:
+            if item["key"] in llm_cache:
+                cached = llm_cache.get(item["key"], {})
+            elif llm_calls["count"] < LLM_MAX_CALLS:
+                cached = call_llm_json(item["prompt"], LLM_API_KEY, LLM_MODEL)
+                llm_cache[item["key"]] = cached
+                llm_calls["count"] += 1
+            else:
+                continue
+            if isinstance(cached, dict):
+                rows[item["idx"]]["llm_label"] = cached.get("label", "")
+                rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
+                rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
+
     return rows
 
 
