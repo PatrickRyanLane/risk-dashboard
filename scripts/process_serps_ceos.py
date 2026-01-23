@@ -590,6 +590,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
                 processed_rows[item["idx"]]["llm_label"] = cached.get("label", "")
                 processed_rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
                 processed_rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
+        print(f"[LLM] CEO SERPs: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
 
     if unresolved_count > 0:
         print(f"[WARN] {unresolved_count} rows could not be resolved to CEO/company")

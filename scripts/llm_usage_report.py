@@ -39,6 +39,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Estimate daily LLM call volume from CSV outputs.")
     parser.add_argument("--date", required=True, help="Date string used in filenames (YYYY-MM-DD).")
     parser.add_argument("--data-dir", default="data", help="Base data directory (default: data).")
+    parser.add_argument("--llm-max", type=int, default=0, help="Optional per-script LLM cap.")
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -53,10 +54,13 @@ def main() -> int:
 
     rows: List[str] = []
     totals = {"total": 0, "finance_routine": 0, "uncertain": 0}
+    est_calls = {"brand articles": 0, "ceo articles": 0, "brand serps": 0, "ceo serps": 0}
     for label, path in patterns:
         df = load_csv(path)
         stats = summarize(df)
         rows.append(format_row(label, stats))
+        if args.llm_max and stats["uncertain"]:
+            est_calls[label] = min(stats["uncertain"], args.llm_max)
         for k in totals:
             totals[k] += stats[k]
 
@@ -64,6 +68,9 @@ def main() -> int:
     for row in rows:
         print("-", row)
     print("-", format_row("all", totals))
+    if args.llm_max:
+        total_est = sum(est_calls.values())
+        print(f"Estimated LLM calls with cap={args.llm_max}: {total_est}")
     print("Note: expected LLM calls ~= total uncertain rows (no hard cap).")
     return 0
 

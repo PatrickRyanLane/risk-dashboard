@@ -485,6 +485,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
                 processed_rows[item["idx"]]["llm_label"] = cached.get("label", "")
                 processed_rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
                 processed_rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
+        print(f"[LLM] Brand SERPs: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
 
     if not processed_rows:
         print(f"[WARN] No processed rows for {target_date}.")

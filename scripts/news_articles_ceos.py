@@ -305,6 +305,7 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
                 rows[item["idx"]]["llm_label"] = cached.get("label", "")
                 rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
                 rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
+        print(f"[LLM] CEO articles: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
 
     return rows
 

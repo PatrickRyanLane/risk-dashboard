@@ -300,6 +300,7 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
                 out[item["idx"]]["llm_label"] = cached.get("label", "")
                 out[item["idx"]]["llm_severity"] = cached.get("severity", "")
                 out[item["idx"]]["llm_reason"] = cached.get("reason", "")
+        print(f"[LLM] Brand articles: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
 
     return out[:MAX_PER_ALIAS]
 

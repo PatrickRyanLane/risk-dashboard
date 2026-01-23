@@ -6,6 +6,10 @@ on:
       date:
         description: Date string for CSV filenames (YYYY-MM-DD)
         required: true
+      llm_max:
+        description: Optional per-script LLM cap for estimate
+        required: false
+        default: "200"
 
 jobs:
   llm_usage_report:
@@ -53,4 +57,5 @@ jobs:
       - name: Run usage report
         env:
           RUN_DATE: ${{ inputs.date }}
-        run: python3 scripts/llm_usage_report.py --date "$RUN_DATE"
+          LLM_MAX: ${{ inputs.llm_max }}
+        run: python3 scripts/llm_usage_report.py --date "$RUN_DATE" --llm-max "$LLM_MAX"
