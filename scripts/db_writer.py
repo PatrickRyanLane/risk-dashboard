@@ -88,7 +88,8 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
         finance_routine = parse_bool(row.get("finance_routine"))
         uncertain = parse_bool(row.get("uncertain"))
         uncertain_reason = (row.get("uncertain_reason") or "").strip() or None
-        llm_label = (row.get("llm_label") or "").strip() or None
+        llm_sentiment_label = (row.get("llm_sentiment_label") or row.get("llm_label") or "").strip() or None
+        llm_risk_label = (row.get("llm_risk_label") or "").strip() or None
         llm_severity = (row.get("llm_severity") or "").strip() or None
         llm_reason = (row.get("llm_reason") or "").strip() or None
 
@@ -101,7 +102,8 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             if not company_id:
                 continue
             mentions.append((company_id, canonical, sentiment, finance_routine, uncertain,
-                             uncertain_reason, llm_label, llm_severity, llm_reason))
+                             uncertain_reason, llm_sentiment_label, llm_risk_label,
+                             llm_severity, llm_reason))
         else:
             ceo = str(row.get("ceo", "") or "").strip()
             company = str(row.get("company", "") or "").strip()
@@ -112,7 +114,8 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             if not ceo_id:
                 continue
             mentions.append((ceo_id, canonical, sentiment, finance_routine, uncertain,
-                             uncertain_reason, llm_label, llm_severity, llm_reason))
+                             uncertain_reason, llm_sentiment_label, llm_risk_label,
+                             llm_severity, llm_reason))
 
     if not articles or not mentions:
         conn.close()
@@ -138,19 +141,19 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
 
             if entity_type == "company":
                 insert_rows = []
-                for company_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_label, llm_severity, llm_reason in mentions:
+                for company_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in mentions:
                     article_id = article_map.get(canonical)
                     if not article_id:
                         continue
                     insert_rows.append((
                         company_id, article_id, sentiment, finance_routine, uncertain, uncertain_reason,
-                        llm_label, llm_severity, llm_reason, scored_at, "vader"
+                        llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, "vader"
                     ))
                 if insert_rows:
                     execute_values(cur, """
                         insert into company_article_mentions (
                           company_id, article_id, sentiment_label, finance_routine, uncertain, uncertain_reason,
-                          llm_label, llm_severity, llm_reason, scored_at, model_version
+                          llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, model_version
                         )
                         values %s
                         on conflict (company_id, article_id) do update set
@@ -158,7 +161,8 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
                           finance_routine = excluded.finance_routine,
                           uncertain = excluded.uncertain,
                           uncertain_reason = excluded.uncertain_reason,
-                          llm_label = coalesce(excluded.llm_label, company_article_mentions.llm_label),
+                          llm_sentiment_label = coalesce(excluded.llm_sentiment_label, company_article_mentions.llm_sentiment_label),
+                          llm_risk_label = coalesce(excluded.llm_risk_label, company_article_mentions.llm_risk_label),
                           llm_severity = coalesce(excluded.llm_severity, company_article_mentions.llm_severity),
                           llm_reason = coalesce(excluded.llm_reason, company_article_mentions.llm_reason),
                           scored_at = excluded.scored_at,
@@ -166,19 +170,19 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
                     """, insert_rows, page_size=1000)
             else:
                 insert_rows = []
-                for ceo_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_label, llm_severity, llm_reason in mentions:
+                for ceo_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in mentions:
                     article_id = article_map.get(canonical)
                     if not article_id:
                         continue
                     insert_rows.append((
                         ceo_id, article_id, sentiment, finance_routine, uncertain, uncertain_reason,
-                        llm_label, llm_severity, llm_reason, scored_at, "vader"
+                        llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, "vader"
                     ))
                 if insert_rows:
                     execute_values(cur, """
                         insert into ceo_article_mentions (
                           ceo_id, article_id, sentiment_label, finance_routine, uncertain, uncertain_reason,
-                          llm_label, llm_severity, llm_reason, scored_at, model_version
+                          llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, model_version
                         )
                         values %s
                         on conflict (ceo_id, article_id) do update set
@@ -186,7 +190,8 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
                           finance_routine = excluded.finance_routine,
                           uncertain = excluded.uncertain,
                           uncertain_reason = excluded.uncertain_reason,
-                          llm_label = coalesce(excluded.llm_label, ceo_article_mentions.llm_label),
+                          llm_sentiment_label = coalesce(excluded.llm_sentiment_label, ceo_article_mentions.llm_sentiment_label),
+                          llm_risk_label = coalesce(excluded.llm_risk_label, ceo_article_mentions.llm_risk_label),
                           llm_severity = coalesce(excluded.llm_severity, ceo_article_mentions.llm_severity),
                           llm_reason = coalesce(excluded.llm_reason, ceo_article_mentions.llm_reason),
                           scored_at = excluded.scored_at,
@@ -244,7 +249,8 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
         finance_routine = parse_bool(row.get("finance_routine"))
         uncertain = parse_bool(row.get("uncertain"))
         uncertain_reason = (row.get("uncertain_reason") or "").strip() or None
-        llm_label = (row.get("llm_label") or "").strip() or None
+        llm_sentiment_label = (row.get("llm_sentiment_label") or row.get("llm_label") or "").strip() or None
+        llm_risk_label = (row.get("llm_risk_label") or "").strip() or None
         llm_severity = (row.get("llm_severity") or "").strip() or None
         llm_reason = (row.get("llm_reason") or "").strip() or None
 
@@ -275,7 +281,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
         result_rows.append((
             run_key, rank, url, url_hash(canonical), title, row.get("snippet") or "",
             domain, sentiment, control_class, finance_routine, uncertain,
-            uncertain_reason, llm_label, llm_severity, llm_reason
+            uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason
         ))
 
     if not run_rows or not result_rows:
@@ -305,21 +311,21 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     run_id_map[("ceo", ceo_id)] = run_id
 
             insert_map = {}
-            for run_key, rank, url, uhash, title, snippet, domain, sentiment, control_class, finance_routine, uncertain, uncertain_reason, llm_label, llm_severity, llm_reason in result_rows:
+            for run_key, rank, url, uhash, title, snippet, domain, sentiment, control_class, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in result_rows:
                 run_id = run_id_map.get(run_key)
                 if not run_id:
                     continue
                 key = (run_id, rank, uhash)
                 insert_map[key] = (
                     run_id, rank, url, uhash, title, snippet, domain, sentiment, control_class,
-                    finance_routine, uncertain, uncertain_reason, llm_label, llm_severity, llm_reason
+                    finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason
                 )
             insert_rows = list(insert_map.values())
             if insert_rows:
                 execute_values(cur, """
                     insert into serp_results (
                       serp_run_id, rank, url, url_hash, title, snippet, domain, sentiment_label, control_class,
-                      finance_routine, uncertain, uncertain_reason, llm_label, llm_severity, llm_reason
+                      finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason
                     )
                     values %s
                     on conflict (serp_run_id, rank, url_hash) do update set
@@ -332,7 +338,8 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                       finance_routine = excluded.finance_routine,
                       uncertain = excluded.uncertain,
                       uncertain_reason = excluded.uncertain_reason,
-                      llm_label = coalesce(excluded.llm_label, serp_results.llm_label),
+                      llm_sentiment_label = coalesce(excluded.llm_sentiment_label, serp_results.llm_sentiment_label),
+                      llm_risk_label = coalesce(excluded.llm_risk_label, serp_results.llm_risk_label),
                       llm_severity = coalesce(excluded.llm_severity, serp_results.llm_severity),
                       llm_reason = coalesce(excluded.llm_reason, serp_results.llm_reason)
                 """, insert_rows, page_size=1000)

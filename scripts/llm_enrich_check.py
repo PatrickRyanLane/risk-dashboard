@@ -19,19 +19,19 @@ def main() -> int:
             cur.execute("""
                 select count(*)
                 from company_article_mentions
-                where uncertain is true and llm_label is null
+                where uncertain is true and llm_sentiment_label is null
             """)
             company_articles = cur.fetchone()[0]
             cur.execute("""
                 select count(*)
                 from ceo_article_mentions
-                where uncertain is true and llm_label is null
+                where uncertain is true and llm_sentiment_label is null
             """)
             ceo_articles = cur.fetchone()[0]
             cur.execute("""
                 select count(*)
                 from serp_results
-                where uncertain is true and llm_label is null
+                where uncertain is true and llm_sentiment_label is null
             """)
             serp_results = cur.fetchone()[0]
 

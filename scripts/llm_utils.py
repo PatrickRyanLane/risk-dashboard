@@ -57,10 +57,12 @@ def build_risk_prompt(entity_type: str, entity_name: str, title: str,
     Minimal prompt template for crisis/risk classification.
     """
     system = (
-        "You are a reputation risk analyst. "
-        "Classify the headline as crisis_risk, routine_financial, neutral, or positive. "
+        "You are an online reputation risk analyst. "
+        "Return both sentiment and risk. "
+        "Sentiment must be: positive, neutral, or negative. "
+        "Risk must be: crisis_risk, routine_financial, or not_risk. "
         "Also classify control_class as controlled or uncontrolled when you can infer it. "
-        "Respond with compact JSON: {label, severity, reason, control_class}."
+        "Respond with compact JSON: {sentiment_label, risk_label, severity, reason, control_class}."
     )
     user = (
         f"Entity: {entity_type} = {entity_name}\n"

@@ -15,6 +15,7 @@ jobs:
     env:
       GCS_BUCKET: risk-dashboard
       PYTHONPATH: ${{ github.workspace }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     
     steps:
       - name: Checkout repository

@@ -17,6 +17,8 @@ import random
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
+import psycopg2
+import pandas as pd
 from storage_utils import CloudStorageManager
 from llm_utils import build_summary_prompt, call_llm_text
 
@@ -33,6 +35,8 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_SUMMARY_MAX_CALLS = int(os.getenv("LLM_SUMMARY_MAX_CALLS", "20"))
 LLM_CACHE_DIR = "data/llm_cache"
+NEGATIVE_HISTORY_DAYS = int(os.getenv("NEGATIVE_HISTORY_DAYS", "180"))
+RISK_LABEL_WEIGHT = float(os.getenv("RISK_LABEL_WEIGHT", "3"))
 
 # SERP gating (negative + uncontrolled)
 SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "1") == "1"
@@ -88,6 +92,81 @@ def normalize_name(name):
 def parse_bool(value):
     return str(value).strip().lower() in {"true", "1", "yes", "y", "controlled"}
 
+def get_db_conn():
+    dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+    if not dsn:
+        return None
+    return psycopg2.connect(dsn)
+
+def load_negative_summary_db(history_days: int):
+    conn = get_db_conn()
+    if conn is None:
+        return None
+    sql = """
+        with company_rows as (
+            select m.scored_at::date as date,
+                   c.name as company,
+                   null::text as ceo,
+                   'brand' as article_type,
+                   count(*) filter (
+                       where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
+                   ) as negative_count,
+                   count(*) filter (where m.llm_risk_label = 'crisis_risk') as crisis_risk_count,
+                   array_to_string(
+                       (array_agg(a.title order by a.title) filter (
+                           where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
+                       ))[1:3],
+                       ' | '
+                   ) as top_headlines
+            from company_article_mentions m
+            join companies c on c.id = m.company_id
+            join articles a on a.id = m.article_id
+            left join company_article_overrides ov
+              on ov.company_id = m.company_id and ov.article_id = m.article_id
+            where m.scored_at >= (current_date - (%s || ' days')::interval)
+            group by m.scored_at::date, c.name
+        ),
+        ceo_rows as (
+            select m.scored_at::date as date,
+                   c.name as company,
+                   ceo.name as ceo,
+                   'ceo' as article_type,
+                   count(*) filter (
+                       where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
+                   ) as negative_count,
+                   count(*) filter (where m.llm_risk_label = 'crisis_risk') as crisis_risk_count,
+                   array_to_string(
+                       (array_agg(a.title order by a.title) filter (
+                           where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
+                       ))[1:3],
+                       ' | '
+                   ) as top_headlines
+            from ceo_article_mentions m
+            join ceos ceo on ceo.id = m.ceo_id
+            join companies c on c.id = ceo.company_id
+            join articles a on a.id = m.article_id
+            left join ceo_article_overrides ov
+              on ov.ceo_id = m.ceo_id and ov.article_id = m.article_id
+            where m.scored_at >= (current_date - (%s || ' days')::interval)
+            group by m.scored_at::date, c.name, ceo.name
+        )
+        select * from company_rows
+        union all
+        select * from ceo_rows
+        order by date desc, company
+    """
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (history_days, history_days))
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as exc:
+        print(f"⚠️ DB summary load failed, falling back to CSV: {exc}")
+        return None
+    finally:
+        conn.close()
 
 def load_serp_counts(storage, date_str):
     brand_counts = {}
@@ -306,11 +385,15 @@ def main():
     
     # 1. Load Data
     summary_path = "data/daily_counts/negative-articles-summary.csv"
-    if not storage.file_exists(summary_path):
-        print("No negative summary file found. Exiting.")
-        return
-    
-    df = storage.read_csv(summary_path)
+    df = load_negative_summary_db(NEGATIVE_HISTORY_DAYS)
+    if df is None or df.empty:
+        if not storage.file_exists(summary_path):
+            print("No negative summary file found. Exiting.")
+            return
+        print("📄 Using CSV summary fallback (GCS).")
+        df = storage.read_csv(summary_path)
+    else:
+        print("🗄️ Using DB summary for alerts.")
     
     # 2. Load History
     history_path = "data/alert_history.json"
@@ -345,10 +428,13 @@ def main():
         return
 
     # --- SORT BY PRIORITY ---
-    # Sort by 'negative_count' descending so we prioritize the BIGGEST crises first
+    # Sort by blended signal (negatives + crisis_risk)
     print("📊 Sorting data by severity (negative count)...")
     if 'negative_count' in df.columns:
-        df.sort_values(by='negative_count', ascending=False, inplace=True)
+        if 'crisis_risk_count' not in df.columns:
+            df['crisis_risk_count'] = 0
+        df['risk_signal'] = df['negative_count'].fillna(0) + (df['crisis_risk_count'].fillna(0) * RISK_LABEL_WEIGHT)
+        df.sort_values(by='risk_signal', ascending=False, inplace=True)
 
     # --- CALCULATE THRESHOLDS & DATA MATURITY ---
     brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
@@ -450,8 +536,9 @@ def main():
                 continue
 
         # --- TRIGGER ALERT ---
+        crisis_count = int(row.get('crisis_risk_count', 0) or 0)
         news_excess = max(0, count - baseline_val)
-        risk_score = float(news_excess + (serp_count * 2))
+        risk_score = float(news_excess + (serp_count * 2) + (crisis_count * RISK_LABEL_WEIGHT))
         print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg} | Risk Score: {risk_score:.1f}")
         
         owner_email, owner_name = get_salesforce_owner(brand)

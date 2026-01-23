@@ -18,7 +18,7 @@ See [WORKFLOWS.md](WORKFLOWS.md) for detailed workflow documentation.
 ### LLM Enrichment (DB-only)
 
 The LLM enrichment step runs separately from the daily CSV pipelines. It finds rows in Postgres
-where `uncertain = true` and `llm_label` is still null, calls the LLM, and updates the DB in place.
+where `uncertain = true` and `llm_sentiment_label` is still null, calls the LLM, and updates the DB in place.
 
 - Script: `scripts/llm_enrich.py`
 - Workflow: `.github/workflows/llm-enrich.yml` (10:30am ET)
