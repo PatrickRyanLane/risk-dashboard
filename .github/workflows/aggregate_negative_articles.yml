@@ -58,6 +58,11 @@ jobs:
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
           SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_MAX_CALLS: ${{ vars.LLM_MAX_CALLS }}
+          LLM_SUMMARY_MAX_CALLS: ${{ vars.LLM_SUMMARY_MAX_CALLS }}
         run: |
           echo "🚀 Checking for crises and sending alerts..."
           python scripts/send_crisis_alerts.py --bucket "$GCS_BUCKET"

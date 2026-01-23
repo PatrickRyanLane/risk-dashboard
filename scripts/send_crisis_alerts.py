@@ -29,6 +29,7 @@ SF_TOKEN = os.getenv('SF_SECURITY_TOKEN')
 SLACK_CHANNEL = "#crisis-alerts" 
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_SUMMARY_MAX_CALLS = int(os.getenv("LLM_SUMMARY_MAX_CALLS", "20"))
 LLM_CACHE_DIR = "data/llm_cache"
@@ -250,6 +251,10 @@ def main():
     args = parser.parse_args()
 
     storage = CloudStorageManager(args.bucket)
+    if LLM_API_KEY:
+        print(f"🤖 LLM enabled: provider={LLM_PROVIDER}, model={LLM_MODEL}")
+    else:
+        print("🤖 LLM disabled: missing LLM_API_KEY")
     
     # 1. Load Data
     summary_path = "data/daily_counts/negative-articles-summary.csv"
