@@ -1,4 +1,4 @@
-name: Aggregate Negative Articles
+name: Aggregate Negative Articles + Send Crisis Alerts
 
 on:
   schedule:
