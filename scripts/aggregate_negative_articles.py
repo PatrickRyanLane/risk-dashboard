@@ -20,7 +20,8 @@ import sys
 from storage_utils import CloudStorageManager
 
 COMPANY_ALIASES = {
-    "altice usa": "Optimum",
+    "altice usa": "Optimum Communications Inc",
+    "farmers insurance exchange": "Farmers Insurance Group",
     "nationwide insurance": "Nationwide Mutual Insurance Company",
     "pge": "Pacific Gas and Electric Company",
     "pg&e": "Pacific Gas and Electric Company",
@@ -437,10 +438,6 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
     if all_summary_data:
         summary_df = pd.DataFrame(all_summary_data)
         summary_df = summary_df.sort_values(['company', 'date', 'article_type'])
-        summary_df = summary_df[[
-            'date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type',
-            'serp_neg_uncontrolled', 'baseline_p97', 'risk_score'
-        ]]
 
         def lookup_serp_count(row):
             if row['article_type'] == 'ceo':
@@ -466,6 +463,11 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
             (summary_df['negative_count'] - summary_df['baseline_p97']).clip(lower=0) +
             (summary_df['serp_neg_uncontrolled'] * SERP_GATE_WEIGHT)
         )
+
+        summary_df = summary_df[[
+            'date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type',
+            'serp_neg_uncontrolled', 'baseline_p97', 'risk_score'
+        ]]
         
         # Show helpful stats
         print(f"\n{'='*60}")
