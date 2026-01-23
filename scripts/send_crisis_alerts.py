@@ -177,9 +177,17 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Attention:* {mention_text}\n*Context:* {sub_context}"
+                "text": f"*Attention:* {mention_text}\n*Context:* {sub_context} (View on <{dashboard_url}|Risk Dashboard>)"
             }
         },
+        { "type": "divider" },
+                *([{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Summary:*\n{summary_text}"
+            }
+        }] if summary_text else []),
         { "type": "divider" },
         {
             "type": "section",
@@ -201,22 +209,15 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
                 "text": f"*Top Headlines:*\n{headline_text}"
             }
         },
-        *([{
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Summary:*\n{summary_text}"
-            }
-        }] if summary_text else []),
-        {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"View analysis on the <{dashboard_url}|Risk Dashboard>."
-                }
-            ]
-        }
+        # {
+        #     "type": "context",
+        #     "elements": [
+        #         {
+        #             "type": "mrkdwn",
+        #             "text": f"View analysis on the <{dashboard_url}|Risk Dashboard>."
+        #         }
+        #     ]
+        # }
     ]
 
     alert_color = get_owner_color(owner_name)
