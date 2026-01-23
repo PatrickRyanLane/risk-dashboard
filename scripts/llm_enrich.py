@@ -37,7 +37,15 @@ def fetch_company_articles(cur, limit: int) -> List[Tuple]:
         join articles a on a.id = m.article_id
         join companies c on c.id = m.company_id
         where m.uncertain is true and m.llm_label is null
-        order by m.scored_at desc nulls last
+        order by
+          case when m.sentiment_label = 'negative' then 1 else 0 end desc,
+          case
+            when m.uncertain_reason = 'low_compound' then 2
+            when m.uncertain_reason = 'short_title' then 1
+            else 0
+          end desc,
+          length(coalesce(a.title, '')) asc,
+          m.scored_at desc nulls last
         limit %s
     """
     cur.execute(sql, (limit,))
@@ -51,7 +59,15 @@ def fetch_ceo_articles(cur, limit: int) -> List[Tuple]:
         join articles a on a.id = m.article_id
         join ceos ce on ce.id = m.ceo_id
         where m.uncertain is true and m.llm_label is null
-        order by m.scored_at desc nulls last
+        order by
+          case when m.sentiment_label = 'negative' then 1 else 0 end desc,
+          case
+            when m.uncertain_reason = 'low_compound' then 2
+            when m.uncertain_reason = 'short_title' then 1
+            else 0
+          end desc,
+          length(coalesce(a.title, '')) asc,
+          m.scored_at desc nulls last
         limit %s
     """
     cur.execute(sql, (limit,))
@@ -67,7 +83,15 @@ def fetch_serp_results(cur, entity_type: str, limit: int) -> List[Tuple]:
         left join companies c on c.id = sr.company_id
         left join ceos ce on ce.id = sr.ceo_id
         where r.uncertain is true and r.llm_label is null and sr.entity_type = %s
-        order by sr.run_at desc nulls last
+        order by
+          case when r.sentiment_label = 'negative' then 1 else 0 end desc,
+          case
+            when r.uncertain_reason = 'low_compound' then 2
+            when r.uncertain_reason = 'short_title' then 1
+            else 0
+          end desc,
+          length(coalesce(r.title, '')) asc,
+          sr.run_at desc nulls last
         limit %s
     """
     cur.execute(sql, (entity_type, limit))
