@@ -45,10 +45,10 @@ def main() -> int:
     dstr = args.date
 
     patterns = [
-        ("brand articles", data_dir / "processed_articles" / f"{dstr}-brand-articles-table.csv"),
-        ("ceo articles", data_dir / "processed_articles" / f"{dstr}-ceo-articles-table.csv"),
-        ("brand serps", data_dir / "processed_serps" / f"{dstr}-brand-serps-table.csv"),
-        ("ceo serps", data_dir / "processed_serps" / f"{dstr}-ceo-serps-table.csv"),
+        ("brand articles", data_dir / "processed_articles" / f"{dstr}-brand-articles-modal.csv"),
+        ("ceo articles", data_dir / "processed_articles" / f"{dstr}-ceo-articles-modal.csv"),
+        ("brand serps", data_dir / "processed_serps" / f"{dstr}-brand-serps-modal.csv"),
+        ("ceo serps", data_dir / "processed_serps" / f"{dstr}-ceo-serps-modal.csv"),
     ]
 
     rows: List[str] = []
