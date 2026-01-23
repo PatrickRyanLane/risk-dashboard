@@ -1,0 +1,43 @@
+name: LLM Enrichment
+
+on:
+  schedule:
+    - cron: '30 14 * * *' # 10:30am ET (DST). Use 15:30 UTC for standard time.
+  workflow_dispatch:
+    inputs:
+      max_calls:
+        description: Total LLM call cap
+        required: false
+        default: "200"
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run LLM enrichment
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_MAX_CALLS: ${{ vars.LLM_MAX_CALLS }}
+          LLM_MAX_OVERRIDE: ${{ inputs.max_calls }}
+        run: |
+          MAX_CALLS="$LLM_MAX_CALLS"
+          if [ -n "$LLM_MAX_OVERRIDE" ]; then
+            MAX_CALLS="$LLM_MAX_OVERRIDE"
+          fi
+          python3 scripts/llm_enrich.py --max-calls "$MAX_CALLS"

@@ -27,7 +27,8 @@ import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
-from llm_utils import is_uncertain, uncertainty_priority, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
+from llm_utils import is_uncertain
+from db_writer import upsert_serp_results
 
 # Config / constants
 S3_URL_TEMPLATE = (
@@ -40,11 +41,6 @@ OUT_DAILY_DIR = "data/processed_serps"
 OUT_ROLLUP = "data/daily_counts/brand-serps-daily-counts-chart.csv"
 
 FORCE_POSITIVE_IF_CONTROLLED = True
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
-LLM_MAX_CALLS = int(os.getenv("LLM_MAX_CALLS", "200"))
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_CACHE_DIR = "data/llm_cache"
-
 ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
     "facebook.com",
     "instagram.com",
@@ -370,18 +366,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             raw[col] = ""
 
     analyzer = SentimentIntensityAnalyzer()
-    llm_cache_path = f"{LLM_CACHE_DIR}/{target_date}-brand-serps.json"
-    if storage:
-        try:
-            llm_cache = json.loads(storage.read_text(llm_cache_path)) if storage.file_exists(llm_cache_path) else {}
-        except Exception:
-            llm_cache = {}
-    else:
-        llm_cache = load_json_cache(llm_cache_path)
-    llm_calls = {"count": 0}
-
     processed_rows = []
-    pending_llm = []
     for _, row in raw.iterrows():
         company = str(row.get("company", "") or "").strip()
         if not company:
@@ -443,16 +428,6 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
-        llm_key = url or title
-        if uncertain and LLM_API_KEY:
-            priority = uncertainty_priority(compound, title)
-            prompt = build_risk_prompt("brand", company, title, snippet, "", url)
-            pending_llm.append({
-                "idx": len(processed_rows),
-                "key": llm_key,
-                "priority": priority,
-                "prompt": prompt,
-            })
 
         processed_rows.append({
             "date": target_date,
@@ -470,23 +445,6 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             "llm_severity": llm_severity,
             "llm_reason": llm_reason,
         })
-    if pending_llm and LLM_API_KEY:
-        pending_llm.sort(key=lambda x: x["priority"], reverse=True)
-        for item in pending_llm:
-            if item["key"] in llm_cache:
-                cached = llm_cache.get(item["key"], {})
-            elif llm_calls["count"] < LLM_MAX_CALLS:
-                cached = call_llm_json(item["prompt"], LLM_API_KEY, LLM_MODEL)
-                llm_cache[item["key"]] = cached
-                llm_calls["count"] += 1
-            else:
-                continue
-            if isinstance(cached, dict):
-                processed_rows[item["idx"]]["llm_label"] = cached.get("label", "")
-                processed_rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
-                processed_rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
-        print(f"[LLM] Brand SERPs: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
-
     if not processed_rows:
         print(f"[WARN] No processed rows for {target_date}.")
         return
@@ -497,17 +455,20 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     try:
         if storage:
             storage.write_csv(rows_df, row_out_path, index=False)
-            storage.write_text(json.dumps(llm_cache, ensure_ascii=True), llm_cache_path)
             print(f"[OK] Wrote row-level SERPs to Cloud Storage: {row_out_path}")
         else:
             out_file = Path(row_out_path)
             out_file.parent.mkdir(parents=True, exist_ok=True)
             rows_df.to_csv(out_file, index=False)
-            save_json_cache(llm_cache_path, llm_cache)
             print(f"[OK] Wrote row-level SERPs: {out_file}")
     except Exception as e:
         print(f"[ERROR] Failed to write row-level SERPs: {e}")
         return
+
+    try:
+        upsert_serp_results(rows_df, "company", target_date)
+    except Exception as e:
+        print(f"[WARN] DB upsert failed: {e}")
 
     agg = (
         rows_df.groupby("company", as_index=False)

@@ -21,7 +21,8 @@ from bs4 import BeautifulSoup
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
-from llm_utils import is_uncertain, uncertainty_priority, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
+from llm_utils import is_uncertain
+from db_writer import upsert_articles_mentions
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -140,11 +141,6 @@ USER_AGENT = "Mozilla/5.0 (compatible; Brand-NewsBot/1.0; +https://example.com/b
 MAX_PER_ALIAS = int(os.getenv("ARTICLES_MAX_PER_ALIAS", "50"))
 SLEEP_SEC = float(os.getenv("ARTICLES_SLEEP_SEC", "0.25"))
 DEFAULT_BATCH_SIZE = int(os.getenv("ARTICLES_BATCH_SIZE", "100"))
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
-LLM_MAX_CALLS = int(os.getenv("LLM_MAX_CALLS", "200"))
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_CACHE_DIR = "data/llm_cache"
-
 
 def create_session() -> requests.Session:
     session = requests.Session()
@@ -220,7 +216,7 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
     return "neutral", flags
 
 
-def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_cache: dict, llm_calls: dict) -> list[dict]:
+def fetch_one(session: requests.Session, brand: str, analyzer, date: str) -> list[dict]:
     url = google_news_rss(brand)
     
     r = session.get(url, timeout=15)
@@ -233,7 +229,6 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
         soup = BeautifulSoup(r.text, "html.parser")
     
     out = []
-    pending_llm = []
     for item in soup.find_all("item"):
         title = (item.title.text or "").strip()
         link = (item.link.text or "").strip()
@@ -260,16 +255,6 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
-        llm_key = link or title
-        if uncertain and LLM_API_KEY:
-            priority = uncertainty_priority(flags.get("compound"), flags.get("cleaned", "") or title)
-            prompt = build_risk_prompt("brand", brand, title, "", source, link)
-            pending_llm.append({
-                "idx": len(out),
-                "key": llm_key,
-                "priority": priority,
-                "prompt": prompt,
-            })
         
         out.append({
             "company": brand,
@@ -285,23 +270,6 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, llm_ca
             "llm_severity": llm_severity,
             "llm_reason": llm_reason
         })
-    if pending_llm and LLM_API_KEY:
-        pending_llm.sort(key=lambda x: x["priority"], reverse=True)
-        for item in pending_llm:
-            if item["key"] in llm_cache:
-                cached = llm_cache.get(item["key"], {})
-            elif llm_calls["count"] < LLM_MAX_CALLS:
-                cached = call_llm_json(item["prompt"], LLM_API_KEY, LLM_MODEL)
-                llm_cache[item["key"]] = cached
-                llm_calls["count"] += 1
-            else:
-                continue
-            if isinstance(cached, dict):
-                out[item["idx"]]["llm_label"] = cached.get("label", "")
-                out[item["idx"]]["llm_severity"] = cached.get("severity", "")
-                out[item["idx"]]["llm_reason"] = cached.get("reason", "")
-        print(f"[LLM] Brand articles: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
-
     return out[:MAX_PER_ALIAS]
 
 
@@ -406,7 +374,6 @@ def main():
     date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     output_path = f"{args.output_dir}/{date}-brand-articles-modal.csv"
     checkpoint_path = f"{CHECKPOINT_DIR}/{date}-brand-checkpoint.json"
-    llm_cache_path = f"{LLM_CACHE_DIR}/{date}-brand-articles.json"
     
     storage = None
     if args.local:
@@ -431,15 +398,6 @@ def main():
         all_rows = ckpt.get("articles", [])
         start_index = ckpt.get("last_index", -1) + 1
 
-    if storage:
-        try:
-            llm_cache = json.loads(storage.read_text(llm_cache_path)) if storage.file_exists(llm_cache_path) else {}
-        except Exception:
-            llm_cache = {}
-    else:
-        llm_cache = load_json_cache(llm_cache_path)
-    llm_calls = {"count": 0}
-    
     end_index = min(start_index + args.batch_size, len(brands))
     
     if start_index >= len(brands):
@@ -456,7 +414,7 @@ def main():
         brand = brands[i]
         print(f"[{i + 1}/{len(brands)}] {brand}")
         try:
-            rows = fetch_one(session, brand, analyzer, date, llm_cache, llm_calls)
+            rows = fetch_one(session, brand, analyzer, date)
             all_rows.extend(rows)
         except Exception as e:
             print(f"  ⚠️ Error fetching {brand}: {e}")
@@ -480,14 +438,16 @@ def main():
         try:
             if storage:
                 storage.write_csv(df, output_path, index=False)
-                storage.write_text(json.dumps(llm_cache, ensure_ascii=True), llm_cache_path)
                 print(f"✅ Saved to Cloud Storage: {output_path}")
             else:
                 out = Path(output_path)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 df.to_csv(out, index=False)
-                save_json_cache(llm_cache_path, llm_cache)
                 print(f"✅ Saved locally: {out}")
+            try:
+                upsert_articles_mentions(df, "company", date)
+            except Exception as e:
+                print(f"⚠️ DB upsert failed: {e}")
             delete_checkpoint(storage, checkpoint_path)
         except Exception as e:
             print(f"❌ Error saving data: {e}")

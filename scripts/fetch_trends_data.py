@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from storage_utils import CloudStorageManager
+from db_writer import upsert_trends_df
 
 
 def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
@@ -195,6 +196,10 @@ def fetch_all_trends_data(storage=None, roster_path='rosters/main-roster.csv',
         print(f"\n🔍 Trends Summary:")
         print(f"   Average interest: {avg_interest:.1f}")
         print(f"   High interest (≥50): {high_interest}")
+        try:
+            upsert_trends_df(results_df)
+        except Exception as e:
+            print(f"⚠️ DB upsert failed: {e}")
         
     except Exception as e:
         print(f"\n❌ Error saving data: {e}")

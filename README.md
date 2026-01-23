@@ -15,6 +15,16 @@ This system automatically:
 
 See [WORKFLOWS.md](WORKFLOWS.md) for detailed workflow documentation.
 
+### LLM Enrichment (DB-only)
+
+The LLM enrichment step runs separately from the daily CSV pipelines. It finds rows in Postgres
+where `uncertain = true` and `llm_label` is still null, calls the LLM, and updates the DB in place.
+
+- Script: `scripts/llm_enrich.py`
+- Workflow: `.github/workflows/llm-enrich.yml` (10:30am ET)
+- Required secrets: `DATABASE_URL`, `LLM_API_KEY`
+- Required vars: `LLM_PROVIDER`, `LLM_MODEL`, `LLM_MAX_CALLS`
+
 ### Daily Automated Runs
 
 **Brand Pipeline** (`daily_brands.yml`) - 09:10 UTC daily

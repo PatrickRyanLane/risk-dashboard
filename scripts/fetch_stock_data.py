@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from storage_utils import CloudStorageManager
+from db_writer import upsert_stock_df
 
 
 def load_roster(storage=None, roster_path='rosters/main-roster.csv'):
@@ -231,6 +232,10 @@ def fetch_all_stock_data(storage=None, roster_path='rosters/main-roster.csv',
         print(f"   Average daily change: {avg_change:+.2f}%")
         print(f"   Positive: {positive} ({positive/len(results)*100:.1f}%)")
         print(f"   Negative: {negative} ({negative/len(results)*100:.1f}%)")
+        try:
+            upsert_stock_df(results_df)
+        except Exception as e:
+            print(f"⚠️ DB upsert failed: {e}")
         
     except Exception as e:
         print(f"\n❌ Error saving data: {e}")

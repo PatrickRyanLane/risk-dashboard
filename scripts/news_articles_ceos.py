@@ -23,7 +23,8 @@ import feedparser
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
-from llm_utils import is_uncertain, uncertainty_priority, build_risk_prompt, call_llm_json, load_json_cache, save_json_cache
+from llm_utils import is_uncertain
+from db_writer import upsert_articles_mentions
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -136,11 +137,6 @@ RSS_TMPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:
 MAX_PER_ALIAS = int(os.getenv("ARTICLES_MAX_PER_ALIAS", "25"))
 SLEEP_SEC = float(os.getenv("ARTICLES_SLEEP_SEC", "0.25"))
 DEFAULT_BATCH_SIZE = int(os.getenv("ARTICLES_BATCH_SIZE", "100"))
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
-LLM_MAX_CALLS = int(os.getenv("LLM_MAX_CALLS", "200"))
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_CACHE_DIR = "data/llm_cache"
-
 
 def create_session() -> requests.Session:
     session = requests.Session()
@@ -233,8 +229,7 @@ def extract_source(entry) -> str:
         return ""
 
 
-def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, company: str, analyzer,
-                             llm_cache: dict, llm_calls: dict) -> list[dict]:
+def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, company: str, analyzer) -> list[dict]:
     try:
         feed = fetch_rss(session, alias)
     except Exception as e:
@@ -242,7 +237,6 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         return []
 
     rows = []
-    pending_llm = []
     for entry in (feed.entries or [])[:MAX_PER_ALIAS]:
         title = html.unescape(entry.get("title", "")).strip()
         link = (entry.get("link") or entry.get("id") or "").strip()
@@ -265,16 +259,6 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
-        llm_key = link or title
-        if uncertain and LLM_API_KEY:
-            priority = uncertainty_priority(flags.get("compound"), flags.get("cleaned", "") or title)
-            prompt = build_risk_prompt("ceo", ceo, title, "", source, link)
-            pending_llm.append({
-                "idx": len(rows),
-                "key": llm_key,
-                "priority": priority,
-                "prompt": prompt,
-            })
         
         rows.append({
             "ceo": ceo,
@@ -290,23 +274,6 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
             "llm_severity": llm_severity,
             "llm_reason": llm_reason,
         })
-    if pending_llm and LLM_API_KEY:
-        pending_llm.sort(key=lambda x: x["priority"], reverse=True)
-        for item in pending_llm:
-            if item["key"] in llm_cache:
-                cached = llm_cache.get(item["key"], {})
-            elif llm_calls["count"] < LLM_MAX_CALLS:
-                cached = call_llm_json(item["prompt"], LLM_API_KEY, LLM_MODEL)
-                llm_cache[item["key"]] = cached
-                llm_calls["count"] += 1
-            else:
-                continue
-            if isinstance(cached, dict):
-                rows[item["idx"]]["llm_label"] = cached.get("label", "")
-                rows[item["idx"]]["llm_severity"] = cached.get("severity", "")
-                rows[item["idx"]]["llm_reason"] = cached.get("reason", "")
-        print(f"[LLM] CEO articles: used {llm_calls['count']} / {LLM_MAX_CALLS} calls")
-
     return rows
 
 
@@ -427,7 +394,6 @@ def main() -> int:
     out_date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     output_path = f"{args.output_dir}/{out_date}-ceo-articles-modal.csv"
     checkpoint_path = f"{CHECKPOINT_DIR}/{out_date}-ceo-checkpoint.json"
-    llm_cache_path = f"{LLM_CACHE_DIR}/{out_date}-ceo-articles.json"
     
     storage = None
     if args.local:
@@ -452,15 +418,6 @@ def main() -> int:
         all_rows = ckpt.get("articles", [])
         start_index = ckpt.get("last_index", -1) + 1
 
-    if storage:
-        try:
-            llm_cache = json.loads(storage.read_text(llm_cache_path)) if storage.file_exists(llm_cache_path) else {}
-        except Exception:
-            llm_cache = {}
-    else:
-        llm_cache = load_json_cache(llm_cache_path)
-    llm_calls = {"count": 0}
-    
     end_index = min(start_index + args.batch_size, len(roster))
     
     if start_index >= len(roster):
@@ -479,7 +436,7 @@ def main() -> int:
         if not alias: continue
             
         print(f"[{i + 1}/{len(roster)}] {alias}")
-        rows = build_articles_for_alias(session, alias, row["ceo"], row["company"], analyzer, llm_cache, llm_calls)
+        rows = build_articles_for_alias(session, alias, row["ceo"], row["company"], analyzer)
         all_rows.extend(rows)
         
         if (i + 1) % args.checkpoint_interval == 0:
@@ -502,14 +459,16 @@ def main() -> int:
         try:
             if storage:
                 storage.write_csv(df, output_path, index=False)
-                storage.write_text(json.dumps(llm_cache, ensure_ascii=True), llm_cache_path)
                 print(f"✅ Saved to Cloud Storage: {output_path}")
             else:
                 out = Path(output_path)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 df.to_csv(out, index=False)
-                save_json_cache(llm_cache_path, llm_cache)
                 print(f"✅ Saved locally: {out}")
+            try:
+                upsert_articles_mentions(df, "ceo", out_date)
+            except Exception as e:
+                print(f"⚠️ DB upsert failed: {e}")
             delete_checkpoint(storage, checkpoint_path)
         except Exception as e:
             print(f"❌ Error saving data: {e}")

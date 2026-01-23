@@ -19,5 +19,6 @@ boto3==1.35.0
 s3fs==2024.6.1
 simple-salesforce==1.12.9
 requests
+psycopg2-binary==2.9.9
 
 # Remove boto3 and s3fs if you're not using AWS S3
