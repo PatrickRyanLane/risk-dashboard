@@ -59,7 +59,8 @@ def build_risk_prompt(entity_type: str, entity_name: str, title: str,
     system = (
         "You are a reputation risk analyst. "
         "Classify the headline as crisis_risk, routine_financial, neutral, or positive. "
-        "Respond with compact JSON: {label, severity, reason}."
+        "Also classify control_class as controlled or uncontrolled when you can infer it. "
+        "Respond with compact JSON: {label, severity, reason, control_class}."
     )
     user = (
         f"Entity: {entity_type} = {entity_name}\n"

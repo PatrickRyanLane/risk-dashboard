@@ -36,7 +36,11 @@ def fetch_company_articles(cur, limit: int) -> List[Tuple]:
         from company_article_mentions m
         join articles a on a.id = m.article_id
         join companies c on c.id = m.company_id
-        where m.uncertain is true and m.llm_label is null
+        left join company_article_overrides ov on ov.company_id = m.company_id and ov.article_id = m.article_id
+        where m.uncertain is true
+          and m.llm_label is null
+          and ov.override_sentiment_label is null
+          and ov.override_control_class is null
         order by
           case when m.sentiment_label = 'negative' then 1 else 0 end desc,
           case
@@ -58,7 +62,11 @@ def fetch_ceo_articles(cur, limit: int) -> List[Tuple]:
         from ceo_article_mentions m
         join articles a on a.id = m.article_id
         join ceos ce on ce.id = m.ceo_id
-        where m.uncertain is true and m.llm_label is null
+        left join ceo_article_overrides ov on ov.ceo_id = m.ceo_id and ov.article_id = m.article_id
+        where m.uncertain is true
+          and m.llm_label is null
+          and ov.override_sentiment_label is null
+          and ov.override_control_class is null
         order by
           case when m.sentiment_label = 'negative' then 1 else 0 end desc,
           case
@@ -82,7 +90,12 @@ def fetch_serp_results(cur, entity_type: str, limit: int) -> List[Tuple]:
         join serp_runs sr on sr.id = r.serp_run_id
         left join companies c on c.id = sr.company_id
         left join ceos ce on ce.id = sr.ceo_id
-        where r.uncertain is true and r.llm_label is null and sr.entity_type = %s
+        left join serp_result_overrides ov on ov.serp_result_id = r.id
+        where r.uncertain is true
+          and r.llm_label is null
+          and sr.entity_type = %s
+          and ov.override_sentiment_label is null
+          and ov.override_control_class is null
         order by
           case when r.sentiment_label = 'negative' then 1 else 0 end desc,
           case
@@ -98,31 +111,34 @@ def fetch_serp_results(cur, entity_type: str, limit: int) -> List[Tuple]:
     return cur.fetchall()
 
 
-def update_company_article(cur, company_id, article_id, llm_label, llm_severity, llm_reason):
+def update_company_article(cur, company_id, article_id, llm_label, llm_control_class,
+                           llm_severity, llm_reason):
     sql = """
         update company_article_mentions
-        set llm_label = %s, llm_severity = %s, llm_reason = %s
+        set llm_label = %s, llm_control_class = %s, llm_severity = %s, llm_reason = %s
         where company_id = %s and article_id = %s
     """
-    cur.execute(sql, (llm_label, llm_severity, llm_reason, company_id, article_id))
+    cur.execute(sql, (llm_label, llm_control_class, llm_severity, llm_reason, company_id, article_id))
 
 
-def update_ceo_article(cur, ceo_id, article_id, llm_label, llm_severity, llm_reason):
+def update_ceo_article(cur, ceo_id, article_id, llm_label, llm_control_class,
+                       llm_severity, llm_reason):
     sql = """
         update ceo_article_mentions
-        set llm_label = %s, llm_severity = %s, llm_reason = %s
+        set llm_label = %s, llm_control_class = %s, llm_severity = %s, llm_reason = %s
         where ceo_id = %s and article_id = %s
     """
-    cur.execute(sql, (llm_label, llm_severity, llm_reason, ceo_id, article_id))
+    cur.execute(sql, (llm_label, llm_control_class, llm_severity, llm_reason, ceo_id, article_id))
 
 
-def update_serp(cur, serp_run_id, rank, url_hash, llm_label, llm_severity, llm_reason):
+def update_serp(cur, serp_run_id, rank, url_hash, llm_label, llm_control_class,
+                llm_severity, llm_reason):
     sql = """
         update serp_results
-        set llm_label = %s, llm_severity = %s, llm_reason = %s
+        set llm_label = %s, llm_control_class = %s, llm_severity = %s, llm_reason = %s
         where serp_run_id = %s and rank = %s and url_hash = %s
     """
-    cur.execute(sql, (llm_label, llm_severity, llm_reason, serp_run_id, rank, url_hash))
+    cur.execute(sql, (llm_label, llm_control_class, llm_severity, llm_reason, serp_run_id, rank, url_hash))
 
 
 def main() -> int:
@@ -144,6 +160,7 @@ def main() -> int:
 
     calls = 0
     updated = 0
+    log_every = max(1, min(25, max_calls // 10))
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -163,12 +180,21 @@ def main() -> int:
                     llm_label = resp.get("label")
                     llm_severity = resp.get("severity")
                     llm_reason = resp.get("reason")
+                    llm_control_class = resp.get("control_class")
+                    if llm_control_class not in ("controlled", "uncontrolled"):
+                        llm_control_class = None
                     if handler == "company_articles":
-                        update_company_article(cur, entity_id, article_id, llm_label, llm_severity, llm_reason)
+                        update_company_article(
+                            cur, entity_id, article_id, llm_label, llm_control_class, llm_severity, llm_reason
+                        )
                     else:
-                        update_ceo_article(cur, entity_id, article_id, llm_label, llm_severity, llm_reason)
+                        update_ceo_article(
+                            cur, entity_id, article_id, llm_label, llm_control_class, llm_severity, llm_reason
+                        )
                     calls += 1
                     updated += 1
+                    if calls % log_every == 0 or calls == max_calls:
+                        print(f"… LLM progress: {calls}/{max_calls} calls")
                 if calls >= max_calls:
                     break
 
@@ -188,9 +214,16 @@ def main() -> int:
                         llm_label = resp.get("label")
                         llm_severity = resp.get("severity")
                         llm_reason = resp.get("reason")
-                        update_serp(cur, serp_run_id, rank, url_hash, llm_label, llm_severity, llm_reason)
+                        llm_control_class = resp.get("control_class")
+                        if llm_control_class not in ("controlled", "uncontrolled"):
+                            llm_control_class = None
+                        update_serp(
+                            cur, serp_run_id, rank, url_hash, llm_label, llm_control_class, llm_severity, llm_reason
+                        )
                         calls += 1
                         updated += 1
+                        if calls % log_every == 0 or calls == max_calls:
+                            print(f"… LLM progress: {calls}/{max_calls} calls")
                     if calls >= max_calls:
                         break
 
