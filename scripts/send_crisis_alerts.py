@@ -21,7 +21,7 @@ from storage_utils import CloudStorageManager
 from llm_utils import build_summary_prompt, call_llm_text
 
 # --- CONFIG ---
-DRY_RUN = False  # <--- SET TO TRUE FOR TESTING
+DRY_RUN = True  # <--- SET TO TRUE FOR TESTING
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
@@ -34,13 +34,19 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_SUMMARY_MAX_CALLS = int(os.getenv("LLM_SUMMARY_MAX_CALLS", "20"))
 LLM_CACHE_DIR = "data/llm_cache"
 
+# SERP gating (negative + uncontrolled)
+SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "1") == "1"
+SERP_GATE_MIN = int(os.getenv("SERP_GATE_MIN", "2"))
+SERP_GATE_DAYS = int(os.getenv("SERP_GATE_DAYS", "2"))
+SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
+
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
 PERCENTILE_CUTOFF = 0.97
 ALERT_COOLDOWN_HOURS = 168
 
 # --- FLOOD PROTECTION ---
-MAX_ALERTS_PER_DAY = 5  # Strict limit: Max 20 alerts per 24-hour rolling window
+MAX_ALERTS_PER_DAY = 10  # Strict limit: Max 20 alerts per 24-hour rolling window
 
 # Manual color mapping for your VIPs
 OWNER_COLORS = {
@@ -77,6 +83,36 @@ def normalize_name(name):
             break
     name = re.sub(r'[^\w\s]', '', name)
     return name
+
+
+def parse_bool(value):
+    return str(value).strip().lower() in {"true", "1", "yes", "y", "controlled"}
+
+
+def load_serp_counts(storage, date_str):
+    brand_counts = {}
+    ceo_counts = {}
+
+    brand_path = f"data/processed_serps/{date_str}-brand-serps-modal.csv"
+    ceo_path = f"data/processed_serps/{date_str}-ceo-serps-modal.csv"
+
+    if storage.file_exists(brand_path):
+        df = storage.read_csv(brand_path)
+        if not df.empty:
+            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
+            df["controlled"] = df.get("controlled", False).apply(parse_bool)
+            mask = (df["sentiment"] == "negative") & (~df["controlled"])
+            brand_counts = df[mask].groupby("company").size().to_dict()
+
+    if storage.file_exists(ceo_path):
+        df = storage.read_csv(ceo_path)
+        if not df.empty:
+            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
+            df["controlled"] = df.get("controlled", False).apply(parse_bool)
+            mask = (df["sentiment"] == "negative") & (~df["controlled"])
+            ceo_counts = df[mask].groupby(["company", "ceo"]).size().to_dict()
+
+    return brand_counts, ceo_counts
 
 def get_salesforce_owner(brand_name):
     if not brand_name: return None, None
@@ -132,7 +168,7 @@ def get_slack_user_id(email):
     except Exception: pass
     return None
 
-def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name, summary_text=""):
+def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name, summary_text="", risk_score=None):
     """Sends a Block Kit alert."""
     
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
@@ -203,6 +239,15 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
                 }
             ]
         },
+        *([{
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Risk Score:*\n{risk_score:.1f}"
+                }
+            ]
+        }] if risk_score is not None else []),
         {
             "type": "section",
             "text": {
@@ -224,7 +269,6 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
     alert_color = get_owner_color(owner_name)
     payload = {
         "channel": SLACK_CHANNEL,
-        "text": alert_title,
         "attachments": [
             {
                 "color": alert_color,
@@ -255,6 +299,10 @@ def main():
         print(f"🤖 LLM enabled: provider={LLM_PROVIDER}, model={LLM_MODEL}")
     else:
         print("🤖 LLM disabled: missing LLM_API_KEY")
+    if SERP_GATE_ENABLED:
+        print(f"🧭 SERP gate: enabled (min={SERP_GATE_MIN}, days={SERP_GATE_DAYS})")
+    else:
+        print("🧭 SERP gate: disabled")
     
     # 1. Load Data
     summary_path = "data/daily_counts/negative-articles-summary.csv"
@@ -319,6 +367,17 @@ def main():
     else:
         llm_cache = {}
     llm_calls = 0
+
+    serp_brand_counts = {}
+    serp_ceo_counts = {}
+    if SERP_GATE_ENABLED:
+        for delta in range(SERP_GATE_DAYS):
+            dstr = (current_time.date() - timedelta(days=delta)).strftime('%Y-%m-%d')
+            b_counts, c_counts = load_serp_counts(storage, dstr)
+            for company, count in b_counts.items():
+                serp_brand_counts[company] = serp_brand_counts.get(company, 0) + int(count)
+            for key, count in c_counts.items():
+                serp_ceo_counts[key] = serp_ceo_counts.get(key, 0) + int(count)
     
     for _, row in df.iterrows():
         # FLOOD PROTECTION CHECK
@@ -355,9 +414,27 @@ def main():
             if count < MIN_NEGATIVE_ARTICLES: continue
             if count < p97: continue
             threshold_msg = f"P97 ({p97:.1f})"
+            baseline_val = p97
         else:
             if count < HARD_FLOOR_NEW_CO: continue
             threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
+            baseline_val = HARD_FLOOR_NEW_CO
+
+        # B2. SERP CONFIRMATION GATE
+        serp_count = 0
+        if SERP_GATE_ENABLED:
+            if article_type == 'ceo':
+                serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
+            else:
+                serp_count = serp_brand_counts.get(brand, 0)
+            if serp_count < SERP_GATE_MIN:
+                if SERP_GATE_DEBUG:
+                    print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
+                continue
+        elif article_type == 'ceo':
+            serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
+        else:
+            serp_count = serp_brand_counts.get(brand, 0)
 
         # C. COOLDOWN CHECK
         history_key = f"{brand}_{article_type}"
@@ -373,7 +450,9 @@ def main():
                 continue
 
         # --- TRIGGER ALERT ---
-        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg}")
+        news_excess = max(0, count - baseline_val)
+        risk_score = float(news_excess + (serp_count * 2))
+        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg} | Risk Score: {risk_score:.1f}")
         
         owner_email, owner_name = get_salesforce_owner(brand)
         slack_id = get_slack_user_id(owner_email)
@@ -392,8 +471,8 @@ def main():
                 llm_calls += 1
 
         send_slack_alert(
-            brand, ceo_name, article_type, count, p97 if history_points >= MIN_HISTORY_POINTS else HARD_FLOOR_NEW_CO, 
-            headlines, slack_id, owner_name, summary_text
+            brand, ceo_name, article_type, count, baseline_val, 
+            headlines, slack_id, owner_name, summary_text, risk_score
         )
                 
         # --- JITTER IMPLEMENTATION ---

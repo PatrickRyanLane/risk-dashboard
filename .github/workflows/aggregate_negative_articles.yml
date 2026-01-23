@@ -79,3 +79,33 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           gsutil ls -l "gs://$GCS_BUCKET/data/daily_counts/negative-articles-summary.csv" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "File not found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### Top 10 Brand Risk Scores:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil cat "gs://$GCS_BUCKET/data/daily_counts/negative-articles-summary.csv" | \
+            python3 -c 'import sys,csv;rows=list(csv.DictReader(sys.stdin));\n\
+            rows=[r for r in rows if r.get(\"date\")];\n\
+            max_date=max(r[\"date\"] for r in rows);\n\
+            rows=[r for r in rows if (r.get(\"article_type\") == \"brand\" and r.get(\"risk_score\") not in (None, \"\") and r.get(\"date\")==max_date)];\n\
+            rows.sort(key=lambda r: float(r.get(\"risk_score\", 0) or 0), reverse=True);\n\
+            top=rows[:10];\n\
+            print(f\"date={max_date} | company | score | neg | serp\");\n\
+            for r in top:\n\
+                print(f\"{r.get('date','')} | {r.get('company','')} | {float(r.get('risk_score',0) or 0):.1f} | {r.get('negative_count','')} | {r.get('serp_neg_uncontrolled','')}\")' \
+            >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No brand risk score data" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### Top 10 CEO Risk Scores:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil cat "gs://$GCS_BUCKET/data/daily_counts/negative-articles-summary.csv" | \
+            python3 -c 'import sys,csv;rows=list(csv.DictReader(sys.stdin));\n\
+            rows=[r for r in rows if r.get(\"date\")];\n\
+            max_date=max(r[\"date\"] for r in rows);\n\
+            rows=[r for r in rows if (r.get(\"article_type\") == \"ceo\" and r.get(\"risk_score\") not in (None, \"\") and r.get(\"date\")==max_date)];\n\
+            rows.sort(key=lambda r: float(r.get(\"risk_score\", 0) or 0), reverse=True);\n\
+            top=rows[:10];\n\
+            print(f\"date={max_date} | company | ceo | score | neg | serp\");\n\
+            for r in top:\n\
+                print(f\"{r.get('date','')} | {r.get('company','')} | {r.get('ceo','')} | {float(r.get('risk_score',0) or 0):.1f} | {r.get('negative_count','')} | {r.get('serp_neg_uncontrolled','')}\")' \
+            >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO risk score data" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

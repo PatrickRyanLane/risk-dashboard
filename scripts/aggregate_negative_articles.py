@@ -19,6 +19,25 @@ import sys
 
 from storage_utils import CloudStorageManager
 
+COMPANY_ALIASES = {
+    "altice usa": "Optimum",
+    "nationwide insurance": "Nationwide Mutual Insurance Company",
+    "pge": "Pacific Gas and Electric Company",
+    "pg&e": "Pacific Gas and Electric Company",
+    "pge corporation": "Pacific Gas and Electric Company",
+    "pge corp": "Pacific Gas and Electric Company",
+    "pacific gas & electric": "Pacific Gas and Electric Company",
+    "pacific gas and electric": "Pacific Gas and Electric Company",
+    "peter kiewit sons'": "Kiewit Corporation",
+    "peter kiewit sons": "Kiewit Corporation",
+    "comerica": "Fifth Third Bancorp",
+}
+
+SERP_GATE_WEIGHT = 2
+PERCENTILE_CUTOFF = 0.97
+MIN_HISTORY_POINTS = 14
+HARD_FLOOR_NEW_CO = 15
+
 
 def normalize_company_name(name):
     """
@@ -29,6 +48,9 @@ def normalize_company_name(name):
         return ''
     
     name = str(name).strip()
+    alias = COMPANY_ALIASES.get(name.lower())
+    if alias:
+        name = alias
     
     # Remove common suffixes
     suffixes = [
@@ -49,6 +71,40 @@ def normalize_company_name(name):
     name = ' '.join(name.split())
     
     return name
+
+
+def parse_bool(value):
+    return str(value).strip().lower() in {"true", "1", "yes", "y", "controlled"}
+
+
+def load_serp_counts_for_date(storage, date_str):
+    brand_counts = {}
+    ceo_counts = {}
+
+    brand_path = f"data/processed_serps/{date_str}-brand-serps-modal.csv"
+    ceo_path = f"data/processed_serps/{date_str}-ceo-serps-modal.csv"
+
+    if storage.file_exists(brand_path):
+        df = storage.read_csv(brand_path)
+        if not df.empty:
+            df.columns = [c.lower().strip() for c in df.columns]
+            if "company" in df.columns and "sentiment" in df.columns and "controlled" in df.columns:
+                df["sentiment"] = df["sentiment"].astype(str).str.lower()
+                df["controlled"] = df["controlled"].apply(parse_bool)
+                mask = (df["sentiment"] == "negative") & (~df["controlled"])
+                brand_counts = df[mask].groupby("company").size().to_dict()
+
+    if storage.file_exists(ceo_path):
+        df = storage.read_csv(ceo_path)
+        if not df.empty:
+            df.columns = [c.lower().strip() for c in df.columns]
+            if "company" in df.columns and "ceo" in df.columns and "sentiment" in df.columns and "controlled" in df.columns:
+                df["sentiment"] = df["sentiment"].astype(str).str.lower()
+                df["controlled"] = df["controlled"].apply(parse_bool)
+                mask = (df["sentiment"] == "negative") & (~df["controlled"])
+                ceo_counts = df[mask].groupby(["company", "ceo"]).size().to_dict()
+
+    return brand_counts, ceo_counts
 
 
 def load_roster(storage, roster_path='rosters/main-roster.csv'):
@@ -336,6 +392,8 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
     brand_files_found = 0
     ceo_articles_count = 0
     brand_articles_count = 0
+    serp_brand_by_date = {}
+    serp_ceo_by_date = {}
     
     for i in range(days_back):
         date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
@@ -344,6 +402,13 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
         ceo_file = f"{articles_prefix}{date}-ceo-articles-modal.csv"
         brand_file = f"{articles_prefix}{date}-brand-articles-modal.csv"
         
+        # Load SERP counts for the day
+        serp_brand, serp_ceo = load_serp_counts_for_date(storage, date)
+        if serp_brand:
+            serp_brand_by_date[date] = serp_brand
+        if serp_ceo:
+            serp_ceo_by_date[date] = serp_ceo
+
         # Process CEO articles
         if storage.file_exists(ceo_file):
             ceo_files_found += 1
@@ -372,7 +437,35 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
     if all_summary_data:
         summary_df = pd.DataFrame(all_summary_data)
         summary_df = summary_df.sort_values(['company', 'date', 'article_type'])
-        summary_df = summary_df[['date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type']]
+        summary_df = summary_df[[
+            'date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type',
+            'serp_neg_uncontrolled', 'baseline_p97', 'risk_score'
+        ]]
+
+        def lookup_serp_count(row):
+            if row['article_type'] == 'ceo':
+                return serp_ceo_by_date.get(row['date'], {}).get((row['company'], row['ceo']), 0)
+            return serp_brand_by_date.get(row['date'], {}).get(row['company'], 0)
+
+        summary_df['serp_neg_uncontrolled'] = summary_df.apply(lookup_serp_count, axis=1)
+
+        brand_stats = summary_df[summary_df['article_type'] == 'brand'].groupby('company')['negative_count'] \
+            .agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
+        ceo_stats = summary_df[summary_df['article_type'] == 'ceo'].groupby('company')['negative_count'] \
+            .agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
+
+        def baseline_for_row(row):
+            stats_lookup = ceo_stats if row['article_type'] == 'ceo' else brand_stats
+            company_stats = stats_lookup.get(row['company'], {'count': 0, '<lambda_0>': 0})
+            if company_stats['count'] >= MIN_HISTORY_POINTS:
+                return float(company_stats['<lambda_0>'])
+            return float(HARD_FLOOR_NEW_CO)
+
+        summary_df['baseline_p97'] = summary_df.apply(baseline_for_row, axis=1)
+        summary_df['risk_score'] = (
+            (summary_df['negative_count'] - summary_df['baseline_p97']).clip(lower=0) +
+            (summary_df['serp_neg_uncontrolled'] * SERP_GATE_WEIGHT)
+        )
         
         # Show helpful stats
         print(f"\n{'='*60}")
@@ -399,7 +492,8 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
     else:
         print("⚠️  No negative articles found in the specified time range")
         summary_df = pd.DataFrame(columns=[
-            'date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type'
+            'date', 'company', 'ceo', 'negative_count', 'top_headlines', 'article_type',
+            'serp_neg_uncontrolled', 'baseline_p97', 'risk_score'
         ])
     
     # 🆕 Write to Cloud Storage instead of local filesystem
@@ -423,6 +517,19 @@ def create_negative_summary(days_back=90, roster_path='rosters/main-roster.csv',
         
         companies = summary_df['company'].nunique()
         print(f"🏭 Companies with negative coverage: {companies}")
+
+        if 'risk_score' in summary_df.columns:
+            top_risk = summary_df.sort_values('risk_score', ascending=False).head(10)
+            print("\n🔥 Top 10 Risk Scores")
+            for _, row in top_risk.iterrows():
+                company = row.get('company', '')
+                ceo = row.get('ceo', '')
+                article_type = row.get('article_type', '')
+                date = row.get('date', '')
+                score = row.get('risk_score', 0)
+                serp_count = row.get('serp_neg_uncontrolled', 0)
+                neg_count = row.get('negative_count', 0)
+                print(f"  • {date} | {company} | {article_type} | score={score:.1f} (neg={neg_count}, serp={serp_count})")
         
         # 🆕 Show public URL if bucket is public
         public_url = storage.get_public_url(output_file)
