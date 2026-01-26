@@ -238,8 +238,8 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
         except Exception:
             domain = ""
 
-        sentiment = (row.get("sentiment") or "").strip().lower() or None
-        controlled = (row.get("controlled") or "").strip().lower()
+        sentiment = str(row.get("sentiment") or "").strip().lower() or None
+        controlled = str(row.get("controlled") or "").strip().lower()
         control_class = None
         if controlled in {"true", "1", "controlled"}:
             control_class = "controlled"
