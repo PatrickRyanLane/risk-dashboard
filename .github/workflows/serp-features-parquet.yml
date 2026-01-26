@@ -28,6 +28,7 @@ jobs:
           sparse-checkout: |
             requirements.txt
             scripts/
+            .github/actions/setup-python-env
           sparse-checkout-cone-mode: false
 
       - name: Setup Python environment
