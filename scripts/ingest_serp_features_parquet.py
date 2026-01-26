@@ -121,7 +121,18 @@ def load_ceo_map(cur) -> Dict[Tuple[str, str], str]:
 
 def match_company(query: str, company_map: Dict[str, Tuple[str, str]]):
     key = normalize_name(query)
-    return company_map.get(key)
+    if not key:
+        return None
+    if key in company_map:
+        return company_map.get(key)
+    padded = f" {key} "
+    candidates = sorted(company_map.items(), key=lambda kv: len(kv[0]), reverse=True)
+    for norm_name, value in candidates:
+        if f" {norm_name} " in padded:
+            return value
+        if key.startswith(f"{norm_name} ") or key.endswith(f" {norm_name}"):
+            return value
+    return None
 
 
 def match_ceo(query: str, company_map: Dict[str, Tuple[str, str]], ceo_map: Dict[Tuple[str, str], str]):
