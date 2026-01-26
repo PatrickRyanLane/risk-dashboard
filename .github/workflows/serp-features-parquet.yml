@@ -1,0 +1,53 @@
+name: Ingest SERP Features (Parquet)
+
+on:
+  # schedule:
+  #   - cron: "0 13 * * *"  # 9:00 AM ET (adjust for DST)
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Date to ingest (YYYY-MM-DD). Defaults to today."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Set run date
+        id: date
+        run: |
+          if [ -n "${{ inputs.run_date }}" ]; then
+            echo "RUN_DATE=${{ inputs.run_date }}" >> "$GITHUB_ENV"
+          else
+            echo "RUN_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Ingest brand features
+        run: |
+          echo "Ingesting brand SERP features for ${RUN_DATE}"
+          python3 scripts/ingest_serp_features_parquet.py --date "$RUN_DATE" --entity-type brand
+
+      - name: Ingest CEO features
+        run: |
+          echo "Ingesting CEO SERP features for ${RUN_DATE}"
+          python3 scripts/ingest_serp_features_parquet.py --date "$RUN_DATE" --entity-type ceo
