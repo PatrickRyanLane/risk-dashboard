@@ -20,5 +20,7 @@ s3fs==2024.6.1
 simple-salesforce==1.12.9
 requests
 psycopg2-binary==2.9.9
+duckdb==1.4.4
+pyarrow==21.0.0
 
 # Remove boto3 and s3fs if you're not using AWS S3
