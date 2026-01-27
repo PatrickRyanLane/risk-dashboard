@@ -592,6 +592,11 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
 def upsert_feature_items(cur, rows, source: str):
     if not rows:
         return 0
+    deduped = {}
+    for row in rows:
+        key = (row[0], row[1], row[3], row[4], row[11])
+        deduped[key] = row
+    rows = list(deduped.values())
     sql = """
         insert into serp_feature_items
           (date, entity_type, entity_id, entity_name, feature_type, item_type,
