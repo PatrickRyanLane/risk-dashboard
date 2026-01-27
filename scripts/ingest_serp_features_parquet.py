@@ -15,11 +15,13 @@ import argparse
 import json
 import os
 import re
+import hashlib
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
 
 import duckdb
 import psycopg2
+from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 
@@ -47,6 +49,28 @@ FINANCE_SOURCES = {
     "investorplace.com", "nasdaq.com", "foolcdn.com"
 }
 
+ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
+    "facebook.com",
+    "instagram.com",
+    "twitter.com",
+    "x.com",
+    "linkedin.com",
+    "play.google.com",
+    "apps.apple.com",
+}
+
+UNCONTROLLED_DOMAINS: Set[str] = {
+    "wikipedia.org",
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+}
+
+CONTROLLED_PATH_KEYWORDS = {
+    "/leadership/", "/about/", "/governance/", "/team/", "/investors/",
+    "/board-of-directors", "/members/", "/member/"
+}
+
 
 def get_conn():
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
@@ -70,6 +94,23 @@ def normalize_name(name: str) -> str:
             name = name[:-len(suffix)].strip()
             break
     return "".join(ch for ch in name.lower() if ch.isalnum() or ch.isspace()).strip()
+
+def _norm_token(name: str) -> str:
+    return "".join(ch for ch in normalize_name(name) if ch.isalnum())
+
+def _is_brand_youtube_channel(company: str, url: str) -> bool:
+    host = _hostname(url)
+    if host not in {"youtube.com", "youtu.be"}:
+        return False
+    token = _norm_token(company)
+    if not token:
+        return False
+    try:
+        from urllib.parse import urlparse
+        path = (urlparse(url).path or "").lower()
+    except Exception:
+        path = ""
+    return token in path.replace("-", "").replace("_", "")
 
 def _hostname(url: str) -> str:
     try:
@@ -147,6 +188,73 @@ def match_ceo(query: str, company_map: Dict[str, Tuple[str, str]], ceo_map: Dict
             ceo_id = ceo_map.get((ceo_key, company_id))
             return company_id, company_name, ceo_id, ceo_part
     return None, None, None, q
+
+
+def load_company_domains(cur) -> Dict[str, Set[str]]:
+    cur.execute("select name, websites from companies")
+    company_domains: Dict[str, Set[str]] = {}
+    for name, websites in cur.fetchall():
+        company = str(name or "").strip()
+        if not company:
+            continue
+        if not websites:
+            continue
+        urls = str(websites).split("|")
+        for url in urls:
+            url = str(url or "").strip()
+            if not url or url.lower() == "nan":
+                continue
+            if not url.startswith(("http://", "https://")):
+                url = f"http://{url}"
+            host = _hostname(url)
+            if host and "." in host:
+                company_domains.setdefault(company, set()).add(host)
+    return company_domains
+
+
+def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
+    host = _hostname(url)
+    if not host:
+        return False
+
+    path = ""
+    try:
+        from urllib.parse import urlparse
+        path = (urlparse(url).path or "").lower()
+    except Exception:
+        path = ""
+
+    if host == "facebook.com":
+        return "/posts/" not in path
+    if host == "instagram.com":
+        return "/p/" not in path
+
+    if host in UNCONTROLLED_DOMAINS or any(host.endswith("." + d) for d in UNCONTROLLED_DOMAINS):
+        return _is_brand_youtube_channel(company, url)
+
+    if _is_brand_youtube_channel(company, url):
+        return True
+
+    for good in ALWAYS_CONTROLLED_DOMAINS:
+        if host == good or host.endswith("." + good):
+            return True
+
+    if any(k in path for k in CONTROLLED_PATH_KEYWORDS):
+        return True
+
+    company_specific_domains = company_domains.get(company, set())
+    for rd in company_specific_domains:
+        if host == rd or host.endswith("." + rd):
+            return True
+
+    brand_token = _norm_token(company)
+    if brand_token:
+        host_parts = host.split(".")
+        normalized_parts = [_norm_token(part) for part in host_parts if part]
+        if brand_token in normalized_parts[:-1]:
+            return True
+
+    return False
 
 
 def parquet_url(date_str: str, entity_type: str) -> str:
@@ -334,6 +442,176 @@ def load_perspectives_sentiment(path_or_url: str):
             out[query] = (pos, neu, neg, pos + neu + neg)
     return out
 
+
+def _item_hash(url: str, title: str, snippet: str, feature_type: str, position: int) -> str:
+    base = url or f"{feature_type}|{position}|{title}|{snippet}"
+    return hashlib.md5(base.encode("utf-8")).hexdigest()
+
+
+def _sentiment_for_item(analyzer: SentimentIntensityAnalyzer, title: str, snippet: str, url: str, source: str):
+    finance_routine = _is_financial_routine(title, snippet, url, source)
+    if finance_routine:
+        return "neutral", True
+    label, _ = _vader_label(analyzer, f"{title} {snippet}".strip())
+    return label, False
+
+
+def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
+                       company_map, ceo_map, company_domains: Dict[str, Set[str]]):
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    df = con.execute(f"select query, raw_json from read_parquet('{path_or_url}')").fetch_df()
+    analyzer = SentimentIntensityAnalyzer()
+    rows = []
+
+    for _, row in df.iterrows():
+        query = str(row.get("query") or "").strip()
+        if not query:
+            continue
+        raw = row.get("raw_json")
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+
+        if entity_type == "brand":
+            match = match_company(query, company_map)
+            if not match:
+                continue
+            entity_id, entity_name = match
+            company_name = entity_name
+        else:
+            company_id, company_name, ceo_id, ceo_name = match_ceo(query, company_map, ceo_map)
+            if not ceo_id:
+                continue
+            entity_id = ceo_id
+            entity_name = ceo_name or query
+
+        data = obj.get("data", {}) or {}
+
+        items = []
+        aio = data.get("ai_overview") or {}
+        refs = aio.get("references") or []
+        for idx, ref in enumerate(refs):
+            if not isinstance(ref, dict):
+                continue
+            items.append({
+                "feature_type": "aio_citations",
+                "item_type": "aio_reference",
+                "title": str(ref.get("title") or ""),
+                "snippet": str(ref.get("snippet") or ""),
+                "url": str(ref.get("link") or ""),
+                "source": str(ref.get("source") or ""),
+                "position": idx + 1,
+            })
+
+        paa = data.get("related_questions") or []
+        for idx, item in enumerate(paa):
+            if not isinstance(item, dict):
+                continue
+            items.append({
+                "feature_type": "paa_items",
+                "item_type": "paa_question",
+                "title": str(item.get("question") or item.get("title") or ""),
+                "snippet": str(item.get("snippet") or item.get("answer") or ""),
+                "url": str(item.get("link") or item.get("source") or ""),
+                "source": str(item.get("source") or ""),
+                "position": idx + 1,
+            })
+
+        videos = (data.get("inline_videos") or []) + (data.get("short_videos") or [])
+        for idx, item in enumerate(videos):
+            if not isinstance(item, dict):
+                continue
+            items.append({
+                "feature_type": "videos_items",
+                "item_type": "video",
+                "title": str(item.get("title") or ""),
+                "snippet": str(item.get("snippet") or ""),
+                "url": str(item.get("link") or item.get("url") or ""),
+                "source": str(item.get("source") or ""),
+                "position": idx + 1,
+            })
+
+        perspectives = data.get("perspectives") or []
+        for idx, item in enumerate(perspectives):
+            if not isinstance(item, dict):
+                continue
+            items.append({
+                "feature_type": "perspectives_items",
+                "item_type": "perspective",
+                "title": str(item.get("title") or ""),
+                "snippet": str(item.get("snippet") or ""),
+                "url": str(item.get("link") or ""),
+                "source": str(item.get("source") or ""),
+                "position": idx + 1,
+            })
+
+        for item in items:
+            title = item.get("title", "")
+            snippet = item.get("snippet", "")
+            url = item.get("url", "")
+            source = item.get("source", "")
+            position = int(item.get("position") or 0) or None
+            feature = item.get("feature_type", "")
+            item_type = item.get("item_type", "")
+            domain = _hostname(url) if url else ""
+
+            sentiment_label, finance_routine = _sentiment_for_item(
+                analyzer, title, snippet, url, source
+            )
+            control_class = None
+            if url and company_name:
+                control_class = "controlled" if classify_control(company_name, url, company_domains) else "uncontrolled"
+
+            url_hash = _item_hash(url, title, snippet, feature, position or 0)
+            rows.append((
+                date_str,
+                entity_type,
+                entity_id,
+                entity_name,
+                feature,
+                item_type,
+                title,
+                snippet,
+                url,
+                domain,
+                position,
+                url_hash,
+                sentiment_label,
+                control_class,
+                finance_routine,
+                source,
+            ))
+
+    return rows
+
+
+def upsert_feature_items(cur, rows, source: str):
+    if not rows:
+        return 0
+    sql = """
+        insert into serp_feature_items
+          (date, entity_type, entity_id, entity_name, feature_type, item_type,
+           title, snippet, url, domain, position, url_hash,
+           sentiment_label, control_class, finance_routine, source)
+        values %s
+        on conflict (date, entity_type, entity_name, feature_type, url_hash) do update set
+          title = excluded.title,
+          snippet = excluded.snippet,
+          url = excluded.url,
+          domain = excluded.domain,
+          position = excluded.position,
+          sentiment_label = excluded.sentiment_label,
+          control_class = excluded.control_class,
+          finance_routine = excluded.finance_routine,
+          source = excluded.source,
+          updated_at = now()
+    """
+    execute_values(cur, sql, rows, page_size=1000)
+    return len(rows)
 def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map,
                        aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment):
     rows = []
@@ -423,6 +701,7 @@ def main() -> int:
         with conn.cursor() as cur:
             company_map = load_company_map(cur)
             ceo_map = load_ceo_map(cur)
+            company_domains = load_company_domains(cur)
 
         df = load_feature_counts(url)
         aio_sentiment = load_aio_citation_sentiment(url)
@@ -433,12 +712,17 @@ def main() -> int:
             df, args.date, args.entity_type, company_map, ceo_map,
             aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment
         )
+        item_rows = load_feature_items(
+            url, args.date, args.entity_type, company_map, ceo_map, company_domains
+        )
 
         with conn.cursor() as cur:
             inserted = upsert_feature_rows(cur, rows, "aio_parquet")
+            inserted_items = upsert_feature_items(cur, item_rows, "aio_parquet")
         conn.commit()
 
     print(f"Rows upserted: {inserted}")
+    print(f"Item rows upserted: {inserted_items}")
     return 0
 
 
