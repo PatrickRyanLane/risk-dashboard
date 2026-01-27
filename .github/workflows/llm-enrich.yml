@@ -10,6 +10,10 @@ on:
         required: false
         default: "200"
 
+concurrency:
+  group: llm-enrich
+  cancel-in-progress: false
+
 jobs:
   enrich:
     runs-on: ubuntu-latest

@@ -51,6 +51,7 @@ def fetch_company_articles(cur, limit: int) -> List[Tuple]:
           length(coalesce(a.title, '')) asc,
           m.scored_at desc nulls last
         limit %s
+        for update of m skip locked
     """
     cur.execute(sql, (limit,))
     return cur.fetchall()
@@ -77,6 +78,7 @@ def fetch_ceo_articles(cur, limit: int) -> List[Tuple]:
           length(coalesce(a.title, '')) asc,
           m.scored_at desc nulls last
         limit %s
+        for update of m skip locked
     """
     cur.execute(sql, (limit,))
     return cur.fetchall()
@@ -107,6 +109,7 @@ def fetch_serp_results(cur, entity_type: str, limit: int) -> List[Tuple]:
           length(coalesce(r.title, '')) asc,
           sr.run_at desc nulls last
         limit %s
+        for update of r skip locked
     """
     cur.execute(sql, (entity_type, limit))
     return cur.fetchall()
@@ -231,10 +234,13 @@ def main() -> int:
         print("LLM_MAX_CALLS is 0. Exiting.")
         return 0
 
+    commit_every = max(1, int(os.getenv("LLM_COMMIT_EVERY", "50") or 50))
+
     calls = 0
     updated = 0
     cache_hits = 0
     cache_hits_articles = 0
+    updates_since_commit = 0
     log_every = max(1, min(25, max_calls // 10))
     article_cache = {}
     serp_cache = {}
@@ -273,6 +279,10 @@ def main() -> int:
                             )
                         updated += 1
                         cache_hits_articles += 1
+                        updates_since_commit += 1
+                        if updates_since_commit >= commit_every:
+                            conn.commit()
+                            updates_since_commit = 0
                         continue
                     prompt = build_risk_prompt("brand" if handler == "company_articles" else "ceo",
                                                name, title, snippet or "", source or "", url or "")
@@ -302,6 +312,10 @@ def main() -> int:
                         )
                     calls += 1
                     updated += 1
+                    updates_since_commit += 1
+                    if updates_since_commit >= commit_every:
+                        conn.commit()
+                        updates_since_commit = 0
                     if calls % log_every == 0 or calls == max_calls:
                         print(f"… LLM progress: {calls}/{max_calls} calls")
                 if calls >= max_calls:
@@ -331,6 +345,10 @@ def main() -> int:
                             )
                             updated += 1
                             cache_hits += 1
+                            updates_since_commit += 1
+                            if updates_since_commit >= commit_every:
+                                conn.commit()
+                                updates_since_commit = 0
                             continue
                         resp = call_llm_json(prompt, llm_api_key, llm_model)
                         if not isinstance(resp, dict) or not resp:
@@ -352,12 +370,17 @@ def main() -> int:
                         )
                         calls += 1
                         updated += 1
+                        updates_since_commit += 1
+                        if updates_since_commit >= commit_every:
+                            conn.commit()
+                            updates_since_commit = 0
                         if calls % log_every == 0 or calls == max_calls:
                             print(f"… LLM progress: {calls}/{max_calls} calls")
                     if calls >= max_calls:
                         break
 
-        conn.commit()
+        if updates_since_commit:
+            conn.commit()
 
     print(f"LLM calls used: {calls} / {max_calls}")
     print(f"Rows updated: {updated}")
