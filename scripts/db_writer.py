@@ -291,23 +291,43 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
     run_id_map = {}
     with conn:
         with conn.cursor() as cur:
-            run_values = [
-                (v["entity_type"], v["company_id"], v["ceo_id"], v["query_text"], v["provider"], v["run_at"])
+            company_values = [
+                ("company", v["company_id"], None, v["query_text"], v["provider"], v["run_at"])
                 for v in run_rows.values()
+                if v["entity_type"] == "company"
             ]
-            execute_values(cur, """
-                insert into serp_runs (entity_type, company_id, ceo_id, query_text, provider, run_at)
-                values %s
-                on conflict (entity_type, company_id, ceo_id, run_at) do update set
-                  query_text = excluded.query_text,
-                  provider = excluded.provider
-                returning id, entity_type, company_id, ceo_id
-            """, run_values, page_size=1000)
-            rows = cur.fetchall()
-            for run_id, etype, company_id, ceo_id in rows:
-                if etype == "company":
+            ceo_values = [
+                ("ceo", None, v["ceo_id"], v["query_text"], v["provider"], v["run_at"])
+                for v in run_rows.values()
+                if v["entity_type"] == "ceo"
+            ]
+
+            if company_values:
+                execute_values(cur, """
+                    insert into serp_runs (entity_type, company_id, ceo_id, query_text, provider, run_at)
+                    values %s
+                    on conflict (entity_type, company_id, run_at)
+                    where entity_type = 'company'
+                    do update set
+                      query_text = excluded.query_text,
+                      provider = excluded.provider
+                    returning id, company_id
+                """, company_values, page_size=1000)
+                for run_id, company_id in cur.fetchall():
                     run_id_map[("company", company_id)] = run_id
-                else:
+
+            if ceo_values:
+                execute_values(cur, """
+                    insert into serp_runs (entity_type, company_id, ceo_id, query_text, provider, run_at)
+                    values %s
+                    on conflict (entity_type, ceo_id, run_at)
+                    where entity_type = 'ceo'
+                    do update set
+                      query_text = excluded.query_text,
+                      provider = excluded.provider
+                    returning id, ceo_id
+                """, ceo_values, page_size=1000)
+                for run_id, ceo_id in cur.fetchall():
                     run_id_map[("ceo", ceo_id)] = run_id
 
             insert_map = {}
