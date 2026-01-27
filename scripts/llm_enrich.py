@@ -114,6 +114,55 @@ def fetch_serp_results(cur, entity_type: str, limit: int) -> List[Tuple]:
     cur.execute(sql, (entity_type, limit))
     return cur.fetchall()
 
+
+def fetch_serp_feature_items(cur, entity_type: str, limit: int) -> List[Tuple]:
+    sql = """
+        select sfi.id, sfi.entity_id, sfi.entity_name, sfi.url_hash, sfi.url, sfi.title, sfi.snippet, sfi.source
+        from serp_feature_items sfi
+        left join serp_feature_item_overrides ov on ov.serp_feature_item_id = sfi.id
+        where sfi.entity_type = %s
+          and sfi.llm_sentiment_label is null
+          and (ov.override_sentiment_label is null and ov.override_control_class is null)
+        order by
+          case when sfi.sentiment_label = 'negative' then 1 else 0 end desc,
+          length(coalesce(sfi.title, '')) asc,
+          sfi.date desc
+        limit %s
+        for update of sfi skip locked
+    """
+    cur.execute(sql, (entity_type, limit))
+    return cur.fetchall()
+
+
+def lookup_feature_item_cache(cur, entity_type: str, entity_id: str, url_hash: str):
+    sql = """
+        select sfi.llm_sentiment_label, sfi.llm_risk_label, sfi.llm_control_class,
+               sfi.llm_severity, sfi.llm_reason
+        from serp_feature_items sfi
+        where sfi.entity_type = %s
+          and sfi.entity_id = %s
+          and sfi.url_hash = %s
+          and sfi.llm_sentiment_label is not null
+        order by sfi.date desc nulls last
+        limit 1
+    """
+    cur.execute(sql, (entity_type, entity_id, url_hash))
+    return cur.fetchone()
+
+
+def update_serp_feature_item(cur, item_id, llm_sentiment_label, llm_risk_label,
+                             llm_control_class, llm_severity, llm_reason):
+    sql = """
+        update serp_feature_items
+        set llm_sentiment_label = %s, llm_risk_label = %s,
+            llm_control_class = %s, llm_severity = %s, llm_reason = %s
+        where id = %s
+    """
+    cur.execute(
+        sql,
+        (llm_sentiment_label, llm_risk_label, llm_control_class, llm_severity, llm_reason, item_id)
+    )
+
 def lookup_serp_cache(cur, entity_type: str, entity_id: str, url_hash: str):
     if entity_type == "company":
         sql = """
@@ -244,6 +293,7 @@ def main() -> int:
     log_every = max(1, min(25, max_calls // 10))
     article_cache = {}
     serp_cache = {}
+    feature_cache = {}
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -366,6 +416,64 @@ def main() -> int:
                             llm_control_class = None
                         update_serp(
                             cur, serp_run_id, rank, url_hash, llm_sentiment_label, llm_risk_label,
+                            llm_control_class, llm_severity, llm_reason
+                        )
+                        calls += 1
+                        updated += 1
+                        updates_since_commit += 1
+                        if updates_since_commit >= commit_every:
+                            conn.commit()
+                            updates_since_commit = 0
+                        if calls % log_every == 0 or calls == max_calls:
+                            print(f"… LLM progress: {calls}/{max_calls} calls")
+                    if calls >= max_calls:
+                        break
+
+            if calls < max_calls:
+                for entity_type in ("company", "ceo"):
+                    rows = fetch_serp_feature_items(cur, entity_type, args.batch_size)
+                    for row in rows:
+                        if calls >= max_calls:
+                            break
+                        item_id, entity_id, entity_name, url_hash, url, title, snippet, source = row
+                        prompt = build_risk_prompt(
+                            "brand" if entity_type == "company" else "ceo",
+                            entity_name or "", title or "", snippet or "", source or "", url or ""
+                        )
+                        cache_key = (entity_type, str(entity_id or ""), str(url_hash or ""))
+                        cached = feature_cache.get(cache_key)
+                        if cached is None and entity_id and url_hash:
+                            cached = lookup_feature_item_cache(cur, entity_type, entity_id, url_hash)
+                            feature_cache[cache_key] = cached
+                        if cached:
+                            llm_sentiment_label, llm_risk_label, llm_control_class, llm_severity, llm_reason = cached
+                            update_serp_feature_item(
+                                cur, item_id, llm_sentiment_label, llm_risk_label,
+                                llm_control_class, llm_severity, llm_reason
+                            )
+                            updated += 1
+                            cache_hits += 1
+                            updates_since_commit += 1
+                            if updates_since_commit >= commit_every:
+                                conn.commit()
+                                updates_since_commit = 0
+                            continue
+                        resp = call_llm_json(prompt, llm_api_key, llm_model)
+                        if not isinstance(resp, dict) or not resp:
+                            continue
+                        llm_sentiment_label = resp.get("sentiment_label") or resp.get("label")
+                        if llm_sentiment_label not in ("positive", "neutral", "negative"):
+                            llm_sentiment_label = None
+                        llm_risk_label = resp.get("risk_label")
+                        if llm_risk_label not in ("crisis_risk", "routine_financial", "not_risk"):
+                            llm_risk_label = None
+                        llm_severity = resp.get("severity")
+                        llm_reason = resp.get("reason")
+                        llm_control_class = resp.get("control_class")
+                        if llm_control_class not in ("controlled", "uncontrolled"):
+                            llm_control_class = None
+                        update_serp_feature_item(
+                            cur, item_id, llm_sentiment_label, llm_risk_label,
                             llm_control_class, llm_severity, llm_reason
                         )
                         calls += 1

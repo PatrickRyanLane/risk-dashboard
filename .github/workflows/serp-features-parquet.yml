@@ -9,6 +9,10 @@ on:
         description: "Date to ingest (YYYY-MM-DD). Defaults to today."
         required: false
         type: string
+      run_days:
+        description: "Number of days to ingest (including run_date)."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -42,13 +46,30 @@ jobs:
           else
             echo "RUN_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
           fi
+          if [ -n "${{ inputs.run_days }}" ]; then
+            echo "RUN_DAYS=${{ inputs.run_days }}" >> "$GITHUB_ENV"
+          else
+            echo "RUN_DAYS=1" >> "$GITHUB_ENV"
+          fi
 
       - name: Ingest brand features
         run: |
-          echo "Ingesting brand SERP features for ${RUN_DATE}"
-          python3 scripts/ingest_serp_features_parquet.py --date "$RUN_DATE" --entity-type brand
+          START_DATE="${RUN_DATE}"
+          DAYS="${RUN_DAYS}"
+          echo "Ingesting brand SERP features for ${START_DATE} (last ${DAYS} days)"
+          for i in $(seq 0 $((DAYS-1))); do
+            DSTR=$(date -u -d "${START_DATE} -${i} day" +%F)
+            echo "→ ${DSTR}"
+            python3 scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type brand
+          done
 
       - name: Ingest CEO features
         run: |
-          echo "Ingesting CEO SERP features for ${RUN_DATE}"
-          python3 scripts/ingest_serp_features_parquet.py --date "$RUN_DATE" --entity-type ceo
+          START_DATE="${RUN_DATE}"
+          DAYS="${RUN_DAYS}"
+          echo "Ingesting CEO SERP features for ${START_DATE} (last ${DAYS} days)"
+          for i in $(seq 0 $((DAYS-1))); do
+            DSTR=$(date -u -d "${START_DATE} -${i} day" +%F)
+            echo "→ ${DSTR}"
+            python3 scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type ceo
+          done

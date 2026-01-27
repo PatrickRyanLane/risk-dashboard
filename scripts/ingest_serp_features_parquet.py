@@ -31,7 +31,7 @@ FEATURES = [
     "videos",
     "social",
     "perspectives",
-    # "top_stories",
+    "top_stories",
     # "knowledge_graph",
 ]
 
@@ -549,6 +549,20 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
                 "position": idx + 1,
             })
 
+        top_stories = data.get("top_stories") or []
+        for idx, item in enumerate(top_stories):
+            if not isinstance(item, dict):
+                continue
+            items.append({
+                "feature_type": "top_stories_items",
+                "item_type": "top_story",
+                "title": str(item.get("title") or ""),
+                "snippet": str(item.get("snippet") or ""),
+                "url": str(item.get("link") or ""),
+                "source": str(item.get("source") or ""),
+                "position": idx + 1,
+            })
+
         for item in items:
             title = item.get("title", "")
             snippet = item.get("snippet", "")
@@ -640,7 +654,7 @@ def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map
             "videos": int(r.get("videos_count", 0) or 0),
             "social": int(r.get("social_count", 0) or 0),
             "perspectives": int(r.get("perspectives_count", 0) or 0),
-            # "top_stories": int(r.get("top_stories_count", 0) or 0),
+            "top_stories": int(r.get("top_stories_count", 0) or 0),
             # "knowledge_graph": int(r.get("knowledge_graph_count", 0) or 0),
         }
         for feature, count in counts.items():
