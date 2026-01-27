@@ -1,0 +1,36 @@
+name: Recompute SERP Feature Daily
+
+on:
+  schedule:
+    - cron: "0 14 * * 1" # Mondays 9:00am ET (DST). Use 15:00 UTC in standard time.
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Days back to recompute
+        required: false
+        default: "7"
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Recompute aggregates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DAYS: ${{ github.event.inputs.days }}
+        run: |
+          if [ -z "$DAYS" ]; then
+            DAYS=7
+          fi
+          python3 scripts/recompute_serp_feature_daily.py --days "$DAYS"
