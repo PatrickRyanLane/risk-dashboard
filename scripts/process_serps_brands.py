@@ -44,9 +44,6 @@ FORCE_POSITIVE_IF_CONTROLLED = True
 ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
     "facebook.com",
     "instagram.com",
-    "twitter.com",
-    "x.com",
-    "linkedin.com",
     "play.google.com",
     "apps.apple.com",
 }
@@ -180,6 +177,18 @@ def _hostname(url: str) -> str:
 def _norm_token(s: str) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
+def _company_handle_tokens(company: str) -> Set[str]:
+    words = [w for w in re.split(r"\W+", company or "") if w]
+    tokens = set()
+    full = _norm_token(company)
+    if full:
+        tokens.add(full)
+    if len(words) >= 2:
+        tokens.add(_norm_token("".join(words[:2])))
+    elif words:
+        tokens.add(_norm_token(words[0]))
+    return {t for t in tokens if len(t) >= 4}
+
 
 def _is_brand_youtube_channel(company: str, url: str) -> bool:
     """
@@ -216,6 +225,45 @@ def _is_brand_youtube_channel(company: str, url: str) -> bool:
 
     slug_token = _norm_token(slug)
     return bool(slug_token) and brand_token in slug_token
+
+
+def _is_linkedin_company_page(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host != "linkedin.com":
+        return False
+    path = (parsed.path or "").strip("/")
+    if not path.lower().startswith("company/"):
+        return False
+    slug = path.split("/", 1)[1] if "/" in path else ""
+    slug = slug.split("/", 1)[0] if slug else ""
+    if not slug:
+        return False
+    brand_token = _norm_token(company)
+    slug_token = _norm_token(slug)
+    return bool(brand_token) and brand_token in slug_token
+
+
+def _is_x_company_handle(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host not in {"x.com", "twitter.com"}:
+        return False
+    path = (parsed.path or "").strip("/")
+    handle = path.split("/", 1)[0] if path else ""
+    if not handle:
+        return False
+    handle_token = _norm_token(handle)
+    if not handle_token:
+        return False
+    for token in _company_handle_tokens(company):
+        if token and token in handle_token:
+            return True
+    return False
 
 def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[str]]:
     """
@@ -314,6 +362,10 @@ def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]
         return "/p/" not in path
 
     if _is_brand_youtube_channel(company, url):
+        return True
+    if _is_linkedin_company_page(company, url):
+        return True
+    if _is_x_company_handle(company, url):
         return True
 
     for good in ALWAYS_CONTROLLED_DOMAINS:
