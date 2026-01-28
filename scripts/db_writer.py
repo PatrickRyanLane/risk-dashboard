@@ -14,6 +14,30 @@ def get_conn():
     return psycopg2.connect(dsn)
 
 
+def _month_bounds(dt: datetime) -> Tuple[datetime, datetime]:
+    start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return start, end
+
+
+def ensure_daily_partitions(cur, dt: datetime) -> None:
+    start, end = _month_bounds(dt)
+    suffix = start.strftime("%Y_%m")
+    for table in ("company_article_mentions_daily", "ceo_article_mentions_daily"):
+        part = f"{table}_{suffix}"
+        cur.execute(
+            f"""
+            create table if not exists {part}
+            partition of {table}
+            for values from (%s) to (%s)
+            """,
+            (start.date(), end.date()),
+        )
+
+
 def normalize_url(url: str) -> str:
     if not url:
         return ""
@@ -125,6 +149,7 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
 
     with conn:
         with conn.cursor() as cur:
+            ensure_daily_partitions(cur, scored_at)
             execute_values(cur, """
                 insert into articles (canonical_url, title, publisher, snippet, published_at, first_seen_at, last_seen_at, source)
                 values %s
@@ -141,13 +166,19 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
 
             if entity_type == "company":
                 insert_rows = []
+                daily_rows = []
                 for company_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in mentions:
                     article_id = article_map.get(canonical)
                     if not article_id:
                         continue
+                    resolved_sentiment = llm_sentiment_label or sentiment
                     insert_rows.append((
                         company_id, article_id, sentiment, finance_routine, uncertain, uncertain_reason,
                         llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, "vader"
+                    ))
+                    daily_rows.append((
+                        scored_at.date(), company_id, article_id, resolved_sentiment,
+                        None, finance_routine, uncertain
                     ))
                 if insert_rows:
                     execute_values(cur, """
@@ -168,15 +199,33 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
                           scored_at = excluded.scored_at,
                           model_version = excluded.model_version
                     """, insert_rows, page_size=1000)
+                if daily_rows:
+                    execute_values(cur, """
+                        insert into company_article_mentions_daily (
+                          date, company_id, article_id, sentiment_label, control_class, finance_routine, uncertain
+                        )
+                        values %s
+                        on conflict (date, company_id, article_id) do update set
+                          sentiment_label = excluded.sentiment_label,
+                          control_class = excluded.control_class,
+                          finance_routine = excluded.finance_routine,
+                          uncertain = excluded.uncertain
+                    """, daily_rows, page_size=1000)
             else:
                 insert_rows = []
+                daily_rows = []
                 for ceo_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in mentions:
                     article_id = article_map.get(canonical)
                     if not article_id:
                         continue
+                    resolved_sentiment = llm_sentiment_label or sentiment
                     insert_rows.append((
                         ceo_id, article_id, sentiment, finance_routine, uncertain, uncertain_reason,
                         llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, "vader"
+                    ))
+                    daily_rows.append((
+                        scored_at.date(), ceo_id, article_id, resolved_sentiment,
+                        None, finance_routine, uncertain
                     ))
                 if insert_rows:
                     execute_values(cur, """
@@ -197,6 +246,18 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
                           scored_at = excluded.scored_at,
                           model_version = excluded.model_version
                     """, insert_rows, page_size=1000)
+                if daily_rows:
+                    execute_values(cur, """
+                        insert into ceo_article_mentions_daily (
+                          date, ceo_id, article_id, sentiment_label, control_class, finance_routine, uncertain
+                        )
+                        values %s
+                        on conflict (date, ceo_id, article_id) do update set
+                          sentiment_label = excluded.sentiment_label,
+                          control_class = excluded.control_class,
+                          finance_routine = excluded.finance_routine,
+                          uncertain = excluded.uncertain
+                    """, daily_rows, page_size=1000)
 
     conn.close()
     return len(mentions)

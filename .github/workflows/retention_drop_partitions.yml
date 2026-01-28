@@ -1,0 +1,32 @@
+name: Retention - Drop Old Partitions
+
+on:
+  workflow_dispatch:
+    inputs:
+      retention_months:
+        description: "Retention window in months"
+        required: false
+        default: "24"
+  # schedule:
+  #   - cron: "15 9 * * *"
+
+jobs:
+  drop-partitions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install psycopg2-binary
+
+      - name: Drop old partitions
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RETENTION_MONTHS: ${{ inputs.retention_months }}
+        run: python3 scripts/retention_drop_partitions.py --months "${RETENTION_MONTHS}"
