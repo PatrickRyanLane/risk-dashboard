@@ -12,6 +12,7 @@ Writes to:
 from __future__ import annotations
 
 import argparse
+from urllib.parse import urlparse
 import json
 import os
 import re
