@@ -501,6 +501,44 @@ def load_perspectives_sentiment(path_or_url: str):
     return out
 
 
+def load_top_stories_sentiment(path_or_url: str):
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    df = con.execute(f"select query, raw_json from read_parquet('{path_or_url}')").fetch_df()
+    analyzer = SentimentIntensityAnalyzer()
+    out = {}
+    for _, row in df.iterrows():
+        query = str(row.get("query") or "").strip()
+        if not query:
+            continue
+        raw = row.get("raw_json")
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+        items = obj.get("data", {}).get("top_stories") or []
+        pos = neu = neg = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "")
+            snippet = str(item.get("snippet") or "")
+            link = str(item.get("link") or "")
+            source = str(item.get("source") or "")
+            label, _ = _sentiment_for_item(analyzer, title, snippet, link, source)
+            if label == "positive":
+                pos += 1
+            elif label == "negative":
+                neg += 1
+            else:
+                neu += 1
+        if pos or neu or neg:
+            out[query] = (pos, neu, neg, pos + neu + neg)
+    return out
+
+
 def _item_hash(url: str, title: str, snippet: str, feature_type: str, position: int) -> str:
     base = url or f"{feature_type}|{position}|{title}|{snippet}"
     return hashlib.md5(base.encode("utf-8")).hexdigest()
@@ -690,7 +728,7 @@ def upsert_feature_items(cur, rows, source: str):
     execute_values(cur, sql, rows, page_size=1000)
     return len(rows)
 def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map,
-                       aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment):
+                       aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment, top_stories_sentiment):
     rows = []
     for _, r in df.iterrows():
         query = str(r.get("query") or "").strip()
@@ -732,6 +770,9 @@ def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map
         if query in perspectives_sentiment:
             pos, neu, neg, total = perspectives_sentiment[query]
             rows.append((date_str, entity_type, entity_id, entity_name, "perspectives_items", total, pos, neu, neg))
+        if query in top_stories_sentiment:
+            pos, neu, neg, total = top_stories_sentiment[query]
+            rows.append((date_str, entity_type, entity_id, entity_name, "top_stories_items", total, pos, neu, neg))
     return rows
 
 
@@ -785,9 +826,10 @@ def main() -> int:
         paa_sentiment = load_paa_sentiment(url)
         videos_sentiment = load_videos_sentiment(url)
         perspectives_sentiment = load_perspectives_sentiment(url)
+        top_stories_sentiment = load_top_stories_sentiment(url)
         rows = build_feature_rows(
             df, args.date, args.entity_type, company_map, ceo_map,
-            aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment
+            aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment, top_stories_sentiment
         )
         item_rows = load_feature_items(
             url, args.date, args.entity_type, company_map, ceo_map, company_domains
