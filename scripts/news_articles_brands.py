@@ -12,6 +12,7 @@ import argparse
 import json, os, re, sys, time, urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -23,6 +24,191 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_articles_mentions
+
+# ============================================================================
+# CONTROL CLASSIFICATION (parity with SERP rules)
+# ============================================================================
+ALWAYS_CONTROLLED_DOMAINS = {
+    "facebook.com",
+    "instagram.com",
+    "play.google.com",
+    "apps.apple.com",
+}
+
+
+def _norm_token(s: str) -> str:
+    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+
+
+def _company_handle_tokens(company: str) -> set[str]:
+    words = [w for w in re.split(r"\W+", company or "") if w]
+    tokens = set()
+    full = _norm_token(company)
+    if full:
+        tokens.add(full)
+    if len(words) >= 2:
+        tokens.add(_norm_token("".join(words[:2])))
+    elif words:
+        tokens.add(_norm_token(words[0]))
+    return {t for t in tokens if len(t) >= 4}
+
+
+def _is_brand_youtube_channel(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host not in {"youtube.com", "m.youtube.com"}:
+        return False
+    brand_token = _norm_token(company)
+    if not brand_token:
+        return False
+    path = (parsed.path or "").strip("/")
+    if not path:
+        return False
+    if path.lower().startswith("user/"):
+        slug = path[5:]
+    elif path.startswith("@"):
+        slug = path[1:]
+    else:
+        slug = path.split("/", 1)[0]
+    if not slug:
+        return False
+    slug_token = _norm_token(slug)
+    return bool(slug_token) and brand_token in slug_token
+
+
+def _is_linkedin_company_page(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host != "linkedin.com":
+        return False
+    path = (parsed.path or "").strip("/")
+    if not path.lower().startswith("company/"):
+        return False
+    slug = path.split("/", 1)[1] if "/" in path else ""
+    slug = slug.split("/", 1)[0] if slug else ""
+    if not slug:
+        return False
+    brand_token = _norm_token(company)
+    slug_token = _norm_token(slug)
+    return bool(brand_token) and brand_token in slug_token
+
+
+def _is_x_company_handle(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host not in {"x.com", "twitter.com"}:
+        return False
+    path = (parsed.path or "").strip("/")
+    handle = path.split("/", 1)[0] if path else ""
+    if not handle:
+        return False
+    handle_token = _norm_token(handle)
+    if not handle_token:
+        return False
+    for token in _company_handle_tokens(company):
+        if token and token in handle_token:
+            return True
+    return False
+
+
+def _parse_company_domains(websites: str) -> set[str]:
+    if not websites:
+        return set()
+    domains = set()
+    for url in websites.split("|"):
+        url = (url or "").strip()
+        if not url:
+            continue
+        if not url.startswith(("http://", "https://")):
+            url = f"http://{url}"
+        host = _hostname(url)
+        if host and "." in host:
+            domains.add(host)
+    return domains
+
+
+def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
+    company_domains: dict[str, set[str]] = {}
+    try:
+        if storage:
+            if not storage.file_exists(roster_path):
+                print(f"[WARN] Roster not found in Cloud Storage at {roster_path}")
+                return company_domains
+            df = storage.read_csv(roster_path)
+        else:
+            roster_file = Path(roster_path)
+            if not roster_file.exists():
+                print(f"[WARN] Roster not found at {roster_file}")
+                return company_domains
+            df = pd.read_csv(roster_file, encoding="utf-8-sig")
+
+        cols = {c.strip().lower(): c for c in df.columns}
+        company_col = cols.get("company")
+        website_col = None
+        for key in ["website", "websites", "domain", "url", "site", "homepage"]:
+            if key in cols:
+                website_col = cols[key]
+                break
+        if not company_col or not website_col:
+            print("[WARN] Missing company or website column in roster")
+            return company_domains
+
+        for _, row in df.iterrows():
+            company = str(row[company_col]).strip()
+            if not company or company.lower() == "nan":
+                continue
+            val = row[website_col]
+            if pd.isna(val):
+                continue
+            domains = _parse_company_domains(str(val))
+            if domains:
+                company_domains[company] = domains
+    except Exception as e:
+        print(f"[WARN] Failed reading roster domains: {e}")
+    return company_domains
+
+
+def classify_control(company: str, url: str, company_domains: dict[str, set[str]]) -> bool:
+    host = _hostname(url)
+    if not host:
+        return False
+    try:
+        path = (urlparse(url).path or "").lower()
+    except Exception:
+        path = ""
+
+    if host == "facebook.com":
+        return "/posts/" not in path
+    if host == "instagram.com":
+        return "/p/" not in path
+
+    if _is_brand_youtube_channel(company, url):
+        return True
+    if _is_linkedin_company_page(company, url):
+        return True
+    if _is_x_company_handle(company, url):
+        return True
+
+    for good in ALWAYS_CONTROLLED_DOMAINS:
+        if host == good or host.endswith("." + good):
+            return True
+
+    for rd in company_domains.get(company, set()):
+        if host == rd or host.endswith("." + rd):
+            return True
+
+    brand_token = _norm_token(company)
+    if brand_token:
+        parts = [_norm_token(part) for part in host.split(".") if part]
+        if brand_token in parts[:-1]:
+            return True
+    return False
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -216,7 +402,7 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
     return "neutral", flags
 
 
-def fetch_one(session: requests.Session, brand: str, analyzer, date: str) -> list[dict]:
+def fetch_one(session: requests.Session, brand: str, analyzer, date: str, company_domains: dict[str, set[str]]) -> list[dict]:
     url = google_news_rss(brand)
     
     r = session.get(url, timeout=15)
@@ -255,6 +441,7 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str) -> lis
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
+        control_class = "controlled" if classify_control(brand, link, company_domains) else "uncontrolled"
         
         out.append({
             "company": brand,
@@ -263,6 +450,7 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str) -> lis
             "source": source,
             "date": date,
             "sentiment": sent,
+            "controlled": control_class,
             "finance_routine": finance_routine,
             "uncertain": uncertain,
             "uncertain_reason": uncertain_reason,
@@ -386,6 +574,7 @@ def main():
     
     try:
         brands = load_companies_from_roster(storage, args.roster)
+        company_domains = load_roster_domains(storage, args.roster)
     except Exception as e:
         print(f"❌ FATAL: {e}")
         sys.exit(1)
@@ -414,7 +603,7 @@ def main():
         brand = brands[i]
         print(f"[{i + 1}/{len(brands)}] {brand}")
         try:
-            rows = fetch_one(session, brand, analyzer, date)
+            rows = fetch_one(session, brand, analyzer, date, company_domains)
             all_rows.extend(rows)
         except Exception as e:
             print(f"  ⚠️ Error fetching {brand}: {e}")
@@ -433,7 +622,7 @@ def main():
     if end_index >= len(brands):
         print(f"✅ All {len(brands)} brands processed!")
         df = pd.DataFrame(all_rows) if all_rows else pd.DataFrame(
-            columns=["company", "title", "url", "source", "date", "sentiment"]
+            columns=["company", "title", "url", "source", "date", "sentiment", "controlled"]
         )
         try:
             if storage:

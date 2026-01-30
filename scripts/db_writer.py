@@ -73,6 +73,169 @@ def url_hash(url: str) -> str:
 def parse_bool(val):
     return str(val).strip().lower() in {"true", "1", "yes", "y", "t", "controlled"}
 
+ALWAYS_CONTROLLED_DOMAINS = {
+    "facebook.com",
+    "instagram.com",
+    "play.google.com",
+    "apps.apple.com",
+}
+
+
+def _hostname(url: str) -> str:
+    try:
+        host = (urlparse(url).hostname or "").lower()
+        return host.replace("www.", "")
+    except Exception:
+        return ""
+
+
+def _norm_token(s: str) -> str:
+    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+
+
+def _company_handle_tokens(company: str) -> set[str]:
+    import re
+    words = [w for w in re.split(r"\W+", company or "") if w]
+    tokens = set()
+    full = _norm_token(company)
+    if full:
+        tokens.add(full)
+    if len(words) >= 2:
+        tokens.add(_norm_token("".join(words[:2])))
+    elif words:
+        tokens.add(_norm_token(words[0]))
+    return {t for t in tokens if len(t) >= 4}
+
+
+def _is_brand_youtube_channel(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host not in {"youtube.com", "m.youtube.com"}:
+        return False
+    brand_token = _norm_token(company)
+    if not brand_token:
+        return False
+    path = (parsed.path or "").strip("/")
+    if not path:
+        return False
+    if path.lower().startswith("user/"):
+        slug = path[5:]
+    elif path.startswith("@"):
+        slug = path[1:]
+    else:
+        slug = path.split("/", 1)[0]
+    if not slug:
+        return False
+    slug_token = _norm_token(slug)
+    return bool(slug_token) and brand_token in slug_token
+
+
+def _is_linkedin_company_page(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host != "linkedin.com":
+        return False
+    path = (parsed.path or "").strip("/")
+    if not path.lower().startswith("company/"):
+        return False
+    slug = path.split("/", 1)[1] if "/" in path else ""
+    slug = slug.split("/", 1)[0] if slug else ""
+    if not slug:
+        return False
+    brand_token = _norm_token(company)
+    slug_token = _norm_token(slug)
+    return bool(brand_token) and brand_token in slug_token
+
+
+def _is_x_company_handle(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host not in {"x.com", "twitter.com"}:
+        return False
+    path = (parsed.path or "").strip("/")
+    handle = path.split("/", 1)[0] if path else ""
+    if not handle:
+        return False
+    handle_token = _norm_token(handle)
+    if not handle_token:
+        return False
+    for token in _company_handle_tokens(company):
+        if token and token in handle_token:
+            return True
+    return False
+
+
+def _parse_company_domains(websites: str) -> set[str]:
+    if not websites:
+        return set()
+    domains = set()
+    for url in websites.split("|"):
+        url = (url or "").strip()
+        if not url:
+            continue
+        if not url.startswith(("http://", "https://")):
+            url = f"http://{url}"
+        host = _hostname(url)
+        if host and "." in host:
+            domains.add(host)
+    return domains
+
+
+def fetch_company_domains(cur) -> Dict[str, set[str]]:
+    cur.execute("select name, websites from companies")
+    domains = {}
+    for name, websites in cur.fetchall():
+        domains[name] = _parse_company_domains(websites or "")
+    return domains
+
+
+def classify_control(company: str, url: str, company_domains: Dict[str, set[str]]) -> bool:
+    host = _hostname(url)
+    if not host:
+        return False
+
+    path = ""
+    try:
+        path = (urlparse(url).path or "").lower()
+    except Exception:
+        path = ""
+
+    if host == "facebook.com":
+        return "/posts/" not in path
+    if host == "instagram.com":
+        return "/p/" not in path
+
+    if _is_brand_youtube_channel(company, url):
+        return True
+    if _is_linkedin_company_page(company, url):
+        return True
+    if _is_x_company_handle(company, url):
+        return True
+
+    for good in ALWAYS_CONTROLLED_DOMAINS:
+        if host == good or host.endswith("." + good):
+            return True
+
+    company_specific_domains = company_domains.get(company, set())
+    for rd in company_specific_domains:
+        if host == rd or host.endswith("." + rd):
+            return True
+
+    brand_token = _norm_token(company)
+    if brand_token:
+        host_parts = host.split(".")
+        normalized_parts = [_norm_token(part) for part in host_parts if part]
+        if brand_token in normalized_parts[:-1]:
+            return True
+
+    return False
+
 
 def fetch_company_map(cur) -> Dict[str, str]:
     cur.execute("select name, id from companies")
@@ -98,6 +261,7 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
         with conn.cursor() as cur:
             company_map = fetch_company_map(cur)
             ceo_map = fetch_ceo_map(cur)
+            company_domains = fetch_company_domains(cur)
 
     for _, row in df.iterrows():
         title = str(row.get("title", "") or "").strip()
@@ -125,8 +289,9 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             company_id = company_map.get(company)
             if not company_id:
                 continue
+            control_class = "controlled" if classify_control(company, url, company_domains) else "uncontrolled"
             mentions.append((company_id, canonical, sentiment, finance_routine, uncertain,
-                             uncertain_reason, llm_sentiment_label, llm_risk_label,
+                             uncertain_reason, llm_sentiment_label, llm_risk_label, control_class,
                              llm_severity, llm_reason))
         else:
             ceo = str(row.get("ceo", "") or "").strip()
@@ -137,8 +302,9 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             ceo_id = ceo_map.get((ceo, company_id))
             if not ceo_id:
                 continue
+            control_class = "controlled" if classify_control(company, url, company_domains) else "uncontrolled"
             mentions.append((ceo_id, canonical, sentiment, finance_routine, uncertain,
-                             uncertain_reason, llm_sentiment_label, llm_risk_label,
+                             uncertain_reason, llm_sentiment_label, llm_risk_label, control_class,
                              llm_severity, llm_reason))
 
     if not articles or not mentions:
@@ -167,28 +333,29 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             if entity_type == "company":
                 insert_rows = []
                 daily_rows = []
-                for company_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in mentions:
+                for company_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, control_class, llm_severity, llm_reason in mentions:
                     article_id = article_map.get(canonical)
                     if not article_id:
                         continue
                     resolved_sentiment = llm_sentiment_label or sentiment
                     insert_rows.append((
-                        company_id, article_id, sentiment, finance_routine, uncertain, uncertain_reason,
+                        company_id, article_id, sentiment, control_class, finance_routine, uncertain, uncertain_reason,
                         llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, "vader"
                     ))
                     daily_rows.append((
                         scored_at.date(), company_id, article_id, resolved_sentiment,
-                        None, finance_routine, uncertain
+                        control_class, finance_routine, uncertain
                     ))
                 if insert_rows:
                     execute_values(cur, """
                         insert into company_article_mentions (
-                          company_id, article_id, sentiment_label, finance_routine, uncertain, uncertain_reason,
+                          company_id, article_id, sentiment_label, control_class, finance_routine, uncertain, uncertain_reason,
                           llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, model_version
                         )
                         values %s
                         on conflict (company_id, article_id) do update set
                           sentiment_label = excluded.sentiment_label,
+                          control_class = excluded.control_class,
                           finance_routine = excluded.finance_routine,
                           uncertain = excluded.uncertain,
                           uncertain_reason = excluded.uncertain_reason,
@@ -214,28 +381,29 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             else:
                 insert_rows = []
                 daily_rows = []
-                for ceo_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason in mentions:
+                for ceo_id, canonical, sentiment, finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, control_class, llm_severity, llm_reason in mentions:
                     article_id = article_map.get(canonical)
                     if not article_id:
                         continue
                     resolved_sentiment = llm_sentiment_label or sentiment
                     insert_rows.append((
-                        ceo_id, article_id, sentiment, finance_routine, uncertain, uncertain_reason,
+                        ceo_id, article_id, sentiment, control_class, finance_routine, uncertain, uncertain_reason,
                         llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, "vader"
                     ))
                     daily_rows.append((
                         scored_at.date(), ceo_id, article_id, resolved_sentiment,
-                        None, finance_routine, uncertain
+                        control_class, finance_routine, uncertain
                     ))
                 if insert_rows:
                     execute_values(cur, """
                         insert into ceo_article_mentions (
-                          ceo_id, article_id, sentiment_label, finance_routine, uncertain, uncertain_reason,
+                          ceo_id, article_id, sentiment_label, control_class, finance_routine, uncertain, uncertain_reason,
                           llm_sentiment_label, llm_risk_label, llm_severity, llm_reason, scored_at, model_version
                         )
                         values %s
                         on conflict (ceo_id, article_id) do update set
                           sentiment_label = excluded.sentiment_label,
+                          control_class = excluded.control_class,
                           finance_routine = excluded.finance_routine,
                           uncertain = excluded.uncertain,
                           uncertain_reason = excluded.uncertain_reason,
