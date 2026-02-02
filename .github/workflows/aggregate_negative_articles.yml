@@ -64,6 +64,11 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL }}
           LLM_MAX_CALLS: ${{ vars.LLM_MAX_CALLS }}
           LLM_SUMMARY_MAX_CALLS: ${{ vars.LLM_SUMMARY_MAX_CALLS }}
+          SERP_TOP_STORIES_REQUIRED: ${{ vars.SERP_TOP_STORIES_REQUIRED || '1' }}
+          SERP_TOP_STORIES_NEG_MIN: ${{ vars.SERP_TOP_STORIES_NEG_MIN || '2' }}
+          SERP_GATE_MIN: ${{ vars.SERP_GATE_MIN || '1' }}
+          SERP_GATE_DAYS: ${{ vars.SERP_GATE_DAYS || '2' }}
+          SERP_GATE_DEBUG: ${{ vars.SERP_GATE_DEBUG || '1' }}
         run: |
           echo "🚀 Checking for crises and sending alerts..."
           python scripts/send_crisis_alerts.py --bucket "$GCS_BUCKET"

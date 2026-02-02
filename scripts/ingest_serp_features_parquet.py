@@ -25,6 +25,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
 FEATURES = [
     "aio",
@@ -36,38 +37,6 @@ FEATURES = [
     # "knowledge_graph",
 ]
 
-FINANCE_TERMS = [
-    r"\bearnings\b", r"\beps\b", r"\brevenue\b", r"\bguidance\b", r"\bforecast\b",
-    r"\bprice target\b", r"\bupgrade\b", r"\bdowngrade\b", r"\bdividend\b",
-    r"\bbuyback\b", r"\bshares?\b", r"\bstock\b", r"\bmarket cap\b",
-    r"\bquarterly\b", r"\bfiscal\b", r"\bprofit\b", r"\bebitda\b",
-    r"\b10-q\b", r"\b10-k\b", r"\bsec\b", r"\bipo\b"
-]
-FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
-FINANCE_SOURCES = {
-    "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
-    "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
-    "investorplace.com", "nasdaq.com", "foolcdn.com"
-}
-
-ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
-    "facebook.com",
-    "instagram.com",
-    "play.google.com",
-    "apps.apple.com",
-}
-
-UNCONTROLLED_DOMAINS: Set[str] = {
-    "wikipedia.org",
-    "youtube.com",
-    "youtu.be",
-    "tiktok.com",
-}
-
-CONTROLLED_PATH_KEYWORDS = {
-    "/leadership/", "/about/", "/governance/", "/team/", "/investors/",
-    "/board-of-directors", "/members/", "/member/"
-}
 
 
 def get_conn():
@@ -93,23 +62,6 @@ def normalize_name(name: str) -> str:
             break
     return "".join(ch for ch in name.lower() if ch.isalnum() or ch.isspace()).strip()
 
-def _norm_token(name: str) -> str:
-    return "".join(ch for ch in normalize_name(name) if ch.isalnum())
-
-def _is_brand_youtube_channel(company: str, url: str) -> bool:
-    host = _hostname(url)
-    if host not in {"youtube.com", "youtu.be"}:
-        return False
-    token = _norm_token(company)
-    if not token:
-        return False
-    try:
-        from urllib.parse import urlparse
-        path = (urlparse(url).path or "").lower()
-    except Exception:
-        path = ""
-    return token in path.replace("-", "").replace("_", "")
-
 def _hostname(url: str) -> str:
     try:
         from urllib.parse import urlparse
@@ -118,72 +70,6 @@ def _hostname(url: str) -> str:
     except Exception:
         return ""
 
-
-def _norm_token(s: str) -> str:
-    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
-
-
-def _company_handle_tokens(company: str) -> Set[str]:
-    words = [w for w in re.split(r"\W+", company or "") if w]
-    tokens = set()
-    full = _norm_token(company)
-    if full:
-        tokens.add(full)
-    if len(words) >= 2:
-        tokens.add(_norm_token("".join(words[:2])))
-    elif words:
-        tokens.add(_norm_token(words[0]))
-    return {t for t in tokens if len(t) >= 4}
-
-
-def _is_linkedin_company_page(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host != "linkedin.com":
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path.lower().startswith("company/"):
-        return False
-    slug = path.split("/", 1)[1] if "/" in path else ""
-    slug = slug.split("/", 1)[0] if slug else ""
-    if not slug:
-        return False
-    brand_token = _norm_token(company)
-    slug_token = _norm_token(slug)
-    return bool(brand_token) and brand_token in slug_token
-
-
-def _is_x_company_handle(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"x.com", "twitter.com"}:
-        return False
-    path = (parsed.path or "").strip("/")
-    handle = path.split("/", 1)[0] if path else ""
-    if not handle:
-        return False
-    handle_token = _norm_token(handle)
-    if not handle_token:
-        return False
-    for token in _company_handle_tokens(company):
-        if token and token in handle_token:
-            return True
-    return False
-
-def _is_financial_routine(title: str, snippet: str = "", url: str = "", source: str = "") -> bool:
-    hay = f"{title} {snippet}".strip()
-    if FINANCE_TERMS_RE.search(hay):
-        return True
-    host = _hostname(url)
-    if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
-        return True
-    if source and any(source.lower().endswith(d) for d in FINANCE_SOURCES):
-        return True
-    return False
 
 def _vader_label(analyzer: SentimentIntensityAnalyzer, text: str) -> Tuple[str, float]:
     scores = analyzer.polarity_scores(text or "")
@@ -253,66 +139,10 @@ def load_company_domains(cur) -> Dict[str, Set[str]]:
             continue
         if not websites:
             continue
-        urls = str(websites).split("|")
-        for url in urls:
-            url = str(url or "").strip()
-            if not url or url.lower() == "nan":
-                continue
-            if not url.startswith(("http://", "https://")):
-                url = f"http://{url}"
-            host = _hostname(url)
-            if host and "." in host:
-                company_domains.setdefault(company, set()).add(host)
+        domains = parse_company_domains(str(websites))
+        if domains:
+            company_domains.setdefault(company, set()).update(domains)
     return company_domains
-
-
-def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
-    host = _hostname(url)
-    if not host:
-        return False
-
-    path = ""
-    try:
-        from urllib.parse import urlparse
-        path = (urlparse(url).path or "").lower()
-    except Exception:
-        path = ""
-
-    if host == "facebook.com":
-        return "/posts/" not in path
-    if host == "instagram.com":
-        return "/p/" not in path
-    if _is_linkedin_company_page(company, url):
-        return True
-    if _is_x_company_handle(company, url):
-        return True
-
-    if host in UNCONTROLLED_DOMAINS or any(host.endswith("." + d) for d in UNCONTROLLED_DOMAINS):
-        return _is_brand_youtube_channel(company, url)
-
-    if _is_brand_youtube_channel(company, url):
-        return True
-
-    for good in ALWAYS_CONTROLLED_DOMAINS:
-        if host == good or host.endswith("." + good):
-            return True
-
-    if any(k in path for k in CONTROLLED_PATH_KEYWORDS):
-        return True
-
-    company_specific_domains = company_domains.get(company, set())
-    for rd in company_specific_domains:
-        if host == rd or host.endswith("." + rd):
-            return True
-
-    brand_token = _norm_token(company)
-    if brand_token:
-        host_parts = host.split(".")
-        normalized_parts = [_norm_token(part) for part in host_parts if part]
-        if brand_token in normalized_parts[:-1]:
-            return True
-
-    return False
 
 
 def parquet_url(date_str: str, entity_type: str) -> str:
@@ -367,7 +197,7 @@ def load_aio_citation_sentiment(path_or_url: str):
             snippet = str(ref.get("snippet") or "")
             link = str(ref.get("link") or "")
             source = str(ref.get("source") or "")
-            if _is_financial_routine(title, snippet, link, source):
+            if is_financial_routine(title, snippet=snippet, url=link, source=source):
                 label = "neutral"
             else:
                 label, _ = _vader_label(analyzer, f"{title} {snippet}".strip())
@@ -545,7 +375,7 @@ def _item_hash(url: str, title: str, snippet: str, feature_type: str, position: 
 
 
 def _sentiment_for_item(analyzer: SentimentIntensityAnalyzer, title: str, snippet: str, url: str, source: str):
-    finance_routine = _is_financial_routine(title, snippet, url, source)
+    finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
     if finance_routine:
         return "neutral", True
     label, _ = _vader_label(analyzer, f"{title} {snippet}".strip())
@@ -674,7 +504,13 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
             )
             control_class = None
             if url and company_name:
-                control_class = "controlled" if classify_control(company_name, url, company_domains) else "uncontrolled"
+                control_class = "controlled" if classify_control(
+                    company_name,
+                    url,
+                    company_domains,
+                    entity_type="ceo" if entity_type == "ceo" else "company",
+                    person_name=entity_name if entity_type == "ceo" else None,
+                ) else "uncontrolled"
 
             url_hash = _item_hash(url, title, snippet, feature, position or 0)
             rows.append((

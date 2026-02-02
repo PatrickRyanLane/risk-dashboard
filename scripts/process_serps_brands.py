@@ -29,6 +29,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
+from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
 # Config / constants
 S3_URL_TEMPLATE = (
@@ -41,12 +42,6 @@ OUT_DAILY_DIR = "data/processed_serps"
 OUT_ROLLUP = "data/daily_counts/brand-serps-daily-counts-chart.csv"
 
 FORCE_POSITIVE_IF_CONTROLLED = True
-ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
-    "facebook.com",
-    "instagram.com",
-    "play.google.com",
-    "apps.apple.com",
-}
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -101,21 +96,6 @@ LEGAL_TROUBLE_TERMS = [
 ]
 LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
-FINANCE_TERMS = [
-    r"\bearnings\b", r"\beps\b", r"\brevenue\b", r"\bguidance\b", r"\bforecast\b",
-    r"\bprice target\b", r"\bupgrade\b", r"\bdowngrade\b", r"\bdividend\b",
-    r"\bbuyback\b", r"\bshares?\b", r"\bstock\b", r"\bmarket cap\b",
-    r"\bquarterly\b", r"\bfiscal\b", r"\bprofit\b", r"\bEBITDA\b",
-    r"\b10-q\b", r"\b10-k\b", r"\bsec\b", r"\bipo\b"
-]
-FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
-FINANCE_SOURCES = {
-    "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
-    "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
-    "investorplace.com", "nasdaq.com", "foolcdn.com"
-}
-TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
-
 
 def _title_mentions_legal_trouble(title: str) -> bool:
     """Return True if title mentions legal trouble terms (force negative)."""
@@ -125,17 +105,6 @@ def _title_mentions_legal_trouble(title: str) -> bool:
 def _should_neutralize_title(title: str) -> bool:
     """Return True if the title contains terms that should neutralize sentiment."""
     return bool(NEUTRALIZE_TITLE_RE.search(title or ""))
-
-def _is_financial_routine(title: str, snippet: str = "", url: str = "") -> bool:
-    hay = f"{title} {snippet}".strip()
-    if FINANCE_TERMS_RE.search(hay):
-        return True
-    if TICKER_RE.search(title or ""):
-        return True
-    host = _hostname(url)
-    if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
-        return True
-    return False
 
 # Argument parsing
 def parse_args() -> argparse.Namespace:
@@ -173,97 +142,6 @@ def _hostname(url: str) -> str:
         return host.replace("www.", "")
     except Exception:
         return ""
-
-def _norm_token(s: str) -> str:
-    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
-
-def _company_handle_tokens(company: str) -> Set[str]:
-    words = [w for w in re.split(r"\W+", company or "") if w]
-    tokens = set()
-    full = _norm_token(company)
-    if full:
-        tokens.add(full)
-    if len(words) >= 2:
-        tokens.add(_norm_token("".join(words[:2])))
-    elif words:
-        tokens.add(_norm_token(words[0]))
-    return {t for t in tokens if len(t) >= 4}
-
-
-def _is_brand_youtube_channel(company: str, url: str) -> bool:
-    """
-    Treat brand-owned YouTube channels as controlled if the path slug
-    contains the normalized brand token.
-    """
-    if not url or not company:
-        return False
-
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-
-    if host not in {"youtube.com", "m.youtube.com"}:
-        return False
-
-    brand_token = _norm_token(company)
-    if not brand_token:
-        return False
-
-    path = (parsed.path or "").strip("/")
-
-    if not path:
-        return False
-
-    if path.lower().startswith("user/"):
-        slug = path[5:]
-    elif path.startswith("@"):
-        slug = path[1:]
-    else:
-        slug = path.split("/", 1)[0]
-
-    if not slug:
-        return False
-
-    slug_token = _norm_token(slug)
-    return bool(slug_token) and brand_token in slug_token
-
-
-def _is_linkedin_company_page(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host != "linkedin.com":
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path.lower().startswith("company/"):
-        return False
-    slug = path.split("/", 1)[1] if "/" in path else ""
-    slug = slug.split("/", 1)[0] if slug else ""
-    if not slug:
-        return False
-    brand_token = _norm_token(company)
-    slug_token = _norm_token(slug)
-    return bool(brand_token) and brand_token in slug_token
-
-
-def _is_x_company_handle(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"x.com", "twitter.com"}:
-        return False
-    path = (parsed.path or "").strip("/")
-    handle = path.split("/", 1)[0] if path else ""
-    if not handle:
-        return False
-    handle_token = _norm_token(handle)
-    if not handle_token:
-        return False
-    for token in _company_handle_tokens(company):
-        if token and token in handle_token:
-            return True
-    return False
 
 def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[str]]:
     """
@@ -320,19 +198,9 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
             if company not in company_domains:
                 company_domains[company] = set()
             
-            urls = val.split("|")
-            
-            for url in urls:
-                url = url.strip()
-                if not url or url.lower() == "nan":
-                    continue
-                
-                if not url.startswith(("http://", "https://")):
-                    url = f"http://{url}"
-                
-                host = _hostname(url)
-                if host and "." in host:
-                    company_domains[company].add(host)
+            domains = parse_company_domains(str(val))
+            if domains:
+                company_domains[company].update(domains)
         
         total_domains = sum(len(domains) for domains in company_domains.values())
         print(f"[OK] Loaded {len(company_domains)} companies with {total_domains} total controlled domains")
@@ -341,50 +209,6 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
         print(f"[WARN] Failed reading roster: {e}")
 
     return company_domains
-
-def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
-    """
-    Classify if a URL is controlled by a company.
-    """
-    host = _hostname(url)
-    if not host:
-        return False
-
-    path = ""
-    try:
-        path = (urlparse(url).path or "").lower()
-    except Exception:
-        path = ""
-
-    if host == "facebook.com":
-        return "/posts/" not in path
-    if host == "instagram.com":
-        return "/p/" not in path
-
-    if _is_brand_youtube_channel(company, url):
-        return True
-    if _is_linkedin_company_page(company, url):
-        return True
-    if _is_x_company_handle(company, url):
-        return True
-
-    for good in ALWAYS_CONTROLLED_DOMAINS:
-        if host == good or host.endswith("." + good):
-            return True
-
-    company_specific_domains = company_domains.get(company, set())
-    for rd in company_specific_domains:
-        if host == rd or host.endswith("." + rd):
-            return True
-
-    brand_token = _norm_token(company)
-    if brand_token:
-        host_parts = host.split('.')
-        normalized_parts = [_norm_token(part) for part in host_parts if part]
-        if brand_token in normalized_parts[:-1]:
-            return True
-
-    return False
 
 def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[str, float]:
     """
@@ -450,7 +274,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "negative"
             forced_reason = "legal"
         # 3) Neutralize routine financial coverage
-        elif _is_financial_routine(title, snippet, url):
+        elif is_financial_routine(title, snippet=snippet, url=url):
             label = "neutral"
             forced_reason = "finance"
         # 4) Neutralize certain terms
@@ -467,7 +291,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             if FORCE_POSITIVE_IF_CONTROLLED and controlled:
                 label = "positive"
 
-        finance_routine = _is_financial_routine(title, snippet, url)
+        finance_routine = is_financial_routine(title, snippet=snippet, url=url)
         is_forced = bool(forced_reason)
         uncertain, uncertain_reason = is_uncertain(
             label,

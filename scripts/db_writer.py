@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import psycopg2
 from psycopg2.extras import execute_values
 
+from risk_rules import classify_control, parse_company_domains
 
 def get_conn():
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
@@ -73,168 +74,12 @@ def url_hash(url: str) -> str:
 def parse_bool(val):
     return str(val).strip().lower() in {"true", "1", "yes", "y", "t", "controlled"}
 
-ALWAYS_CONTROLLED_DOMAINS = {
-    "facebook.com",
-    "instagram.com",
-    "play.google.com",
-    "apps.apple.com",
-}
-
-
-def _hostname(url: str) -> str:
-    try:
-        host = (urlparse(url).hostname or "").lower()
-        return host.replace("www.", "")
-    except Exception:
-        return ""
-
-
-def _norm_token(s: str) -> str:
-    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
-
-
-def _company_handle_tokens(company: str) -> set[str]:
-    import re
-    words = [w for w in re.split(r"\W+", company or "") if w]
-    tokens = set()
-    full = _norm_token(company)
-    if full:
-        tokens.add(full)
-    if len(words) >= 2:
-        tokens.add(_norm_token("".join(words[:2])))
-    elif words:
-        tokens.add(_norm_token(words[0]))
-    return {t for t in tokens if len(t) >= 4}
-
-
-def _is_brand_youtube_channel(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"youtube.com", "m.youtube.com"}:
-        return False
-    brand_token = _norm_token(company)
-    if not brand_token:
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path:
-        return False
-    if path.lower().startswith("user/"):
-        slug = path[5:]
-    elif path.startswith("@"):
-        slug = path[1:]
-    else:
-        slug = path.split("/", 1)[0]
-    if not slug:
-        return False
-    slug_token = _norm_token(slug)
-    return bool(slug_token) and brand_token in slug_token
-
-
-def _is_linkedin_company_page(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host != "linkedin.com":
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path.lower().startswith("company/"):
-        return False
-    slug = path.split("/", 1)[1] if "/" in path else ""
-    slug = slug.split("/", 1)[0] if slug else ""
-    if not slug:
-        return False
-    brand_token = _norm_token(company)
-    slug_token = _norm_token(slug)
-    return bool(brand_token) and brand_token in slug_token
-
-
-def _is_x_company_handle(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"x.com", "twitter.com"}:
-        return False
-    path = (parsed.path or "").strip("/")
-    handle = path.split("/", 1)[0] if path else ""
-    if not handle:
-        return False
-    handle_token = _norm_token(handle)
-    if not handle_token:
-        return False
-    for token in _company_handle_tokens(company):
-        if token and token in handle_token:
-            return True
-    return False
-
-
-def _parse_company_domains(websites: str) -> set[str]:
-    if not websites:
-        return set()
-    domains = set()
-    for url in websites.split("|"):
-        url = (url or "").strip()
-        if not url:
-            continue
-        if not url.startswith(("http://", "https://")):
-            url = f"http://{url}"
-        host = _hostname(url)
-        if host and "." in host:
-            domains.add(host)
-    return domains
-
-
 def fetch_company_domains(cur) -> Dict[str, set[str]]:
     cur.execute("select name, websites from companies")
     domains = {}
     for name, websites in cur.fetchall():
-        domains[name] = _parse_company_domains(websites or "")
+        domains[name] = parse_company_domains(websites or "")
     return domains
-
-
-def classify_control(company: str, url: str, company_domains: Dict[str, set[str]]) -> bool:
-    host = _hostname(url)
-    if not host:
-        return False
-
-    path = ""
-    try:
-        path = (urlparse(url).path or "").lower()
-    except Exception:
-        path = ""
-
-    if host == "facebook.com":
-        return "/posts/" not in path
-    if host == "instagram.com":
-        return "/p/" not in path
-
-    if _is_brand_youtube_channel(company, url):
-        return True
-    if _is_linkedin_company_page(company, url):
-        return True
-    if _is_x_company_handle(company, url):
-        return True
-
-    for good in ALWAYS_CONTROLLED_DOMAINS:
-        if host == good or host.endswith("." + good):
-            return True
-
-    company_specific_domains = company_domains.get(company, set())
-    for rd in company_specific_domains:
-        if host == rd or host.endswith("." + rd):
-            return True
-
-    brand_token = _norm_token(company)
-    if brand_token:
-        host_parts = host.split(".")
-        normalized_parts = [_norm_token(part) for part in host_parts if part]
-        if brand_token in normalized_parts[:-1]:
-            return True
-
-    return False
 
 
 def fetch_company_map(cur) -> Dict[str, str]:
@@ -302,7 +147,7 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             ceo_id = ceo_map.get((ceo, company_id))
             if not ceo_id:
                 continue
-            control_class = "controlled" if classify_control(company, url, company_domains) else "uncontrolled"
+            control_class = "controlled" if classify_control(company, url, company_domains, entity_type="ceo", person_name=ceo) else "uncontrolled"
             mentions.append((ceo_id, canonical, sentiment, finance_routine, uncertain,
                              uncertain_reason, llm_sentiment_label, llm_risk_label, control_class,
                              llm_severity, llm_reason))

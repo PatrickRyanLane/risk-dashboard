@@ -25,6 +25,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_articles_mentions
+from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
 # ============================================================================
 # WORD FILTERING RULES
@@ -70,22 +71,6 @@ ALWAYS_NEGATIVE_TERMS = [
 ]
 ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
 
-FINANCE_TERMS = [
-    r"\bearnings\b", r"\beps\b", r"\brevenue\b", r"\bguidance\b", r"\bforecast\b",
-    r"\bprice target\b", r"\bupgrade\b", r"\bdowngrade\b", r"\bdividend\b",
-    r"\bbuyback\b", r"\bshares?\b", r"\bstock\b", r"\bmarket cap\b",
-    r"\bquarterly\b", r"\bfiscal\b", r"\bprofit\b", r"\bEBITDA\b",
-    r"\b10-q\b", r"\b10-k\b", r"\bsec\b", r"\bipo\b"
-]
-FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
-FINANCE_SOURCES = {
-    "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
-    "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
-    "investorplace.com", "nasdaq.com", "foolcdn.com"
-}
-TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
-
-
 def _should_force_negative_title(title: str) -> bool:
     """Return True if title contains CEO-specific negative terms."""
     return bool(ALWAYS_NEGATIVE_RE.search(title or ""))
@@ -104,133 +89,6 @@ def _is_reddit_source(source: str) -> bool:
     if not source:
         return False
     return "reddit" in source.lower()
-
-def _hostname(url: str) -> str:
-    try:
-        host = (urlparse(url or "").hostname or "").lower()
-        return host.replace("www.", "")
-    except Exception:
-        return ""
-
-def _is_financial_routine(title: str, url: str = "", source: str = "") -> bool:
-    hay = f"{title} {source}".strip()
-    if FINANCE_TERMS_RE.search(hay):
-        return True
-    if TICKER_RE.search(title or ""):
-        return True
-    host = _hostname(url)
-    if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
-        return True
-    return False
-
-
-# ============================================================================
-# CONTROL CLASSIFICATION (parity with SERP rules)
-# ============================================================================
-ALWAYS_CONTROLLED_DOMAINS = {
-    "facebook.com",
-    "instagram.com",
-    "play.google.com",
-    "apps.apple.com",
-}
-
-
-def _norm_token(s: str) -> str:
-    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
-
-
-def _company_handle_tokens(company: str) -> set[str]:
-    words = [w for w in re.split(r"\W+", company or "") if w]
-    tokens = set()
-    full = _norm_token(company)
-    if full:
-        tokens.add(full)
-    if len(words) >= 2:
-        tokens.add(_norm_token("".join(words[:2])))
-    elif words:
-        tokens.add(_norm_token(words[0]))
-    return {t for t in tokens if len(t) >= 4}
-
-
-def _is_brand_youtube_channel(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"youtube.com", "m.youtube.com"}:
-        return False
-    brand_token = _norm_token(company)
-    if not brand_token:
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path:
-        return False
-    if path.lower().startswith("user/"):
-        slug = path[5:]
-    elif path.startswith("@"):
-        slug = path[1:]
-    else:
-        slug = path.split("/", 1)[0]
-    if not slug:
-        return False
-    slug_token = _norm_token(slug)
-    return bool(slug_token) and brand_token in slug_token
-
-
-def _is_linkedin_company_page(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host != "linkedin.com":
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path.lower().startswith("company/"):
-        return False
-    slug = path.split("/", 1)[1] if "/" in path else ""
-    slug = slug.split("/", 1)[0] if slug else ""
-    if not slug:
-        return False
-    brand_token = _norm_token(company)
-    slug_token = _norm_token(slug)
-    return bool(brand_token) and brand_token in slug_token
-
-
-def _is_x_company_handle(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"x.com", "twitter.com"}:
-        return False
-    path = (parsed.path or "").strip("/")
-    handle = path.split("/", 1)[0] if path else ""
-    if not handle:
-        return False
-    handle_token = _norm_token(handle)
-    if not handle_token:
-        return False
-    for token in _company_handle_tokens(company):
-        if token and token in handle_token:
-            return True
-    return False
-
-
-def _parse_company_domains(websites: str) -> set[str]:
-    if not websites:
-        return set()
-    domains = set()
-    for url in websites.split("|"):
-        url = (url or "").strip()
-        if not url:
-            continue
-        if not url.startswith(("http://", "https://")):
-            url = f"http://{url}"
-        host = _hostname(url)
-        if host and "." in host:
-            domains.add(host)
-    return domains
-
 
 def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
     company_domains: dict[str, set[str]] = {}
@@ -265,44 +123,12 @@ def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
             val = row[website_col]
             if pd.isna(val):
                 continue
-            domains = _parse_company_domains(str(val))
+            domains = parse_company_domains(str(val))
             if domains:
                 company_domains[company] = domains
     except Exception as e:
         print(f"[WARN] Failed reading roster domains: {e}")
     return company_domains
-
-
-def classify_control(company: str, url: str, company_domains: dict[str, set[str]]) -> bool:
-    host = _hostname(url)
-    if not host:
-        return False
-    try:
-        path = (urlparse(url).path or "").lower()
-    except Exception:
-        path = ""
-    if host == "facebook.com":
-        return "/posts/" not in path
-    if host == "instagram.com":
-        return "/p/" not in path
-    if _is_brand_youtube_channel(company, url):
-        return True
-    if _is_linkedin_company_page(company, url):
-        return True
-    if _is_x_company_handle(company, url):
-        return True
-    for good in ALWAYS_CONTROLLED_DOMAINS:
-        if host == good or host.endswith("." + good):
-            return True
-    for rd in company_domains.get(company, set()):
-        if host == rd or host.endswith("." + rd):
-            return True
-    brand_token = _norm_token(company)
-    if brand_token:
-        parts = [_norm_token(part) for part in host.split(".") if part]
-        if brand_token in parts[:-1]:
-            return True
-    return False
 
 
 # Paths
@@ -363,7 +189,7 @@ def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "",
         return "negative", flags
 
     # 2. Neutralize routine financial coverage
-    if _is_financial_routine(title, url, source):
+    if is_financial_routine(title, url=url, source=source):
         flags["is_finance"] = True
         flags["forced_reason"] = "finance"
         return "neutral", flags
@@ -425,7 +251,7 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         if not title:
             continue
             
-        finance_routine = _is_financial_routine(title, link, source)
+        finance_routine = is_financial_routine(title, url=link, source=source)
         sent, flags = classify(title, analyzer, source, link)
         finance_routine = flags.get("is_finance", False)
         is_forced = bool(flags.get("forced_reason"))
@@ -440,7 +266,7 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
-        control_class = "controlled" if classify_control(company, link, company_domains) else "uncontrolled"
+        control_class = "controlled" if classify_control(company, link, company_domains, entity_type="ceo", person_name=ceo) else "uncontrolled"
         
         rows.append({
             "ceo": ceo,

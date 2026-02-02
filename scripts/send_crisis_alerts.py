@@ -38,11 +38,13 @@ LLM_CACHE_DIR = "data/llm_cache"
 NEGATIVE_HISTORY_DAYS = int(os.getenv("NEGATIVE_HISTORY_DAYS", "180"))
 RISK_LABEL_WEIGHT = float(os.getenv("RISK_LABEL_WEIGHT", "3"))
 
-# SERP gating (negative + uncontrolled)
+# SERP gating (negative + uncontrolled: same URL must be negative AND uncontrolled)
 SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "1") == "1"
 SERP_GATE_MIN = int(os.getenv("SERP_GATE_MIN", "2"))
 SERP_GATE_DAYS = int(os.getenv("SERP_GATE_DAYS", "2"))
 SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
+SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
+SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "1"))
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -191,6 +193,130 @@ def load_serp_counts(storage, date_str):
             mask = (df["sentiment"] == "negative") & (~df["controlled"])
             ceo_counts = df[mask].groupby(["company", "ceo"]).size().to_dict()
 
+    return brand_counts, ceo_counts
+
+
+def load_serp_counts_db(days: int):
+    conn = get_db_conn()
+    if conn is None:
+        return {}, {}, {}, {}
+    brand_uncontrolled = {}
+    ceo_uncontrolled = {}
+    brand_negative = {}
+    ceo_negative = {}
+    sql = """
+        with brand_rows as (
+            select c.name as company,
+                   sum(case when coalesce(ov.override_sentiment_label, r.llm_sentiment_label, r.sentiment_label) = 'negative' then 1 else 0 end) as neg_count,
+                   sum(case when coalesce(ov.override_sentiment_label, r.llm_sentiment_label, r.sentiment_label) = 'negative'
+                             and coalesce(ov.override_control_class, r.llm_control_class, r.control_class) = 'uncontrolled'
+                            then 1 else 0 end) as neg_uncontrolled
+            from serp_runs sr
+            join companies c on c.id = sr.company_id
+            join serp_results r on r.serp_run_id = sr.id
+            left join serp_result_overrides ov on ov.serp_result_id = r.id
+            where sr.entity_type = 'company'
+              and sr.run_at::date >= (current_date - (%s || ' days')::interval)
+            group by c.name
+        ),
+        ceo_rows as (
+            select c.name as company, ceo.name as ceo,
+                   sum(case when coalesce(ov.override_sentiment_label, r.llm_sentiment_label, r.sentiment_label) = 'negative' then 1 else 0 end) as neg_count,
+                   sum(case when coalesce(ov.override_sentiment_label, r.llm_sentiment_label, r.sentiment_label) = 'negative'
+                             and coalesce(ov.override_control_class, r.llm_control_class, r.control_class) = 'uncontrolled'
+                            then 1 else 0 end) as neg_uncontrolled
+            from serp_runs sr
+            join ceos ceo on ceo.id = sr.ceo_id
+            join companies c on c.id = ceo.company_id
+            join serp_results r on r.serp_run_id = sr.id
+            left join serp_result_overrides ov on ov.serp_result_id = r.id
+            where sr.entity_type = 'ceo'
+              and sr.run_at::date >= (current_date - (%s || ' days')::interval)
+            group by c.name, ceo.name
+        )
+        select 'brand'::text as kind, company, null::text as ceo, neg_count, neg_uncontrolled from brand_rows
+        union all
+        select 'ceo'::text as kind, company, ceo, neg_count, neg_uncontrolled from ceo_rows
+    """
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (max(1, days), max(1, days)))
+                for kind, company, ceo, neg_count, neg_uncontrolled in cur.fetchall():
+                    if kind == "brand":
+                        if company:
+                            brand_negative[company] = int(neg_count or 0)
+                            brand_uncontrolled[company] = int(neg_uncontrolled or 0)
+                    else:
+                        key = (company, ceo)
+                        ceo_negative[key] = int(neg_count or 0)
+                        ceo_uncontrolled[key] = int(neg_uncontrolled or 0)
+    except Exception as exc:
+        print(f"⚠️ DB SERP load failed, falling back to CSV: {exc}")
+        return {}, {}, {}, {}
+    finally:
+        conn.close()
+    return brand_uncontrolled, ceo_uncontrolled, brand_negative, ceo_negative
+
+
+def load_serp_negative_counts(storage, date_str):
+    brand_counts = {}
+    ceo_counts = {}
+
+    brand_path = f"data/processed_serps/{date_str}-brand-serps-modal.csv"
+    ceo_path = f"data/processed_serps/{date_str}-ceo-serps-modal.csv"
+
+    if storage.file_exists(brand_path):
+        df = storage.read_csv(brand_path)
+        if not df.empty:
+            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
+            mask = df["sentiment"] == "negative"
+            brand_counts = df[mask].groupby("company").size().to_dict()
+
+    if storage.file_exists(ceo_path):
+        df = storage.read_csv(ceo_path)
+        if not df.empty:
+            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
+            mask = df["sentiment"] == "negative"
+            ceo_counts = df[mask].groupby(["company", "ceo"]).size().to_dict()
+
+    return brand_counts, ceo_counts
+
+
+def load_top_stories_counts_db(days: int):
+    conn = get_db_conn()
+    if conn is None:
+        return {}, {}
+    brand_counts = {}
+    ceo_counts = {}
+    sql = """
+        select entity_type, entity_name,
+               sum(total_count) as total_count,
+               sum(negative_count) as negative_count
+        from serp_feature_daily
+        where feature_type = 'top_stories_items'
+          and date >= (current_date - (%s || ' days')::interval)
+        group by entity_type, entity_name
+    """
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (max(1, days),))
+                for entity_type, entity_name, total_count, negative_count in cur.fetchall():
+                    key = (entity_name or "").strip()
+                    if not key:
+                        continue
+                    total = int(total_count or 0)
+                    neg = int(negative_count or 0)
+                    if entity_type in {"brand", "company"}:
+                        brand_counts[key] = (total, neg)
+                    elif entity_type == "ceo":
+                        ceo_counts[key] = (total, neg)
+    except Exception as exc:
+        print(f"⚠️ DB top stories load failed: {exc}")
+        return {}, {}
+    finally:
+        conn.close()
     return brand_counts, ceo_counts
 
 def get_salesforce_owner(brand_name):
@@ -456,14 +582,24 @@ def main():
 
     serp_brand_counts = {}
     serp_ceo_counts = {}
+    serp_brand_neg_counts = {}
+    serp_ceo_neg_counts = {}
+    top_stories_brand = {}
+    top_stories_ceo = {}
     if SERP_GATE_ENABLED:
-        for delta in range(SERP_GATE_DAYS):
-            dstr = (current_time.date() - timedelta(days=delta)).strftime('%Y-%m-%d')
-            b_counts, c_counts = load_serp_counts(storage, dstr)
-            for company, count in b_counts.items():
-                serp_brand_counts[company] = serp_brand_counts.get(company, 0) + int(count)
-            for key, count in c_counts.items():
-                serp_ceo_counts[key] = serp_ceo_counts.get(key, 0) + int(count)
+        b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
+        if b_unctrl or c_unctrl:
+            serp_brand_counts = b_unctrl
+            serp_ceo_counts = c_unctrl
+        else:
+            for delta in range(SERP_GATE_DAYS):
+                dstr = (current_time.date() - timedelta(days=delta)).strftime('%Y-%m-%d')
+                b_counts, c_counts = load_serp_counts(storage, dstr)
+                for company, count in b_counts.items():
+                    serp_brand_counts[company] = serp_brand_counts.get(company, 0) + int(count)
+                for key, count in c_counts.items():
+                    serp_ceo_counts[key] = serp_ceo_counts.get(key, 0) + int(count)
+        top_stories_brand, top_stories_ceo = load_top_stories_counts_db(SERP_GATE_DAYS)
     
     for _, row in df.iterrows():
         # FLOOD PROTECTION CHECK
@@ -489,30 +625,42 @@ def main():
         if row_date != server_now and row_date != server_now - timedelta(days=1):
             continue
 
-        # B. DYNAMIC THRESHOLD CHECK
-        stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
-        company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
-        
-        history_points = company_stats['count']
-        p97 = company_stats['<lambda_0>']
-        
-        if history_points >= MIN_HISTORY_POINTS:
-            if count < MIN_NEGATIVE_ARTICLES: continue
-            if count < p97: continue
-            threshold_msg = f"P97 ({p97:.1f})"
-            baseline_val = p97
-        else:
-            if count < HARD_FLOOR_NEW_CO: continue
-            threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
-            baseline_val = HARD_FLOOR_NEW_CO
+        # B. DYNAMIC THRESHOLD CHECK (disabled)
+        # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
+        # company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
+        # history_points = company_stats['count']
+        # p97 = company_stats['<lambda_0>']
+        # if history_points >= MIN_HISTORY_POINTS:
+        #     if count < MIN_NEGATIVE_ARTICLES: continue
+        #     if count < p97: continue
+        #     threshold_msg = f"P97 ({p97:.1f})"
+        #     baseline_val = p97
+        # else:
+        #     if count < HARD_FLOOR_NEW_CO: continue
+        #     threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
+        #     baseline_val = HARD_FLOOR_NEW_CO
+        # if SERP_GATE_DEBUG:
+        #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
 
         # B2. SERP CONFIRMATION GATE
         serp_count = 0
         if SERP_GATE_ENABLED:
             if article_type == 'ceo':
                 serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
+                top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
             else:
                 serp_count = serp_brand_counts.get(brand, 0)
+                top_total, top_neg = top_stories_brand.get(brand, (0, 0))
+            if SERP_GATE_DEBUG:
+                print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count} top_total={top_total} top_neg={top_neg}")
+            if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
+                if SERP_GATE_DEBUG:
+                    print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
+                continue
+            if top_neg < SERP_TOP_STORIES_NEG_MIN:
+                if SERP_GATE_DEBUG:
+                    print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
+                continue
             if serp_count < SERP_GATE_MIN:
                 if SERP_GATE_DEBUG:
                     print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")

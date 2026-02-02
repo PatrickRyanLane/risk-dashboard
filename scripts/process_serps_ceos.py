@@ -31,6 +31,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
+from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
 # Config
 S3_URL_TEMPLATE = (
@@ -43,24 +44,6 @@ OUT_DAILY_DIR = "data/processed_serps"
 OUT_ROLLUP = "data/daily_counts/ceo-serps-daily-counts-chart.csv"
 
 FORCE_POSITIVE_IF_CONTROLLED = True
-ALWAYS_CONTROLLED_DOMAINS: Set[str] = {
-    "facebook.com",
-    "instagram.com",
-    "play.google.com",
-    "apps.apple.com",
-}
-
-# ============================================================================
-# CEO-SPECIFIC CONTROL RULES
-# ============================================================================
-UNCONTROLLED_DOMAINS = {
-    "wikipedia.org", "youtube.com", "youtu.be", "tiktok.com"
-}
-
-CONTROLLED_PATH_KEYWORDS = {
-    "/leadership/", "/about/", "/governance/", "/team/", "/investors/", 
-    "/board-of-directors", "/members/", "/member/"
-}
 
 # ============================================================================
 # CEO-SPECIFIC WORD FILTERING RULES
@@ -108,20 +91,6 @@ ALWAYS_NEGATIVE_TERMS = [
 ]
 ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), re.IGNORECASE)
 
-FINANCE_TERMS = [
-    r"\bearnings\b", r"\beps\b", r"\brevenue\b", r"\bguidance\b", r"\bforecast\b",
-    r"\bprice target\b", r"\bupgrade\b", r"\bdowngrade\b", r"\bdividend\b",
-    r"\bbuyback\b", r"\bshares?\b", r"\bstock\b", r"\bmarket cap\b",
-    r"\bquarterly\b", r"\bfiscal\b", r"\bprofit\b", r"\bEBITDA\b",
-    r"\b10-q\b", r"\b10-k\b", r"\bsec\b", r"\bipo\b"
-]
-FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
-FINANCE_SOURCES = {
-    "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
-    "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
-    "investorplace.com", "nasdaq.com", "foolcdn.com"
-}
-TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
 
 # Legal suffixes to strip when matching company names
 LEGAL_SUFFIXES = {"inc", "inc.", "corp", "co", "co.", "llc", "plc", "ltd", "ltd.", "ag", "sa", "nv"}
@@ -138,18 +107,6 @@ def _should_force_negative_title(title: str) -> bool:
 def _should_neutralize_title(title: str) -> bool:
     """Return True if the title contains terms that should neutralize sentiment."""
     return bool(NEUTRALIZE_TITLE_RE.search(str(title or "")))
-
-def _is_financial_routine(title: str, snippet: str = "", url: str = "") -> bool:
-    hay = f"{title} {snippet}".strip()
-    if FINANCE_TERMS_RE.search(hay):
-        return True
-    if TICKER_RE.search(title or ""):
-        return True
-    host = _hostname(url)
-    if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
-        return True
-    return False
-
 
 def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[str, float]:
     """
@@ -180,64 +137,6 @@ def simplify_company(s: str) -> str:
     toks = norm(s).split()
     toks = [t for t in toks if t not in LEGAL_SUFFIXES]
     return " ".join(toks)
-
-
-def _norm_token(s: str) -> str:
-    """Normalize to alphanumeric only (no spaces)."""
-    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
-
-
-def _company_handle_tokens(company: str) -> Set[str]:
-    simplified = simplify_company(company)
-    words = [w for w in re.split(r"\W+", simplified or "") if w]
-    tokens = set()
-    full = _norm_token(simplified)
-    if full:
-        tokens.add(full)
-    if len(words) >= 2:
-        tokens.add(_norm_token("".join(words[:2])))
-    elif words:
-        tokens.add(_norm_token(words[0]))
-    return {t for t in tokens if len(t) >= 4}
-
-
-def _is_linkedin_company_page(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host != "linkedin.com":
-        return False
-    path = (parsed.path or "").strip("/")
-    if not path.lower().startswith("company/"):
-        return False
-    slug = path.split("/", 1)[1] if "/" in path else ""
-    slug = slug.split("/", 1)[0] if slug else ""
-    if not slug:
-        return False
-    brand_token = _norm_token(company)
-    slug_token = _norm_token(slug)
-    return bool(brand_token) and brand_token in slug_token
-
-
-def _is_x_company_handle(company: str, url: str) -> bool:
-    if not url or not company:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower().replace("www.", "")
-    if host not in {"x.com", "twitter.com"}:
-        return False
-    path = (parsed.path or "").strip("/")
-    handle = path.split("/", 1)[0] if path else ""
-    if not handle:
-        return False
-    handle_token = _norm_token(handle)
-    if not handle_token:
-        return False
-    for token in _company_handle_tokens(company):
-        if token and token in handle_token:
-            return True
-    return False
 
 
 def _hostname(url: str) -> str:
@@ -359,20 +258,9 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
                 if not val or val.lower() == "nan":
                     continue
                 
-                if company not in company_domains:
-                    company_domains[company] = set()
-                
-                # Support pipe-separated URLs
-                urls = val.split("|")
-                for url in urls:
-                    url = url.strip()
-                    if not url or url.lower() == "nan":
-                        continue
-                    if not url.startswith(("http://", "https://")):
-                        url = f"http://{url}"
-                    host = _hostname(url)
-                    if host and "." in host:
-                        company_domains[company].add(host)
+                domains = parse_company_domains(val)
+                if domains:
+                    company_domains.setdefault(company, set()).update(domains)
             
             total_domains = sum(len(domains) for domains in company_domains.values())
             print(f"[OK] Loaded {len(company_domains)} companies with {total_domains} total controlled domains")
@@ -434,63 +322,6 @@ def resolve_ceo_company(query_alias: str, alias_map: Dict, ceo_to_company: Dict)
 
 
 # ============================================================================
-# CONTROL CLASSIFICATION
-# ============================================================================
-def classify_control(company: str, url: str, company_domains: Dict[str, Set[str]]) -> bool:
-    """
-    Classify if a URL is controlled by a company.
-    """
-    try:
-        parsed = urlparse(url or "")
-        host = (parsed.netloc or "").lower().replace("www.", "")
-        path = (parsed.path or "").lower()
-    except Exception:
-        host, path = "", ""
-    
-    if not host:
-        return False
-
-    if host == "facebook.com":
-        return "/posts/" not in path
-    if host == "instagram.com":
-        return "/p/" not in path
-    if _is_linkedin_company_page(company, url):
-        return True
-    if _is_x_company_handle(company, url):
-        return True
-
-    # Rule 0: Explicitly uncontrolled domains
-    if any(d == host or host.endswith("." + d) for d in UNCONTROLLED_DOMAINS):
-        return False
-
-    # Rule 1: Always-controlled platforms
-    for good in ALWAYS_CONTROLLED_DOMAINS:
-        if host == good or host.endswith("." + good):
-            return True
-
-    # Rule 2: Company-specific roster domains
-    company_specific_domains = company_domains.get(company, set())
-    for rd in company_specific_domains:
-        if host == rd or host.endswith("." + rd):
-            return True
-
-    # Rule 3: Domain contains the company token
-    comp_simple = simplify_company(company)
-    if comp_simple:
-        domain_parts = host.split('.')
-        normalized_parts = [_norm_token(part) for part in domain_parts if part]
-        comp_token = _norm_token(comp_simple)
-        if comp_token in normalized_parts[:-1]:
-            return True
-
-    # Rule 4: Controlled path keywords
-    if any(k in path for k in CONTROLLED_PATH_KEYWORDS):
-        return True
-
-    return False
-
-
-# ============================================================================
 # MAIN PROCESSING
 # ============================================================================
 def process_for_date(storage, target_date: str, roster_path: str) -> None:
@@ -540,7 +371,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         except Exception:
             position = 0
 
-        controlled = classify_control(company, url, company_domains)
+        controlled = classify_control(company, url, company_domains, entity_type="ceo", person_name=ceo)
 
         # --- Sentiment rules (deterministic order) ---
         host = _hostname(url)
@@ -552,7 +383,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "negative"
             forced_reason = "reddit"
         # 2) Neutralize routine financial coverage
-        elif _is_financial_routine(title, snippet, url):
+        elif is_financial_routine(title, snippet=snippet, url=url):
             label = "neutral"
             forced_reason = "finance"
         # 3) Force negative for CEO-specific terms
@@ -572,7 +403,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             if FORCE_POSITIVE_IF_CONTROLLED and controlled:
                 label = "positive"
 
-        finance_routine = _is_financial_routine(title, snippet, url)
+        finance_routine = is_financial_routine(title, snippet=snippet, url=url)
         is_forced = bool(forced_reason)
         uncertain, uncertain_reason = is_uncertain(
             label,
