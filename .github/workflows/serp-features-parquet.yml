@@ -1,8 +1,8 @@
 name: Ingest SERP Features (Parquet)
 
 on:
-  # schedule:
-  #   - cron: "0 13 * * *"  # 9:00 AM ET (adjust for DST)
+  schedule:
+    - cron: "0 11 * * *"  # 6:00 AM ET (adjust for DST)
   workflow_dispatch:
     inputs:
       run_date:
