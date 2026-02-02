@@ -23,7 +23,7 @@ from storage_utils import CloudStorageManager
 from llm_utils import build_summary_prompt, call_llm_text
 
 # --- CONFIG ---
-DRY_RUN = False  # <--- SET TO TRUE FOR TESTING
+DRY_RUN = TRUE  # <--- SET TO TRUE FOR TESTING
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
