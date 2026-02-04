@@ -56,7 +56,7 @@ ALWAYS_NEGATIVE_TERMS = [
     r"\bstill\b", r"\bturnaround\b",
     # Personal accusations
     r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b", 
-    r"\bapologizes\b", r"\bapology\b", r"\baware\b",
+    r"\bapologizes\b", r"\bapology\b", r"\baware\b", r"\bepstein\b",
     # Financial/personal troubles
     r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
     # Data security
