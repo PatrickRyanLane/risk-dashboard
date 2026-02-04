@@ -73,3 +73,7 @@ jobs:
             echo "→ ${DSTR}"
             python3 scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type ceo
           done
+
+      - name: Refresh negative summary view
+        run: |
+          python3 scripts/refresh_negative_summary_view.py

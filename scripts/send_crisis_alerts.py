@@ -104,63 +104,19 @@ def load_negative_summary_db(history_days: int):
     conn = get_db_conn()
     if conn is None:
         return None
-    sql = """
-        with company_rows as (
-            select m.scored_at::date as date,
-                   c.name as company,
-                   null::text as ceo,
-                   'brand' as article_type,
-                   count(*) filter (
-                       where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
-                   ) as negative_count,
-                   count(*) filter (where m.llm_risk_label = 'crisis_risk') as crisis_risk_count,
-                   array_to_string(
-                       (array_agg(a.title order by a.title) filter (
-                           where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
-                       ))[1:3],
-                       ' | '
-                   ) as top_headlines
-            from company_article_mentions m
-            join companies c on c.id = m.company_id
-            join articles a on a.id = m.article_id
-            left join company_article_overrides ov
-              on ov.company_id = m.company_id and ov.article_id = m.article_id
-            where m.scored_at >= (current_date - (%s || ' days')::interval)
-            group by m.scored_at::date, c.name
-        ),
-        ceo_rows as (
-            select m.scored_at::date as date,
-                   c.name as company,
-                   ceo.name as ceo,
-                   'ceo' as article_type,
-                   count(*) filter (
-                       where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
-                   ) as negative_count,
-                   count(*) filter (where m.llm_risk_label = 'crisis_risk') as crisis_risk_count,
-                   array_to_string(
-                       (array_agg(a.title order by a.title) filter (
-                           where coalesce(ov.override_sentiment_label, m.llm_sentiment_label, m.sentiment_label) = 'negative'
-                       ))[1:3],
-                       ' | '
-                   ) as top_headlines
-            from ceo_article_mentions m
-            join ceos ceo on ceo.id = m.ceo_id
-            join companies c on c.id = ceo.company_id
-            join articles a on a.id = m.article_id
-            left join ceo_article_overrides ov
-              on ov.ceo_id = m.ceo_id and ov.article_id = m.article_id
-            where m.scored_at >= (current_date - (%s || ' days')::interval)
-            group by m.scored_at::date, c.name, ceo.name
-        )
-        select * from company_rows
-        union all
-        select * from ceo_rows
-        order by date desc, company
-    """
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (history_days, history_days))
+                cur.execute(
+                    """
+                    select date, company, ceo, article_type,
+                           negative_count, crisis_risk_count, top_headlines
+                    from negative_articles_summary_mv
+                    where date >= (current_date - (%s || ' days')::interval)
+                    order by date desc, company
+                    """,
+                    (history_days,),
+                )
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
         return pd.DataFrame(rows, columns=cols)
@@ -642,6 +598,9 @@ def main():
         # if SERP_GATE_DEBUG:
         #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
 
+        threshold_msg = "SERP + Top Stories"
+        baseline_val = 0
+
         # B2. SERP CONFIRMATION GATE
         serp_count = 0
         if SERP_GATE_ENABLED:
@@ -685,9 +644,7 @@ def main():
 
         # --- TRIGGER ALERT ---
         crisis_count = int(row.get('crisis_risk_count', 0) or 0)
-        news_excess = max(0, count - baseline_val)
-        risk_score = float(news_excess + (serp_count * 2) + (crisis_count * RISK_LABEL_WEIGHT))
-        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg} | Risk Score: {risk_score:.1f}")
+        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg}")
         
         owner_email, owner_name = get_salesforce_owner(brand)
         slack_id = get_slack_user_id(owner_email)
@@ -706,8 +663,8 @@ def main():
                 llm_calls += 1
 
         send_slack_alert(
-            brand, ceo_name, article_type, count, baseline_val, 
-            headlines, slack_id, owner_name, summary_text, risk_score
+            brand, ceo_name, article_type, count, baseline_val,
+            headlines, slack_id, owner_name, summary_text, None
         )
                 
         # --- JITTER IMPLEMENTATION ---
