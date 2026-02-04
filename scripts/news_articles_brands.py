@@ -113,7 +113,7 @@ LEGAL_TROUBLE_TERMS = [
     r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
     # Scandals
     r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
-    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b",
+    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b", r"\bepstein\b",
     # Financial Terms
     r"\bheadwinds\b", r"\bcontroversy\b",
 ]
