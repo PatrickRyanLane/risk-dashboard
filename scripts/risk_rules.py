@@ -39,6 +39,99 @@ FINANCE_SOURCES = {
 }
 TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
 
+BRAND_NEUTRALIZE_TITLE_TERMS = [
+    r"\bgrand\b",
+    r"\bdiamond\b",
+    r"\bsell\b",
+    r"\blow\b",
+    r"\bdream\b",
+    r"\bdarling\b",
+    r"\bwells\b",
+    r"\bbest\s+buy\b",
+    r"\bkilled\b",
+    r"\bmlm\b",
+    r"\bmad\s+money\b",
+    r"\brate\s+cut\b",
+    r"\bone\s+stop\s+shop\b",
+    r"\bfuneral\b",
+    r"\bcremation\b",
+    r"\bcemetery\b",
+    r"\blimited\b",
+    r"\bno\s+organic\b",
+    r"\brob\b",
+    r"\blower\b",
+    r"\benergy\b",
+    r"\brebel\b",
+]
+BRAND_NEUTRALIZE_TITLE_RE = re.compile("|".join(BRAND_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
+
+BRAND_LEGAL_TROUBLE_TERMS = [
+    r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
+    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
+    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
+    r"\bantitrust\b", r"\bban(s|ned)?\b", r"\bdata leaks?\b",
+    r"\brecall(s|ed)?\b",
+    r"\blayoff(s)?\b", r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
+    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
+    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
+    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b", r"\bepstein\b",
+    r"\bheadwinds\b", r"\bcontroversy\b",
+]
+BRAND_LEGAL_TROUBLE_RE = re.compile("|".join(BRAND_LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
+
+CEO_NEUTRALIZE_TITLE_TERMS = [
+    r"\bflees\b",
+    r"\bsavage\b",
+    r"\brob\b",
+    r"\bnicholas\s+lower\b",
+    r"\bmad\s+money\b",
+    r"\bno\s+organic\b",
+    r"\brob\b",
+    r"\blower\b",
+    r"\benergy\b",
+    r"\brebel\b",
+]
+CEO_NEUTRALIZE_TITLE_RE = re.compile("|".join(CEO_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
+
+CEO_ALWAYS_NEGATIVE_TERMS = [
+    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b", r"\bnet worth\b",
+    r"\bmandate\b",
+    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
+    r"\bstill\b", r"\bturnaround\b",
+    r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b",
+    r"\bapologizes\b", r"\bapology\b", r"\baware\b", r"\bepstein\b",
+    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
+    r"\bdata leaks?\b",
+    r"\bunion\s+buster\b",
+    r"\bfired\b", r"\bfiring\b", r"\bfires\b",
+    r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
+    r"\bplummeting\b",
+]
+CEO_ALWAYS_NEGATIVE_RE = re.compile("|".join(CEO_ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
+
+
+def strip_neutral_terms_brand(headline: str) -> str:
+    if not headline:
+        return ""
+    cleaned = BRAND_NEUTRALIZE_TITLE_RE.sub(" ", headline)
+    return " ".join(cleaned.split())
+
+
+def title_mentions_legal_trouble(title: str) -> bool:
+    return bool(BRAND_LEGAL_TROUBLE_RE.search(title or ""))
+
+
+def strip_neutral_terms_ceo(title: str) -> str:
+    s = str(title or "")
+    s = CEO_NEUTRALIZE_TITLE_RE.sub(" ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def should_force_negative_ceo(title: str) -> bool:
+    return bool(CEO_ALWAYS_NEGATIVE_RE.search(title or ""))
+
 
 def hostname(url: str) -> str:
     try:

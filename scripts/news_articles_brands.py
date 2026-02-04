@@ -9,7 +9,7 @@ Checkpoint: data/checkpoints/YYYY-MM-DD-brand-checkpoint.json
 from __future__ import annotations
 
 import argparse
-import json, os, re, sys, time, urllib.parse
+import json, os, sys, time, urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -24,7 +24,13 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_articles_mentions
-from risk_rules import classify_control, is_financial_routine, parse_company_domains
+from risk_rules import (
+    classify_control,
+    is_financial_routine,
+    parse_company_domains,
+    strip_neutral_terms_brand,
+    title_mentions_legal_trouble,
+)
 
 
 def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
@@ -68,60 +74,6 @@ def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
     return company_domains
 
 
-# ============================================================================
-# WORD FILTERING RULES
-# ============================================================================
-# REMOVED (?i) prefixes because re.IGNORECASE is used in re.compile
-NEUTRALIZE_TITLE_TERMS = [
-    r"\bgrand\b",           # Grand Hyatt, Grand Cherokee
-    r"\bdiamond\b",         # Diamond Foods
-    r"\bsell\b",            # Headlines about "selling" aren't inherently negative
-    r"\blow\b",             # Low prices, Lowe's
-    r"\bdream\b",           # DreamWorks
-    r"\bdarling\b",         # Darling Ingredients
-    r"\bwells\b",           # Wells Fargo
-    r"\bbest\s+buy\b",      # Best Buy (positive brand name)
-    r"\bkilled\b",          # Often used hyperbolically in headlines
-    r"\bmlm\b",             # Multi-level marketing discussions
-    r"\bmad\s+money\b",     # Jim Cramer's show
-    r"\brate\s+cut\b",      # Interest rate discussions
-    r"\bone\s+stop\s+shop\b",  # Stop & Shop stores
-    r"\bfuneral\b",         # Service Corporation (funeral services)
-    r"\bcremation\b",       # Service Corporation
-    r"\bcemetery\b",        # Service Corporation
-    r"\blimited\b",         # The Limited Brands
-    r"\bno\s+organic\b",    # About organic food availability
-    r"\brob\b",        # Potentially a person's name
-    r"\blower\b",      # CEO with last name Lower
-    r"\benergy\b",     # Lot of brands with energy in their name   
-    r"\brebel\b",      # Potential product name
-]
-NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
-
-LEGAL_TROUBLE_TERMS = [
-    # Legal actions
-    r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
-    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
-    # Regulatory bodies
-    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
-    # Corporate crises
-    r"\bantitrust\b", r"\bban(s|ned)?\b", r"\bdata leaks?\b",
-    r"\brecall(s|ed)?\b",
-    r"\blayoff(s)?\b", r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
-    # Investigations
-    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
-    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
-    # Scandals
-    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
-    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b", r"\bepstein\b",
-    # Financial Terms
-    r"\bheadwinds\b", r"\bcontroversy\b",
-]
-LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
-
-def _title_mentions_legal_trouble(title: str) -> bool:
-    """Return True if title mentions legal trouble terms."""
-    return bool(LEGAL_TROUBLE_RE.search(title or ""))
 
 def _hostname(url: str) -> str:
     try:
@@ -130,12 +82,6 @@ def _hostname(url: str) -> str:
     except Exception:
         return ""
 
-def _strip_neutral_terms(headline: str) -> str:
-    """Remove neutral terms from a headline so they don't affect sentiment."""
-    if not headline:
-        return ""
-    cleaned = NEUTRALIZE_TITLE_RE.sub(" ", headline)
-    return " ".join(cleaned.split())
 
 
 def _is_reddit_source(source: str) -> bool:
@@ -200,7 +146,7 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
         return "negative", flags
     
     # 2. Force NEGATIVE for legal trouble / crisis
-    if _title_mentions_legal_trouble(headline):
+    if title_mentions_legal_trouble(headline):
         flags["is_legal"] = True
         flags["forced_reason"] = "legal"
         return "negative", flags
@@ -212,7 +158,7 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
         return "neutral", flags
     
     # 4. Strip neutral terms
-    cleaned = _strip_neutral_terms(headline or "")
+    cleaned = strip_neutral_terms_brand(headline or "")
     flags["cleaned"] = cleaned
     
     # If nothing meaningful remains, neutral

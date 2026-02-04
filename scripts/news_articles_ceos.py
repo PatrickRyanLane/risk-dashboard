@@ -10,7 +10,7 @@ Checkpoint: data/checkpoints/YYYY-MM-DD-ceo-checkpoint.json
 """
 
 from __future__ import annotations
-import os, time, html, sys, argparse, json, re
+import os, time, html, sys, argparse, json
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import quote_plus, urlparse
@@ -25,63 +25,14 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_articles_mentions
-from risk_rules import classify_control, is_financial_routine, parse_company_domains
+from risk_rules import (
+    classify_control,
+    is_financial_routine,
+    parse_company_domains,
+    should_force_negative_ceo,
+    strip_neutral_terms_ceo,
+)
 
-# ============================================================================
-# WORD FILTERING RULES
-# ============================================================================
-# REMOVED (?i) prefixes because re.IGNORECASE is used in re.compile
-NEUTRALIZE_TITLE_TERMS = [
-    r"\bflees\b",           # Often used figuratively or in names
-    r"\bsavage\b",          # Common surname (e.g., Dan Savage)
-    r"\brob\b",             # Common first name (e.g., Rob Walton)
-    r"\bnicholas\s+lower\b", # Specific CEO name combination
-    r"\bmad\s+money\b",     # Jim Cramer's show
-    r"\bno\s+organic\b",    # About organic food availability
-    r"\brob\b",        # Potentially a person's name
-    r"\blower\b",      # CEO with last name Lower
-    r"\benergy\b",     # Lot of brands with energy in their name   
-    r"\brebel\b",      # Potential product name
-]
-NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
-
-ALWAYS_NEGATIVE_TERMS = [
-    # Compensation scrutiny
-    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b", r"\bnet worth\b",
-    # Corporate governance
-    r"\bmandate\b",
-    # Leadership changes
-    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
-    # Skepticism/scrutiny
-    r"\bstill\b", r"\bturnaround\b",
-    # Personal accusations
-    r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b", 
-    r"\bapologizes\b", r"\bapology\b", r"\baware\b", r"\bepstein\b",
-    # Financial/personal troubles
-    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
-    # Data security
-    r"\bdata leaks?\b",
-    # Labor relations
-    r"\bunion\s+buster\b",
-    # Termination
-    r"\bfired\b", r"\bfiring\b", r"\bfires\b",
-    r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
-    # Stock performance
-    r"\bplummeting\b",
-]
-ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
-
-def _should_force_negative_title(title: str) -> bool:
-    """Return True if title contains CEO-specific negative terms."""
-    return bool(ALWAYS_NEGATIVE_RE.search(title or ""))
-
-
-def _strip_neutral_terms(title: str) -> str:
-    """Remove neutral terms from title before sentiment analysis."""
-    s = str(title or "")
-    s = NEUTRALIZE_TITLE_RE.sub(" ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
 
 
 def _is_reddit_source(source: str) -> bool:
@@ -195,13 +146,13 @@ def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "",
         return "neutral", flags
     
     # 3. Force NEGATIVE for CEO trouble terms
-    if _should_force_negative_title(title):
+    if should_force_negative_ceo(title):
         flags["is_forced"] = True
         flags["forced_reason"] = "ceo_terms"
         return "negative", flags
     
     # 4. Strip neutral terms
-    cleaned = _strip_neutral_terms(title or "")
+    cleaned = strip_neutral_terms_ceo(title or "")
     flags["cleaned"] = cleaned
     
     # If nothing meaningful remains, neutral
