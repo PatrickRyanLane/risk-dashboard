@@ -1,0 +1,62 @@
+name: Ingest Roster (Companies + CEOs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      roster_path:
+        description: "Optional gs:// path to main-roster.csv (defaults to gs://risk-dashboard/rosters/main-roster.csv)"
+        required: false
+      boards_path:
+        description: "Optional gs:// path to boards-roster.csv (defaults to gs://risk-dashboard/rosters/boards-roster.csv)"
+        required: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout risk-dashboard
+        uses: actions/checkout@v4
+
+      - name: Checkout risk-dashboard-database
+        uses: actions/checkout@v4
+        with:
+          repository: PatrickRyanLane/risk-dashboard-database
+          path: risk-dashboard-database
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        working-directory: risk-dashboard-database
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run roster ingest
+        working-directory: risk-dashboard-database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          ROSTER_PATH="${{ github.event.inputs.roster_path }}"
+          BOARDS_PATH="${{ github.event.inputs.boards_path }}"
+          if [ -z "$ROSTER_PATH" ]; then
+            ROSTER_PATH="gs://risk-dashboard/rosters/main-roster.csv"
+          fi
+          if [ -z "$BOARDS_PATH" ]; then
+            BOARDS_PATH="gs://risk-dashboard/rosters/boards-roster.csv"
+          fi
+          python -m src.ingest_roster_only \
+            --roster-path "$ROSTER_PATH" \
+            --boards-path "$BOARDS_PATH"
+
+      - name: Cleanup GCP creds
+        if: always()
+        run: |
+          rm -f /tmp/gcp.json || true
