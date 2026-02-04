@@ -52,7 +52,7 @@ jobs:
           if [ -z "$BOARDS_PATH" ]; then
             BOARDS_PATH="gs://risk-dashboard/rosters/boards-roster.csv"
           fi
-          python -m src.ingest_roster_only \
+          python src/ingest_roster_only.py \
             --roster-path "$ROSTER_PATH" \
             --boards-path "$BOARDS_PATH"
 

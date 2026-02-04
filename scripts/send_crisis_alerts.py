@@ -44,7 +44,7 @@ SERP_GATE_MIN = int(os.getenv("SERP_GATE_MIN", "2"))
 SERP_GATE_DAYS = int(os.getenv("SERP_GATE_DAYS", "2"))
 SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
 SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
-SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "1"))
+SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "3"))
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -333,12 +333,12 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
     """Sends a Block Kit alert."""
     
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
-        alert_title = f"🚨 CEO Crisis: {ceo_name}"
+        alert_title = f"🧑🏻‍💼 CEO Crisis: {ceo_name}"
         sub_context = f"Company: {brand}"
         safe_filter = urllib.parse.quote(ceo_name)
         dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=ceos&company={safe_filter}"
     else:
-        alert_title = f"🚨 Brand Crisis: {brand}"
+        alert_title = f"🏢 Brand Crisis: {brand}"
         if ceo_name and ceo_name.lower() != 'nan':
              sub_context = f"CEO: {ceo_name}"
         else:
