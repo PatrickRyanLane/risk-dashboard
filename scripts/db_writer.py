@@ -11,6 +11,7 @@ from risk_rules import classify_control, parse_company_domains
 def get_conn():
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if not dsn:
+        print("[WARN] DATABASE_URL not set; skipping DB upsert.")
         return None
     return psycopg2.connect(dsn)
 

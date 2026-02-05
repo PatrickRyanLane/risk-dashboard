@@ -291,19 +291,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     processed_rows = []
     unmapped = 0
     unmapped_names: Dict[str, int] = {}
-    try:
-        from db_writer import get_conn as _get_conn
-        conn = _get_conn()
-        if conn:
-            with conn.cursor() as cur:
-                cur.execute("select current_database()")
-                db_name = cur.fetchone()[0]
-            conn.close()
-            print(f"[DB] Connected to database: {db_name}")
-        else:
-            print("[WARN] DATABASE_URL not set or DB connection unavailable. Skipping DB upsert.")
-    except Exception as exc:
-        print(f"[WARN] DB debug failed: {exc}")
+    # DB connection is handled by db_writer during upsert.
     for _, row in raw.iterrows():
         raw_company = str(row.get("company", "") or "").strip()
         if not raw_company:
