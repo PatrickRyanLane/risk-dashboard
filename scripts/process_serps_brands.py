@@ -290,6 +290,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     analyzer = SentimentIntensityAnalyzer()
     processed_rows = []
     unmapped = 0
+    unmapped_names: Dict[str, int] = {}
     for _, row in raw.iterrows():
         raw_company = str(row.get("company", "") or "").strip()
         if not raw_company:
@@ -297,6 +298,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         company = company_lookup.get(normalize_name(raw_company), "")
         if not company:
             unmapped += 1
+            unmapped_names[raw_company] = unmapped_names.get(raw_company, 0) + 1
             continue
 
         title = str(row.get("title", "") or "").strip()
@@ -377,6 +379,11 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         return
     if unmapped:
         print(f"[WARN] {unmapped} SERP rows could not be mapped to roster companies.")
+        top = sorted(unmapped_names.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if top:
+            print("[WARN] Top unmapped queries:")
+            for name, count in top:
+                print(f"  - {name}: {count}")
 
     rows_df = pd.DataFrame(processed_rows)
     row_out_path = f"{OUT_ROWS_DIR}/{target_date}-brand-serps-modal.csv"
