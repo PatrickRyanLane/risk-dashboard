@@ -92,7 +92,15 @@ ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), re.IGNORECASE)
 
 
 # Legal suffixes to strip when matching company names
-LEGAL_SUFFIXES = {"inc", "inc.", "corp", "co", "co.", "llc", "plc", "ltd", "ltd.", "ag", "sa", "nv"}
+LEGAL_SUFFIXES = {
+    "inc", "inc.", "incorporated",
+    "corp", "corporation",
+    "co", "co.", "company",
+    "llc", "plc", "ltd", "ltd.", "limited",
+    "ag", "sa", "nv",
+    "group", "holdings", "holding", "hldgs",
+    "exchange", "insurance",
+}
 
 
 # ============================================================================
@@ -266,6 +274,7 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
         # Also add "CEO Company" as an alias (fallback)
         for ceo, comp in ceo_to_company.items():
             alias_map.setdefault(norm(f"{ceo} {comp}"), (ceo, comp))
+            alias_map.setdefault(norm(f"{ceo} {simplify_company(comp)}"), (ceo, comp))
 
         print(f"[OK] Loaded {len(ceo_to_company)} CEOs, {len(alias_map)} aliases")
 
@@ -329,10 +338,13 @@ def resolve_ceo_company(query_alias: str, alias_map: Dict, ceo_to_company: Dict)
     Resolve a query alias to (ceo_name, company_name).
     """
     qn = norm(query_alias)
+    qn_simple = " ".join([t for t in qn.split() if t not in LEGAL_SUFFIXES]).strip()
     
     # Exact match in alias_map
     if qn in alias_map:
         return alias_map[qn]
+    if qn_simple and qn_simple in alias_map:
+        return alias_map[qn_simple]
 
     # Fuzzy match: find best overlap of CEO + Company tokens
     best = None
@@ -379,6 +391,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     analyzer = SentimentIntensityAnalyzer()
     processed_rows = []
     unresolved_count = 0
+    unresolved_names: Dict[str, int] = {}
     # DB connection is handled by db_writer during upsert.
     
     for _, row in base.iterrows():
@@ -387,6 +400,9 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         
         if not ceo or not company:
             unresolved_count += 1
+            query_alias = str(row.get("query_alias", "") or "").strip()
+            if query_alias:
+                unresolved_names[query_alias] = unresolved_names.get(query_alias, 0) + 1
             continue
 
         title = str(row.get("title", "") or "").strip()
@@ -469,6 +485,13 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     if not processed_rows:
         print(f"[WARN] No processed rows for {target_date}.")
         return
+    if unresolved_count:
+        print(f"[WARN] {unresolved_count} rows could not be resolved to CEO/company")
+        top = sorted(unresolved_names.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if top:
+            print("[WARN] Top unresolved queries:")
+            for name, count in top:
+                print(f"  - {name}: {count}")
 
     print(f"[OK] Processed {len(processed_rows)} rows")
 
