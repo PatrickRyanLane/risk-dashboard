@@ -264,6 +264,44 @@ def load_roster_domains(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, Set[
 
     return company_domains
 
+
+def load_company_aliases(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, str]:
+    alias_map: Dict[str, str] = {}
+    try:
+        if storage:
+            if not storage.file_exists(path):
+                print(f"[WARN] Roster not found in Cloud Storage at {path}")
+                return alias_map
+            df = storage.read_csv(path)
+        else:
+            roster_file = Path(path)
+            if not roster_file.exists():
+                print(f"[WARN] Roster not found at {roster_file}")
+                return alias_map
+            df = pd.read_csv(roster_file, encoding="utf-8-sig")
+
+        cols = {c.strip().lower(): c for c in df.columns}
+        company_col = cols.get("company")
+        alias_col = cols.get("company alias") or cols.get("company_alias") or cols.get("alias")
+        if not company_col or not alias_col:
+            return alias_map
+
+        for _, row in df.iterrows():
+            company = str(row[company_col]).strip()
+            if not company or company.lower() == "nan":
+                continue
+            raw_alias = str(row[alias_col] or "").strip()
+            if not raw_alias or raw_alias.lower() == "nan":
+                continue
+            for alias in re.split(r"[|;]+", raw_alias):
+                alias = alias.strip()
+                if not alias:
+                    continue
+                alias_map[normalize_name(alias)] = company
+    except Exception as e:
+        print(f"[WARN] Failed reading company aliases: {e}")
+    return alias_map
+
 def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[str, float]:
     """
     Apply VADER with custom thresholds.
@@ -283,7 +321,9 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     print(f"[INFO] Processing brand SERPs for {target_date} …")
 
     company_domains = load_roster_domains(storage, roster_path)
+    company_aliases = load_company_aliases(storage, roster_path)
     company_lookup = {normalize_name(name): name for name in company_domains.keys()}
+    company_lookup.update(company_aliases)
     simplified_lookup = {}
     simplified_conflicts = set()
     for name in company_domains.keys():
@@ -410,6 +450,21 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             print("[WARN] Top unmapped queries:")
             for name, count in top:
                 print(f"  - {name}: {count}")
+        out_rows = [{"query": k, "count": v} for k, v in sorted(unmapped_names.items(), key=lambda kv: kv[1], reverse=True)]
+        if out_rows:
+            out_df = pd.DataFrame(out_rows)
+            out_path = f"data/processed_serps/mismatches/{target_date}-brand-serps-unmapped.csv"
+            try:
+                if storage:
+                    storage.write_csv(out_df, out_path, index=False)
+                    print(f"[OK] Wrote unmapped queries: {out_path}")
+                else:
+                    out_file = Path(out_path)
+                    out_file.parent.mkdir(parents=True, exist_ok=True)
+                    out_df.to_csv(out_file, index=False)
+                    print(f"[OK] Wrote unmapped queries: {out_file}")
+            except Exception as e:
+                print(f"[WARN] Failed writing unmapped queries: {e}")
 
     rows_df = pd.DataFrame(processed_rows)
     row_out_path = f"{OUT_ROWS_DIR}/{target_date}-brand-serps-modal.csv"

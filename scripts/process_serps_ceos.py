@@ -249,6 +249,7 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
         ceo_col = col("ceo")
         company_col = col("company")
         alias_col = col("ceo alias", "alias")
+        company_alias_col = col("company alias", "company_alias")
         website_col = col("website", "websites", "domain", "url")
 
         if not (ceo_col and company_col):
@@ -275,6 +276,22 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
         for ceo, comp in ceo_to_company.items():
             alias_map.setdefault(norm(f"{ceo} {comp}"), (ceo, comp))
             alias_map.setdefault(norm(f"{ceo} {simplify_company(comp)}"), (ceo, comp))
+
+        # Add aliases using company alias column if present
+        if company_alias_col:
+            for _, row in df.iterrows():
+                ceo = str(row[ceo_col]).strip()
+                company = str(row[company_col]).strip()
+                if not ceo or not company or ceo == "nan" or company == "nan":
+                    continue
+                raw_alias = str(row[company_alias_col] or "").strip()
+                if not raw_alias or raw_alias.lower() == "nan":
+                    continue
+                for alias in re.split(r"[|;]+", raw_alias):
+                    alias = alias.strip()
+                    if not alias:
+                        continue
+                    alias_map.setdefault(norm(f"{ceo} {alias}"), (ceo, company))
 
         print(f"[OK] Loaded {len(ceo_to_company)} CEOs, {len(alias_map)} aliases")
 
@@ -492,6 +509,21 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             print("[WARN] Top unresolved queries:")
             for name, count in top:
                 print(f"  - {name}: {count}")
+        out_rows = [{"query": k, "count": v} for k, v in sorted(unresolved_names.items(), key=lambda kv: kv[1], reverse=True)]
+        if out_rows:
+            out_df = pd.DataFrame(out_rows)
+            out_path = f"data/processed_serps/mismatches/{target_date}-ceo-serps-unresolved.csv"
+            try:
+                if storage:
+                    storage.write_csv(out_df, out_path, index=False)
+                    print(f"[OK] Wrote unresolved queries: {out_path}")
+                else:
+                    out_file = Path(out_path)
+                    out_file.parent.mkdir(parents=True, exist_ok=True)
+                    out_df.to_csv(out_file, index=False)
+                    print(f"[OK] Wrote unresolved queries: {out_file}")
+            except Exception as e:
+                print(f"[WARN] Failed writing unresolved queries: {e}")
 
     print(f"[OK] Processed {len(processed_rows)} rows")
 
