@@ -58,6 +58,7 @@ jobs:
         env:
           START: ${{ github.event.inputs.start }}
           ENDIN: ${{ github.event.inputs.end }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -85,6 +86,7 @@ jobs:
         env:
           START: ${{ github.event.inputs.start }}
           ENDIN: ${{ github.event.inputs.end }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           python - <<'PY'
