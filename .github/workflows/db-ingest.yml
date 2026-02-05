@@ -9,6 +9,9 @@ on:
       days_back:
         description: "Backfill N days (overrides date if set)"
         required: false
+      include_serps:
+        description: "Include processed_serps CSVs (default false; parquet pipeline is primary)"
+        required: false
   schedule:
     - cron: "30 14 * * *"  # 09:30 ET (EST). Update for DST if desired.
 
@@ -48,17 +51,24 @@ jobs:
         run: |
           RUN_DATE="${{ github.event.inputs.date }}"
           DAYS_BACK="${{ github.event.inputs.days_back }}"
+          INCLUDE_SERPS="${{ github.event.inputs.include_serps }}"
           if [ -z "$RUN_DATE" ]; then
             RUN_DATE=$(date -u +%F)
+          fi
+          SERP_FLAG=""
+          if [ -n "$INCLUDE_SERPS" ]; then
+            SERP_FLAG="--include-serps"
           fi
           if [ -n "$DAYS_BACK" ]; then
             python -m src.bulk_ingest \
               --data-dir gs://risk-dashboard/data \
-              --days-back "$DAYS_BACK"
+              --days-back "$DAYS_BACK" \
+              $SERP_FLAG
           else
             python -m src.bulk_ingest \
               --data-dir gs://risk-dashboard/data \
-              --date "$RUN_DATE"
+              --date "$RUN_DATE" \
+              $SERP_FLAG
           fi
 
       - name: Cleanup GCP creds

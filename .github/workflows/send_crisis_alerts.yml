@@ -1,0 +1,52 @@
+name: Send Crisis Alerts
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # 13:00 UTC daily (after aggregation)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  alerts:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            storage_utils.py
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Send Crisis Alerts (Slack + Salesforce)
+        env:
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_MAX_CALLS: ${{ vars.LLM_MAX_CALLS }}
+          LLM_SUMMARY_MAX_CALLS: ${{ vars.LLM_SUMMARY_MAX_CALLS }}
+          SERP_TOP_STORIES_REQUIRED: ${{ vars.SERP_TOP_STORIES_REQUIRED || '1' }}
+          SERP_TOP_STORIES_NEG_MIN: ${{ vars.SERP_TOP_STORIES_NEG_MIN || '2' }}
+          SERP_GATE_MIN: ${{ vars.SERP_GATE_MIN || '1' }}
+          SERP_GATE_DAYS: ${{ vars.SERP_GATE_DAYS || '2' }}
+          SERP_GATE_DEBUG: ${{ vars.SERP_GATE_DEBUG || '1' }}
+        run: |
+          echo "🚀 Checking for crises and sending alerts..."
+          python scripts/send_crisis_alerts.py

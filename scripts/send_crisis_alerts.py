@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Reads aggregated negative articles and sends Slack alerts to Salesforce account owners.
+Reads negative summary data from the DB and sends Slack alerts to Salesforce account owners.
 Tracks alert history in GCS to prevent spamming.
 Implements Dynamic Thresholding, Type-Specific Alerts, DAILY VOLUME CAPS, and JITTER.
 """
 
 import os
-import json
 import argparse
 import requests
 import urllib.parse
@@ -19,7 +18,6 @@ from datetime import datetime, timedelta
 from simple_salesforce import Salesforce
 import psycopg2
 import pandas as pd
-from storage_utils import CloudStorageManager
 from llm_utils import build_summary_prompt, call_llm_text
 
 # --- CONFIG ---
@@ -34,7 +32,7 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_SUMMARY_MAX_CALLS = int(os.getenv("LLM_SUMMARY_MAX_CALLS", "20"))
-LLM_CACHE_DIR = "data/llm_cache"
+LLM_CACHE_TABLE = "llm_summary_cache"
 NEGATIVE_HISTORY_DAYS = int(os.getenv("NEGATIVE_HISTORY_DAYS", "180"))
 RISK_LABEL_WEIGHT = float(os.getenv("RISK_LABEL_WEIGHT", "3"))
 
@@ -91,14 +89,82 @@ def normalize_name(name):
     return name
 
 
-def parse_bool(value):
-    return str(value).strip().lower() in {"true", "1", "yes", "y", "controlled"}
-
 def get_db_conn():
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if not dsn:
         return None
     return psycopg2.connect(dsn)
+
+
+def ensure_alert_tables(conn):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                create table if not exists alert_history (
+                    alert_key text primary key,
+                    sent_at timestamptz not null
+                )
+                """
+            )
+            cur.execute(
+                f"""
+                create table if not exists {LLM_CACHE_TABLE} (
+                    llm_key text primary key,
+                    summary text not null,
+                    created_at timestamptz not null default now()
+                )
+                """
+            )
+
+
+def load_alert_history_db(conn):
+    with conn.cursor() as cur:
+        cur.execute("select alert_key, sent_at from alert_history")
+        return {k: v.isoformat() for k, v in cur.fetchall()}
+
+
+def load_llm_cache_db(conn, date_str: str):
+    like = f"%|{date_str}"
+    with conn.cursor() as cur:
+        cur.execute(
+            f"select llm_key, summary from {LLM_CACHE_TABLE} where llm_key like %s",
+            (like,),
+        )
+        return {k: v for k, v in cur.fetchall()}
+
+
+def upsert_alert_history_db(conn, history: dict):
+    rows = [(k, v) for k, v in history.items()]
+    if not rows:
+        return
+    sql = """
+        insert into alert_history (alert_key, sent_at)
+        values %s
+        on conflict (alert_key) do update set
+          sent_at = excluded.sent_at
+    """
+    with conn:
+        with conn.cursor() as cur:
+            from psycopg2.extras import execute_values
+            execute_values(cur, sql, rows, page_size=1000)
+
+
+def upsert_llm_cache_db(conn, cache: dict):
+    rows = [(k, v) for k, v in cache.items()]
+    if not rows:
+        return
+    sql = f"""
+        insert into {LLM_CACHE_TABLE} (llm_key, summary, created_at)
+        values %s
+        on conflict (llm_key) do update set
+          summary = excluded.summary,
+          created_at = excluded.created_at
+    """
+    with conn:
+        with conn.cursor() as cur:
+            from psycopg2.extras import execute_values
+            execute_values(cur, sql, rows, page_size=1000)
 
 def load_negative_summary_db(history_days: int):
     conn = get_db_conn()
@@ -125,32 +191,6 @@ def load_negative_summary_db(history_days: int):
         return None
     finally:
         conn.close()
-
-def load_serp_counts(storage, date_str):
-    brand_counts = {}
-    ceo_counts = {}
-
-    brand_path = f"data/processed_serps/{date_str}-brand-serps-modal.csv"
-    ceo_path = f"data/processed_serps/{date_str}-ceo-serps-modal.csv"
-
-    if storage.file_exists(brand_path):
-        df = storage.read_csv(brand_path)
-        if not df.empty:
-            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
-            df["controlled"] = df.get("controlled", False).apply(parse_bool)
-            mask = (df["sentiment"] == "negative") & (~df["controlled"])
-            brand_counts = df[mask].groupby("company").size().to_dict()
-
-    if storage.file_exists(ceo_path):
-        df = storage.read_csv(ceo_path)
-        if not df.empty:
-            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
-            df["controlled"] = df.get("controlled", False).apply(parse_bool)
-            mask = (df["sentiment"] == "negative") & (~df["controlled"])
-            ceo_counts = df[mask].groupby(["company", "ceo"]).size().to_dict()
-
-    return brand_counts, ceo_counts
-
 
 def load_serp_counts_db(days: int):
     conn = get_db_conn()
@@ -213,30 +253,6 @@ def load_serp_counts_db(days: int):
     finally:
         conn.close()
     return brand_uncontrolled, ceo_uncontrolled, brand_negative, ceo_negative
-
-
-def load_serp_negative_counts(storage, date_str):
-    brand_counts = {}
-    ceo_counts = {}
-
-    brand_path = f"data/processed_serps/{date_str}-brand-serps-modal.csv"
-    ceo_path = f"data/processed_serps/{date_str}-ceo-serps-modal.csv"
-
-    if storage.file_exists(brand_path):
-        df = storage.read_csv(brand_path)
-        if not df.empty:
-            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
-            mask = df["sentiment"] == "negative"
-            brand_counts = df[mask].groupby("company").size().to_dict()
-
-    if storage.file_exists(ceo_path):
-        df = storage.read_csv(ceo_path)
-        if not df.empty:
-            df["sentiment"] = df.get("sentiment", "").astype(str).str.lower()
-            mask = df["sentiment"] == "negative"
-            ceo_counts = df[mask].groupby(["company", "ceo"]).size().to_dict()
-
-    return brand_counts, ceo_counts
 
 
 def load_top_stories_counts_db(days: int):
@@ -455,59 +471,53 @@ def main():
     parser.add_argument('--bucket', default='risk-dashboard')
     args = parser.parse_args()
 
-    storage = CloudStorageManager(args.bucket)
-    if LLM_API_KEY:
-        print(f"🤖 LLM enabled: provider={LLM_PROVIDER}, model={LLM_MODEL}")
-    else:
-        print("🤖 LLM disabled: missing LLM_API_KEY")
-    if SERP_GATE_ENABLED:
-        print(f"🧭 SERP gate: enabled (min={SERP_GATE_MIN}, days={SERP_GATE_DAYS})")
-    else:
-        print("🧭 SERP gate: disabled")
-    
-    # 1. Load Data
-    summary_path = "data/daily_counts/negative-articles-summary.csv"
-    df = load_negative_summary_db(NEGATIVE_HISTORY_DAYS)
-    if df is None or df.empty:
-        if not storage.file_exists(summary_path):
-            print("No negative summary file found. Exiting.")
-            return
-        print("📄 Using CSV summary fallback (GCS).")
-        df = storage.read_csv(summary_path)
-    else:
-        print("🗄️ Using DB summary for alerts.")
-    
-    # 2. Load History
-    history_path = "data/alert_history.json"
-    history = {}
-    if storage.file_exists(history_path):
-        try:
-            history = json.loads(storage.read_text(history_path))
-        except:
-            print("Could not read history, starting fresh.")
-
-    # --- CALCULATE DAILY BUDGET ---
-    current_time = datetime.now()
-    one_day_ago = current_time - timedelta(hours=20) # ensures a fresh 20 alert budget every morning.
-    
-    recent_alerts_count = 0
-    for timestamp_str in history.values():
-        try:
-            t_alert = datetime.fromisoformat(timestamp_str)
-            if t_alert > one_day_ago:
-                recent_alerts_count += 1
-        except ValueError:
-            pass
-            
-    alerts_remaining_today = MAX_ALERTS_PER_DAY - recent_alerts_count
-    
-    print(f"📉 Daily Alert Budget: {MAX_ALERTS_PER_DAY} total.")
-    print(f"🕒 Used in last 24h: {recent_alerts_count}")
-    print(f"✅ Remaining capacity: {alerts_remaining_today}")
-
-    if alerts_remaining_today <= 0:
-        print("⛔ Daily alert limit reached. Exiting script to prevent flood.")
+    conn = get_db_conn()
+    if conn is None:
+        print("DATABASE_URL not set. Exiting.")
         return
+    ensure_alert_tables(conn)
+    try:
+        if LLM_API_KEY:
+            print(f"🤖 LLM enabled: provider={LLM_PROVIDER}, model={LLM_MODEL}")
+        else:
+            print("🤖 LLM disabled: missing LLM_API_KEY")
+        if SERP_GATE_ENABLED:
+            print(f"🧭 SERP gate: enabled (min={SERP_GATE_MIN}, days={SERP_GATE_DAYS})")
+        else:
+            print("🧭 SERP gate: disabled")
+
+        # 1. Load Data (DB only)
+        df = load_negative_summary_db(NEGATIVE_HISTORY_DAYS)
+        if df is None or df.empty:
+            print("No DB negative summary data found. Exiting.")
+            return
+        print("🗄️ Using DB summary for alerts.")
+
+        # 2. Load History
+        history = load_alert_history_db(conn)
+
+        # --- CALCULATE DAILY BUDGET ---
+        current_time = datetime.now()
+        one_day_ago = current_time - timedelta(hours=20) # ensures a fresh 20 alert budget every morning.
+
+        recent_alerts_count = 0
+        for timestamp_str in history.values():
+            try:
+                t_alert = datetime.fromisoformat(timestamp_str)
+                if t_alert > one_day_ago:
+                    recent_alerts_count += 1
+            except ValueError:
+                pass
+
+        alerts_remaining_today = MAX_ALERTS_PER_DAY - recent_alerts_count
+
+        print(f"📉 Daily Alert Budget: {MAX_ALERTS_PER_DAY} total.")
+        print(f"🕒 Used in last 24h: {recent_alerts_count}")
+        print(f"✅ Remaining capacity: {alerts_remaining_today}")
+
+        if alerts_remaining_today <= 0:
+            print("⛔ Daily alert limit reached. Exiting script to prevent flood.")
+            return
 
     # --- SORT BY PRIORITY ---
     # Sort by blended signal (negatives + crisis_risk)
@@ -526,14 +536,7 @@ def main():
     HARD_FLOOR_NEW_CO = 15    
 
     updates_made = False
-    llm_cache_path = f"{LLM_CACHE_DIR}/{current_time.date()}-crisis-summary.json"
-    if storage.file_exists(llm_cache_path):
-        try:
-            llm_cache = json.loads(storage.read_text(llm_cache_path))
-        except Exception:
-            llm_cache = {}
-    else:
-        llm_cache = {}
+        llm_cache = load_llm_cache_db(conn, current_time.date().isoformat())
     llm_calls = 0
 
     serp_brand_counts = {}
@@ -544,17 +547,8 @@ def main():
     top_stories_ceo = {}
     if SERP_GATE_ENABLED:
         b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
-        if b_unctrl or c_unctrl:
-            serp_brand_counts = b_unctrl
-            serp_ceo_counts = c_unctrl
-        else:
-            for delta in range(SERP_GATE_DAYS):
-                dstr = (current_time.date() - timedelta(days=delta)).strftime('%Y-%m-%d')
-                b_counts, c_counts = load_serp_counts(storage, dstr)
-                for company, count in b_counts.items():
-                    serp_brand_counts[company] = serp_brand_counts.get(company, 0) + int(count)
-                for key, count in c_counts.items():
-                    serp_ceo_counts[key] = serp_ceo_counts.get(key, 0) + int(count)
+        serp_brand_counts = b_unctrl
+        serp_ceo_counts = c_unctrl
         top_stories_brand, top_stories_ceo = load_top_stories_counts_db(SERP_GATE_DAYS)
     
     for _, row in df.iterrows():
@@ -688,13 +682,15 @@ def main():
             time.sleep(2) 
 
     # --- SAVE CHECK ---
-    if updates_made:
-        if DRY_RUN:
-            print("🚫 [DRY RUN] Skipping save to 'alert_history.json'. No changes made.")
-        else:
-            storage.write_text(json.dumps(history, indent=2), history_path)
-            storage.write_text(json.dumps(llm_cache, indent=2), llm_cache_path)
-            print("💾 Alert history updated.")
+        if updates_made:
+            if DRY_RUN:
+                print("🚫 [DRY RUN] Skipping DB updates. No changes made.")
+            else:
+                upsert_alert_history_db(conn, history)
+                upsert_llm_cache_db(conn, llm_cache)
+                print("💾 Alert history + LLM cache updated.")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     main()

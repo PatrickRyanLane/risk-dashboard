@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Process daily BRAND SERP data.
-Updated to read from and write to Google Cloud Storage.
+Reads raw SerpAPI parquet and writes processed CSVs + DB rows.
 
 Outputs:
   1) Row-level processed SERPs:       data/processed_serps/{date}-brand-serps-modal.csv
@@ -12,8 +12,6 @@ Outputs:
 from __future__ import annotations
 
 import argparse
-import csv
-import io
 import json
 import re
 import os, sys
@@ -23,7 +21,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 
 import pandas as pd
-import requests
+import duckdb
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
@@ -32,8 +30,8 @@ from db_writer import upsert_serp_results
 from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
 # Config / constants
-S3_URL_TEMPLATE = (
-    "https://tk-public-data.s3.us-east-1.amazonaws.com/serp_files/{date}-brand-serps.csv"
+PARQUET_URL_TEMPLATE = (
+    "https://tk-public-data.s3.us-east-1.amazonaws.com/serp_files/{date}-brand-raw-queries.parquet"
 )
 
 MAIN_ROSTER_PATH = "rosters/main-roster.csv"
@@ -126,14 +124,42 @@ def get_target_date(arg_date: str | None) -> str:
             pass
     return datetime.utcnow().strftime("%Y-%m-%d")
 
-def fetch_csv_from_s3(url: str) -> pd.DataFrame | None:
+def fetch_parquet_from_s3(url: str) -> pd.DataFrame | None:
     try:
-        resp = requests.get(url, timeout=45)
-        resp.raise_for_status()
-        return pd.read_csv(io.StringIO(resp.text))
+        con = duckdb.connect()
+        con.execute("INSTALL httpfs; LOAD httpfs;")
+        df = con.execute(f"select query, raw_json from read_parquet('{url}')").fetch_df()
     except Exception as e:
         print(f"[WARN] Could not fetch {url} – {e}")
         return None
+
+    rows = []
+    for _, row in df.iterrows():
+        company = str(row.get("query") or "").strip()
+        if not company:
+            continue
+        raw = row.get("raw_json")
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+        data = obj.get("data", obj)
+        organic = data.get("organic_results") or []
+        for item in organic:
+            if not isinstance(item, dict):
+                continue
+            rows.append({
+                "company": company,
+                "position": item.get("position") or item.get("rank") or 0,
+                "title": item.get("title") or "",
+                "link": item.get("link") or "",
+                "snippet": item.get("snippet") or "",
+            })
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
 
 # Domain normalization
 def _hostname(url: str) -> str:
@@ -230,8 +256,8 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
 
     company_domains = load_roster_domains(storage, roster_path)
 
-    url = S3_URL_TEMPLATE.format(date=target_date)
-    raw = fetch_csv_from_s3(url)
+    url = PARQUET_URL_TEMPLATE.format(date=target_date)
+    raw = fetch_parquet_from_s3(url)
     if raw is None or raw.empty:
         print(f"[WARN] No raw brand SERP data available for {target_date}. Nothing to write.")
         return
