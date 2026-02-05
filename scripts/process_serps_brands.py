@@ -300,6 +300,8 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
                 db_name = cur.fetchone()[0]
             conn.close()
             print(f"[DB] Connected to database: {db_name}")
+        else:
+            print("[WARN] DATABASE_URL not set or DB connection unavailable. Skipping DB upsert.")
     except Exception as exc:
         print(f"[WARN] DB debug failed: {exc}")
     for _, row in raw.iterrows():
