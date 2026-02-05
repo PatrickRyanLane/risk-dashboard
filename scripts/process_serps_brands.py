@@ -29,6 +29,23 @@ from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
 from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
+
+def normalize_name(name: str) -> str:
+    if not name:
+        return ""
+    name = str(name).strip()
+    suffixes = [
+        " Inc.", " Inc", " Corporation", " Corp.", " Corp",
+        " Company", " Co.", " Co", " LLC", " L.L.C.",
+        " Ltd.", " Ltd", " Limited", " PLC", " plc",
+        ".com", ".net", ".org"
+    ]
+    for suffix in sorted(suffixes, key=len, reverse=True):
+        if name.lower().endswith(suffix.lower()):
+            name = name[:-len(suffix)].strip()
+            break
+    return "".join(ch for ch in name.lower() if ch.isalnum() or ch.isspace()).strip()
+
 # Config / constants
 PARQUET_URL_TEMPLATE = (
     "https://tk-public-data.s3.us-east-1.amazonaws.com/serp_files/{date}-brand-raw-queries.parquet"
@@ -255,6 +272,9 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     print(f"[INFO] Processing brand SERPs for {target_date} …")
 
     company_domains = load_roster_domains(storage, roster_path)
+    company_lookup = {
+        normalize_name(name): name for name in company_domains.keys()
+    }
 
     url = PARQUET_URL_TEMPLATE.format(date=target_date)
     raw = fetch_parquet_from_s3(url)
@@ -269,9 +289,14 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
 
     analyzer = SentimentIntensityAnalyzer()
     processed_rows = []
+    unmapped = 0
     for _, row in raw.iterrows():
-        company = str(row.get("company", "") or "").strip()
+        raw_company = str(row.get("company", "") or "").strip()
+        if not raw_company:
+            continue
+        company = company_lookup.get(normalize_name(raw_company), "")
         if not company:
+            unmapped += 1
             continue
 
         title = str(row.get("title", "") or "").strip()
@@ -350,6 +375,8 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     if not processed_rows:
         print(f"[WARN] No processed rows for {target_date}.")
         return
+    if unmapped:
+        print(f"[WARN] {unmapped} SERP rows could not be mapped to roster companies.")
 
     rows_df = pd.DataFrame(processed_rows)
     row_out_path = f"{OUT_ROWS_DIR}/{target_date}-brand-serps-modal.csv"
