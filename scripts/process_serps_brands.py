@@ -30,21 +30,32 @@ from db_writer import upsert_serp_results
 from risk_rules import classify_control, is_financial_routine, parse_company_domains
 
 
+LEGAL_SUFFIXES = {
+    "inc", "incorporated",
+    "corp", "corporation",
+    "co", "company",
+    "llc", "plc", "ltd", "limited",
+    "group", "holdings", "holding", "hldgs",
+    "exchange", "insurance",
+    "the",
+}
+
+
 def normalize_name(name: str) -> str:
     if not name:
         return ""
     name = str(name).strip()
-    suffixes = [
-        " Inc.", " Inc", " Corporation", " Corp.", " Corp",
-        " Company", " Co.", " Co", " LLC", " L.L.C.",
-        " Ltd.", " Ltd", " Limited", " PLC", " plc",
-        ".com", ".net", ".org"
-    ]
-    for suffix in sorted(suffixes, key=len, reverse=True):
-        if name.lower().endswith(suffix.lower()):
-            name = name[:-len(suffix)].strip()
-            break
-    return "".join(ch for ch in name.lower() if ch.isalnum() or ch.isspace()).strip()
+    name = name.replace("&", " and ")
+    name = name.replace(".com", " ").replace(".net", " ").replace(".org", " ")
+    cleaned = "".join(ch for ch in name.lower() if ch.isalnum() or ch.isspace())
+    cleaned = " ".join(cleaned.split())
+    return cleaned.strip()
+
+
+def simplify_company(name: str) -> str:
+    tokens = normalize_name(name).split()
+    tokens = [t for t in tokens if t not in LEGAL_SUFFIXES]
+    return " ".join(tokens).strip()
 
 # Config / constants
 PARQUET_URL_TEMPLATE = (
@@ -272,9 +283,19 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
     print(f"[INFO] Processing brand SERPs for {target_date} …")
 
     company_domains = load_roster_domains(storage, roster_path)
-    company_lookup = {
-        normalize_name(name): name for name in company_domains.keys()
-    }
+    company_lookup = {normalize_name(name): name for name in company_domains.keys()}
+    simplified_lookup = {}
+    simplified_conflicts = set()
+    for name in company_domains.keys():
+        key = simplify_company(name)
+        if not key:
+            continue
+        if key in simplified_lookup and simplified_lookup[key] != name:
+            simplified_conflicts.add(key)
+        else:
+            simplified_lookup[key] = name
+    for key in simplified_conflicts:
+        simplified_lookup.pop(key, None)
 
     url = PARQUET_URL_TEMPLATE.format(date=target_date)
     raw = fetch_parquet_from_s3(url)
@@ -296,7 +317,11 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         raw_company = str(row.get("company", "") or "").strip()
         if not raw_company:
             continue
-        company = company_lookup.get(normalize_name(raw_company), "")
+        norm_key = normalize_name(raw_company)
+        company = company_lookup.get(norm_key, "")
+        if not company:
+            simple_key = simplify_company(raw_company)
+            company = simplified_lookup.get(simple_key, "")
         if not company:
             unmapped += 1
             unmapped_names[raw_company] = unmapped_names.get(raw_company, 0) + 1
