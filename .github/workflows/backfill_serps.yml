@@ -127,3 +127,20 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           gsutil ls "gs://$GCS_BUCKET/data/processed_serps/" 2>/dev/null | tail -20 || echo "No files"
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### SERP mismatch files (latest date):" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/mismatches/${END_DATE}-brand-serps-unmapped.csv" \
+            >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No brand unmapped file" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/mismatches/${END_DATE}-ceo-serps-unresolved.csv" \
+            >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO unresolved file" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### Top mismatches (latest date):" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil cat "gs://$GCS_BUCKET/data/processed_serps/mismatches/${END_DATE}-brand-serps-unmapped.csv" \
+            | head -n 11 >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No brand mismatches to show" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          gsutil cat "gs://$GCS_BUCKET/data/processed_serps/mismatches/${END_DATE}-ceo-serps-unresolved.csv" \
+            | head -n 11 >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No CEO mismatches to show" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

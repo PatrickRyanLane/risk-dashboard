@@ -120,3 +120,9 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "Check logs for: ✅ DB upserted ... rows" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### SERP unresolved queries:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/mismatches/${DATE_TO_USE}-ceo-serps-unresolved.csv" \
+            >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No unresolved queries file" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

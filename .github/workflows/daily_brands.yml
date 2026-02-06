@@ -127,3 +127,9 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "Check logs for: ✅ DB upserted ... rows" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### SERP unmapped queries:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/mismatches/${DATE_TO_USE}-brand-serps-unmapped.csv" \
+            >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No unmapped queries file" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
