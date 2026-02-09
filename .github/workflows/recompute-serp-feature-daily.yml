@@ -2,7 +2,7 @@ name: Recompute SERP Feature Daily
 
 on:
   schedule:
-    - cron: "0 14 * * 1" # Mondays 9:00am ET (DST). Use 15:00 UTC in standard time.
+    - cron: "0 5 * * *" # Daily ~12:00am ET (05:00 UTC standard time; 04:00 UTC during DST).
   workflow_dispatch:
     inputs:
       days:
