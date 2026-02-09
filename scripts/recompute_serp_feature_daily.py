@@ -36,7 +36,7 @@ def main() -> int:
         select
           sfi.date,
           sfi.entity_type,
-          max(sfi.entity_id) as entity_id,
+          min(sfi.entity_id::text)::uuid as entity_id,
           sfi.entity_name,
           sfi.feature_type,
           count(*) as total_count,
