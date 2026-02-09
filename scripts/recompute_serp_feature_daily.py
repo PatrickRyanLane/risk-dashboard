@@ -36,7 +36,7 @@ def main() -> int:
         select
           sfi.date,
           sfi.entity_type,
-          sfi.entity_id,
+          max(sfi.entity_id) as entity_id,
           sfi.entity_name,
           sfi.feature_type,
           count(*) as total_count,
@@ -48,7 +48,7 @@ def main() -> int:
         left join serp_feature_item_overrides ov on ov.serp_feature_item_id = sfi.id
         where sfi.date >= (current_date - (%s || ' days')::interval)
           and sfi.feature_type in ({feature_list})
-        group by sfi.date, sfi.entity_type, sfi.entity_id, sfi.entity_name, sfi.feature_type
+        group by sfi.date, sfi.entity_type, sfi.entity_name, sfi.feature_type
         on conflict (date, entity_type, entity_name, feature_type) do update set
           entity_id = excluded.entity_id,
           total_count = excluded.total_count,
