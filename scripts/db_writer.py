@@ -386,7 +386,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                 execute_values(cur, """
                     insert into serp_runs (entity_type, company_id, ceo_id, query_text, provider, run_at)
                     values %s
-                    on conflict (entity_type, company_id, run_at) where (entity_type = 'company')
+                    on conflict (entity_type, company_id, ceo_id, run_at)
                     do update set
                       query_text = excluded.query_text,
                       provider = excluded.provider
@@ -399,7 +399,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                 execute_values(cur, """
                     insert into serp_runs (entity_type, company_id, ceo_id, query_text, provider, run_at)
                     values %s
-                    on conflict (entity_type, ceo_id, run_at) where (entity_type = 'ceo')
+                    on conflict (entity_type, company_id, ceo_id, run_at)
                     do update set
                       query_text = excluded.query_text,
                       provider = excluded.provider
