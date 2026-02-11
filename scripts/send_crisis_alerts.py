@@ -304,7 +304,7 @@ def load_top_stories_items_db(days: int, today_only: bool = False):
     ceo_items = {}
     sql = """
         select sfi.date, sfi.entity_type, sfi.entity_name,
-               sfi.title, sfi.url,
+               sfi.title, sfi.url, sfi.snippet,
                coalesce(ov.override_sentiment_label, sfi.llm_sentiment_label, sfi.sentiment_label) as sentiment
         from serp_feature_items sfi
         left join serp_feature_item_overrides ov on ov.serp_feature_item_id = sfi.id
@@ -320,11 +320,11 @@ def load_top_stories_items_db(days: int, today_only: bool = False):
         with conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (today_only, today_only, max(1, days)))
-                for dval, entity_type, entity_name, title, url, sentiment in cur.fetchall():
+                for dval, entity_type, entity_name, title, url, snippet, sentiment in cur.fetchall():
                     key_name = (entity_name or "").strip()
                     if not key_name:
                         continue
-                    entry = {"title": title or "", "url": url or ""}
+                    entry = {"title": title or "", "url": url or "", "snippet": snippet or ""}
                     key = (dval.isoformat(), key_name)
                     if entity_type in {"brand", "company"}:
                         brand_items.setdefault(key, []).append(entry)
@@ -719,14 +719,21 @@ def main():
                 if llm_key in llm_cache:
                     summary_text = llm_cache.get(llm_key, "")
                 else:
-                    if article_type == "ceo":
-                        top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
-                    else:
-                        top_items = top_stories_brand_items.get((date_str, brand), [])
-                    top_titles = [i.get("title", "").strip().strip('"') for i in top_items if i.get("title")]
-                    if not top_titles:
-                        raw_heads = str(headlines).split('|')
-                        top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
+                if article_type == "ceo":
+                    top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+                else:
+                    top_items = top_stories_brand_items.get((date_str, brand), [])
+                top_titles = []
+                for item in top_items:
+                    title = (item.get("title") or "").strip().strip('"')
+                    snippet = (item.get("snippet") or "").strip()
+                    if title and snippet:
+                        top_titles.append(f"{title} — {snippet}")
+                    elif title:
+                        top_titles.append(title)
+                if not top_titles:
+                    raw_heads = str(headlines).split('|')
+                    top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
                     prompt = build_summary_prompt(
                         article_type,
                         ceo_name if article_type == "ceo" else brand,

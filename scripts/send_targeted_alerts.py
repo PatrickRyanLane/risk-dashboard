@@ -232,7 +232,14 @@ def main():
                     top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
                 else:
                     top_items = top_stories_brand_items.get((date_str, brand), [])
-                top_titles = [i.get("title", "").strip().strip('"') for i in top_items if i.get("title")]
+                top_titles = []
+                for item in top_items:
+                    title = (item.get("title") or "").strip().strip('"')
+                    snippet = (item.get("snippet") or "").strip()
+                    if title and snippet:
+                        top_titles.append(f"{title} — {snippet}")
+                    elif title:
+                        top_titles.append(title)
                 if not top_titles:
                     raw_heads = str(headlines).split("|")
                     top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]

@@ -84,7 +84,7 @@ def build_summary_prompt(entity_type: str, entity_name: str, headlines: list[str
     items = "\n".join(f"- {h}" for h in headlines if h)
     user = (
         f"Entity: {entity_type} = {entity_name}\n"
-        f"Headlines:\n{items}\n"
+        f"Headlines (with optional snippets):\n{items}\n"
         "Return summary only."
     )
     return {"system": system, "user": user}
