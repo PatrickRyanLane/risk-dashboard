@@ -1,16 +1,23 @@
-name: Send Crisis Alerts
+name: Send Targeted Crisis Alerts
 
 on:
-  schedule:
-    - cron: '0 13 * * *'  # 13:00 UTC daily (after aggregation)
   workflow_dispatch:
+    inputs:
+      brands:
+        description: "Comma-separated brand names"
+        required: false
+        default: "Fanatics"
+      dry_run:
+        description: "Set to 1 for dry run"
+        required: false
+        default: "0"
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  alerts:
+  targeted-alerts:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}
@@ -31,8 +38,12 @@ jobs:
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
 
-      - name: Send Crisis Alerts (Slack + Salesforce)
+      - name: Send Targeted Crisis Alerts
         env:
+          TARGET_BRANDS: ${{ github.event.inputs.brands || 'Fanatics' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
+          TARGET_DEFAULT_CHANNEL: ${{ vars.TARGET_DEFAULT_CHANNEL || '#crisis-alerts-test' }}
+          BRAND_CHANNEL_MAP: ${{ vars.BRAND_CHANNEL_MAP || '{"Fanatics":"#fanatics-alerts-test"}' }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
           SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
@@ -40,15 +51,12 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
-          LLM_MAX_CALLS: ${{ vars.LLM_MAX_CALLS }}
           LLM_SUMMARY_MAX_CALLS: ${{ vars.LLM_SUMMARY_MAX_CALLS }}
-          ALERT_BRANDS: ${{ vars.ALERT_BRANDS || '1' }}
-          ALERT_CEOS: ${{ vars.ALERT_CEOS || '1' }}
           SERP_TOP_STORIES_REQUIRED: ${{ vars.SERP_TOP_STORIES_REQUIRED || '1' }}
           SERP_TOP_STORIES_NEG_MIN: ${{ vars.SERP_TOP_STORIES_NEG_MIN || '2' }}
           SERP_GATE_MIN: ${{ vars.SERP_GATE_MIN || '1' }}
           SERP_GATE_DAYS: ${{ vars.SERP_GATE_DAYS || '2' }}
           SERP_GATE_DEBUG: ${{ vars.SERP_GATE_DEBUG || '1' }}
         run: |
-          echo "🚀 Checking for crises and sending alerts..."
-          python scripts/send_crisis_alerts.py
+          echo "🎯 Sending targeted alerts for: $TARGET_BRANDS"
+          python scripts/send_targeted_alerts.py

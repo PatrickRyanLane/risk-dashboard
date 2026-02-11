@@ -26,7 +26,7 @@ SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
 SF_TOKEN = os.getenv('SF_SECURITY_TOKEN')
-SLACK_CHANNEL = "#crisis-alerts" 
+SLACK_CHANNEL = "#crisis-alerts-test" 
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
@@ -35,6 +35,8 @@ LLM_SUMMARY_MAX_CALLS = int(os.getenv("LLM_SUMMARY_MAX_CALLS", "20"))
 LLM_CACHE_TABLE = "llm_summary_cache"
 NEGATIVE_HISTORY_DAYS = int(os.getenv("NEGATIVE_HISTORY_DAYS", "180"))
 RISK_LABEL_WEIGHT = float(os.getenv("RISK_LABEL_WEIGHT", "3"))
+ALERT_BRANDS = os.getenv("ALERT_BRANDS", "1") == "1"
+ALERT_CEOS = os.getenv("ALERT_CEOS", "1") == "1"
 
 # SERP gating (negative + uncontrolled: same URL must be negative AND uncontrolled)
 SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "1") == "1"
@@ -291,6 +293,44 @@ def load_top_stories_counts_db(days: int):
         conn.close()
     return brand_counts, ceo_counts
 
+def load_top_stories_items_db(days: int):
+    conn = get_db_conn()
+    if conn is None:
+        return {}, {}
+    brand_items = {}
+    ceo_items = {}
+    sql = """
+        select sfi.date, sfi.entity_type, sfi.entity_name,
+               sfi.title, sfi.url,
+               coalesce(ov.override_sentiment_label, sfi.llm_sentiment_label, sfi.sentiment_label) as sentiment
+        from serp_feature_items sfi
+        left join serp_feature_item_overrides ov on ov.serp_feature_item_id = sfi.id
+        where sfi.feature_type = 'top_stories_items'
+          and sfi.date >= (current_date - (%s || ' days')::interval)
+          and coalesce(ov.override_sentiment_label, sfi.llm_sentiment_label, sfi.sentiment_label) = 'negative'
+        order by sfi.date, sfi.entity_name, sfi.position
+    """
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (max(1, days),))
+                for dval, entity_type, entity_name, title, url, sentiment in cur.fetchall():
+                    key_name = (entity_name or "").strip()
+                    if not key_name:
+                        continue
+                    entry = {"title": title or "", "url": url or ""}
+                    key = (dval.isoformat(), key_name)
+                    if entity_type in {"brand", "company"}:
+                        brand_items.setdefault(key, []).append(entry)
+                    elif entity_type == "ceo":
+                        ceo_items.setdefault(key, []).append(entry)
+    except Exception as exc:
+        print(f"⚠️ DB top stories items load failed: {exc}")
+        return {}, {}
+    finally:
+        conn.close()
+    return brand_items, ceo_items
+
 def get_salesforce_owner(brand_name):
     if not brand_name: return None, None
     try:
@@ -345,7 +385,7 @@ def get_slack_user_id(email):
     except Exception: pass
     return None
 
-def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, owner_slack_id, owner_name, summary_text="", risk_score=None):
+def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, top_stories, owner_slack_id, owner_name, summary_text="", risk_score=None, channel=None):
     """Sends a Block Kit alert."""
     
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
@@ -370,9 +410,19 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
         mention_text = f"<@{FALLBACK_SLACK_ID}> (Salesforce Missing)"
 
     headline_text = ""
-    if headlines:
+    if top_stories:
+        for item in top_stories[:3]:
+            title = (item.get("title") or "").strip().strip('"')
+            url = (item.get("url") or "").strip()
+            if title and url:
+                headline_text += f"• <{url}|{title}>\n"
+            elif title:
+                headline_text += f"• {title}\n"
+        if len(top_stories) > 3:
+            headline_text += f"_...and {len(top_stories) - 3} more_"
+    elif headlines:
         raw_heads = str(headlines).split('|')
-        for hl in raw_heads[:3]: 
+        for hl in raw_heads[:3]:
             clean_hl = hl.strip().strip('"')
             headline_text += f"• {clean_hl}\n"
         if len(raw_heads) > 3:
@@ -429,7 +479,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Top Headlines:*\n{headline_text}"
+                "text": f"*Top Stories:*\n{headline_text}" if headline_text else "*Top Stories:*\n_No negative top stories found_"
             }
         },
         # {
@@ -445,7 +495,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, o
 
     alert_color = get_owner_color(owner_name)
     payload = {
-        "channel": SLACK_CHANNEL,
+        "channel": channel or SLACK_CHANNEL,
         "attachments": [
             {
                 "color": alert_color,
@@ -545,11 +595,14 @@ def main():
     serp_ceo_neg_counts = {}
     top_stories_brand = {}
     top_stories_ceo = {}
+    top_stories_brand_items = {}
+    top_stories_ceo_items = {}
     if SERP_GATE_ENABLED:
         b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
         serp_brand_counts = b_unctrl
         serp_ceo_counts = c_unctrl
         top_stories_brand, top_stories_ceo = load_top_stories_counts_db(SERP_GATE_DAYS)
+        top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(SERP_GATE_DAYS)
     
     for _, row in df.iterrows():
         # FLOOD PROTECTION CHECK
@@ -563,6 +616,10 @@ def main():
         
         article_type = str(row.get('article_type', 'brand')).lower().strip()
         ceo_name = str(row.get('ceo', '')).strip()
+        if article_type == "brand" and not ALERT_BRANDS:
+            continue
+        if article_type == "ceo" and not ALERT_CEOS:
+            continue
 
         # A. STRICT DATE FILTER (Last 48 Hours Only)
         date_str = str(row['date']) 
@@ -649,16 +706,31 @@ def main():
             if llm_key in llm_cache:
                 summary_text = llm_cache.get(llm_key, "")
             else:
-                raw_heads = str(headlines).split('|')
-                clean_heads = [h.strip().strip('"') for h in raw_heads if h.strip()]
-                prompt = build_summary_prompt(article_type, ceo_name if article_type == "ceo" else brand, clean_heads[:5])
+                if article_type == "ceo":
+                    top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+                else:
+                    top_items = top_stories_brand_items.get((date_str, brand), [])
+                top_titles = [i.get("title", "").strip().strip('"') for i in top_items if i.get("title")]
+                if not top_titles:
+                    raw_heads = str(headlines).split('|')
+                    top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
+                prompt = build_summary_prompt(
+                    article_type,
+                    ceo_name if article_type == "ceo" else brand,
+                    top_titles[:5]
+                )
                 summary_text = call_llm_text(prompt, LLM_API_KEY, LLM_MODEL)
                 llm_cache[llm_key] = summary_text
                 llm_calls += 1
 
+        if article_type == "ceo":
+            top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+        else:
+            top_items = top_stories_brand_items.get((date_str, brand), [])
+
         send_slack_alert(
             brand, ceo_name, article_type, count, baseline_val,
-            headlines, slack_id, owner_name, summary_text, None
+            headlines, top_items, slack_id, owner_name, summary_text, None
         )
                 
         # --- JITTER IMPLEMENTATION ---
