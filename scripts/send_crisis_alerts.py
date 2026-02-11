@@ -153,7 +153,7 @@ def upsert_alert_history_db(conn, history: dict):
 
 
 def upsert_llm_cache_db(conn, cache: dict):
-    rows = [(k, v) for k, v in cache.items()]
+    rows = [(k, v, datetime.utcnow().isoformat()) for k, v in cache.items()]
     if not rows:
         return
     sql = f"""

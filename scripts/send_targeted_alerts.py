@@ -81,6 +81,8 @@ def main():
     top_stories_brand_items = {}
     top_stories_ceo_items = {}
     targeted_serp_gate = os.getenv("TARGET_SERP_GATE_ENABLED", "0") == "1"
+    targeted_top_stories_gate = os.getenv("TARGET_TOP_STORIES_GATE_ENABLED", "0") == "1"
+    targeted_top_stories_neg_gate = os.getenv("TARGET_TOP_STORIES_NEG_GATE_ENABLED", "0") == "1"
     if sca.SERP_GATE_ENABLED and targeted_serp_gate:
         b_unctrl, c_unctrl, b_neg, c_neg = sca.load_serp_counts_db(sca.SERP_GATE_DAYS)
         serp_brand_counts = b_unctrl
@@ -156,13 +158,26 @@ def main():
                 stats["skipped_gate_top"] += 1
                 skip_details["top_missing"].add(brand)
                 continue
-            if top_neg < sca.SERP_TOP_STORIES_NEG_MIN:
+            if targeted_top_stories_neg_gate and top_neg < sca.SERP_TOP_STORIES_NEG_MIN:
                 stats["skipped_gate_top_neg"] += 1
                 skip_details["top_neg"].add(brand)
                 continue
             if serp_count < sca.SERP_GATE_MIN:
                 stats["skipped_gate_serp"] += 1
                 skip_details["serp"].add(brand)
+                continue
+        elif targeted_top_stories_gate:
+            if article_type == "ceo":
+                top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
+            else:
+                top_total, top_neg = top_stories_brand.get(brand, (0, 0))
+            if sca.SERP_TOP_STORIES_REQUIRED and top_total <= 0:
+                stats["skipped_gate_top"] += 1
+                skip_details["top_missing"].add(brand)
+                continue
+            if targeted_top_stories_neg_gate and top_neg < sca.SERP_TOP_STORIES_NEG_MIN:
+                stats["skipped_gate_top_neg"] += 1
+                skip_details["top_neg"].add(brand)
                 continue
 
         history_key = f"{brand}_{article_type}"
