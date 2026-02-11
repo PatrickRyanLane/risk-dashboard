@@ -421,6 +421,12 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason
                 )
             insert_rows = list(insert_map.values())
+            print(
+                f"[DB] SERP runs: run_rows={len(run_rows)} "
+                f"company_values={len(company_values)} ceo_values={len(ceo_values)} "
+                f"run_id_map={len(run_id_map)} result_rows={len(result_rows)} "
+                f"insert_rows={len(insert_rows)}"
+            )
             if not run_id_map:
                 print("[WARN] DB upsert skipped: no run IDs returned for SERP runs.")
             if result_rows and not insert_rows:
