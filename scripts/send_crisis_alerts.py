@@ -569,191 +569,191 @@ def main():
             print("⛔ Daily alert limit reached. Exiting script to prevent flood.")
             return
 
-    # --- SORT BY PRIORITY ---
-    # Sort by blended signal (negatives + crisis_risk)
-    print("📊 Sorting data by severity (negative count)...")
-    if 'negative_count' in df.columns:
-        if 'crisis_risk_count' not in df.columns:
-            df['crisis_risk_count'] = 0
-        df['risk_signal'] = df['negative_count'].fillna(0) + (df['crisis_risk_count'].fillna(0) * RISK_LABEL_WEIGHT)
-        df.sort_values(by='risk_signal', ascending=False, inplace=True)
+        # --- SORT BY PRIORITY ---
+        # Sort by blended signal (negatives + crisis_risk)
+        print("📊 Sorting data by severity (negative count)...")
+        if 'negative_count' in df.columns:
+            if 'crisis_risk_count' not in df.columns:
+                df['crisis_risk_count'] = 0
+            df['risk_signal'] = df['negative_count'].fillna(0) + (df['crisis_risk_count'].fillna(0) * RISK_LABEL_WEIGHT)
+            df.sort_values(by='risk_signal', ascending=False, inplace=True)
 
-    # --- CALCULATE THRESHOLDS & DATA MATURITY ---
-    brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
-    ceo_stats = df[df['article_type'] == 'ceo'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
+        # --- CALCULATE THRESHOLDS & DATA MATURITY ---
+        brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
+        ceo_stats = df[df['article_type'] == 'ceo'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
 
-    MIN_HISTORY_POINTS = 14   
-    HARD_FLOOR_NEW_CO = 15    
+        MIN_HISTORY_POINTS = 14
+        HARD_FLOOR_NEW_CO = 15
 
-    updates_made = False
-    llm_cache = load_llm_cache_db(conn, current_time.date().isoformat())
-    llm_calls = 0
+        updates_made = False
+        llm_cache = load_llm_cache_db(conn, current_time.date().isoformat())
+        llm_calls = 0
 
-    serp_brand_counts = {}
-    serp_ceo_counts = {}
-    serp_brand_neg_counts = {}
-    serp_ceo_neg_counts = {}
-    top_stories_brand = {}
-    top_stories_ceo = {}
-    top_stories_brand_items = {}
-    top_stories_ceo_items = {}
-    if SERP_GATE_ENABLED:
-        b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
-        serp_brand_counts = b_unctrl
-        serp_ceo_counts = c_unctrl
-        top_stories_brand, top_stories_ceo = load_top_stories_counts_db(SERP_GATE_DAYS)
-        top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(SERP_GATE_DAYS)
-    
-    for _, row in df.iterrows():
-        # FLOOD PROTECTION CHECK
-        if alerts_remaining_today <= 0:
-            print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
-            break
-
-        brand = row['company']
-        count = row['negative_count']
-        headlines = row['top_headlines']
-        
-        article_type = str(row.get('article_type', 'brand')).lower().strip()
-        ceo_name = str(row.get('ceo', '')).strip()
-        if article_type == "brand" and not ALERT_BRANDS:
-            continue
-        if article_type == "ceo" and not ALERT_CEOS:
-            continue
-
-        # A. STRICT DATE FILTER (Last 48 Hours Only)
-        date_str = str(row['date']) 
-        try:
-            row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        except:
-            continue
-            
-        server_now = datetime.now().date()
-        if row_date != server_now and row_date != server_now - timedelta(days=1):
-            continue
-
-        # B. DYNAMIC THRESHOLD CHECK (disabled)
-        # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
-        # company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
-        # history_points = company_stats['count']
-        # p97 = company_stats['<lambda_0>']
-        # if history_points >= MIN_HISTORY_POINTS:
-        #     if count < MIN_NEGATIVE_ARTICLES: continue
-        #     if count < p97: continue
-        #     threshold_msg = f"P97 ({p97:.1f})"
-        #     baseline_val = p97
-        # else:
-        #     if count < HARD_FLOOR_NEW_CO: continue
-        #     threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
-        #     baseline_val = HARD_FLOOR_NEW_CO
-        # if SERP_GATE_DEBUG:
-        #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
-
-        threshold_msg = "SERP + Top Stories"
-        baseline_val = 0
-
-        # B2. SERP CONFIRMATION GATE
-        serp_count = 0
+        serp_brand_counts = {}
+        serp_ceo_counts = {}
+        serp_brand_neg_counts = {}
+        serp_ceo_neg_counts = {}
+        top_stories_brand = {}
+        top_stories_ceo = {}
+        top_stories_brand_items = {}
+        top_stories_ceo_items = {}
         if SERP_GATE_ENABLED:
-            if article_type == 'ceo':
+            b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
+            serp_brand_counts = b_unctrl
+            serp_ceo_counts = c_unctrl
+            top_stories_brand, top_stories_ceo = load_top_stories_counts_db(SERP_GATE_DAYS)
+            top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(SERP_GATE_DAYS)
+
+        for _, row in df.iterrows():
+            # FLOOD PROTECTION CHECK
+            if alerts_remaining_today <= 0:
+                print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
+                break
+
+            brand = row['company']
+            count = row['negative_count']
+            headlines = row['top_headlines']
+
+            article_type = str(row.get('article_type', 'brand')).lower().strip()
+            ceo_name = str(row.get('ceo', '')).strip()
+            if article_type == "brand" and not ALERT_BRANDS:
+                continue
+            if article_type == "ceo" and not ALERT_CEOS:
+                continue
+
+            # A. STRICT DATE FILTER (Last 48 Hours Only)
+            date_str = str(row['date'])
+            try:
+                row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except Exception:
+                continue
+
+            server_now = datetime.now().date()
+            if row_date != server_now and row_date != server_now - timedelta(days=1):
+                continue
+
+            # B. DYNAMIC THRESHOLD CHECK (disabled)
+            # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
+            # company_stats = stats_lookup.get(brand, {'count': 0, '<lambda_0>': 0})
+            # history_points = company_stats['count']
+            # p97 = company_stats['<lambda_0>']
+            # if history_points >= MIN_HISTORY_POINTS:
+            #     if count < MIN_NEGATIVE_ARTICLES: continue
+            #     if count < p97: continue
+            #     threshold_msg = f"P97 ({p97:.1f})"
+            #     baseline_val = p97
+            # else:
+            #     if count < HARD_FLOOR_NEW_CO: continue
+            #     threshold_msg = f"Hard Floor ({HARD_FLOOR_NEW_CO})"
+            #     baseline_val = HARD_FLOOR_NEW_CO
+            # if SERP_GATE_DEBUG:
+            #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
+
+            threshold_msg = "SERP + Top Stories"
+            baseline_val = 0
+
+            # B2. SERP CONFIRMATION GATE
+            serp_count = 0
+            if SERP_GATE_ENABLED:
+                if article_type == 'ceo':
+                    serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
+                    top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
+                else:
+                    serp_count = serp_brand_counts.get(brand, 0)
+                    top_total, top_neg = top_stories_brand.get(brand, (0, 0))
+                if SERP_GATE_DEBUG:
+                    print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count} top_total={top_total} top_neg={top_neg}")
+                if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
+                    if SERP_GATE_DEBUG:
+                        print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
+                    continue
+                if top_neg < SERP_TOP_STORIES_NEG_MIN:
+                    if SERP_GATE_DEBUG:
+                        print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
+                    continue
+                if serp_count < SERP_GATE_MIN:
+                    if SERP_GATE_DEBUG:
+                        print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
+                    continue
+            elif article_type == 'ceo':
                 serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
-                top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
             else:
                 serp_count = serp_brand_counts.get(brand, 0)
-                top_total, top_neg = top_stories_brand.get(brand, (0, 0))
-            if SERP_GATE_DEBUG:
-                print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count} top_total={top_total} top_neg={top_neg}")
-            if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
-                if SERP_GATE_DEBUG:
-                    print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
-                continue
-            if top_neg < SERP_TOP_STORIES_NEG_MIN:
-                if SERP_GATE_DEBUG:
-                    print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
-                continue
-            if serp_count < SERP_GATE_MIN:
-                if SERP_GATE_DEBUG:
-                    print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
-                continue
-        elif article_type == 'ceo':
-            serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
-        else:
-            serp_count = serp_brand_counts.get(brand, 0)
 
-        # C. COOLDOWN CHECK
-        history_key = f"{brand}_{article_type}"
-        last_alert = history.get(history_key)
-        
-        if not last_alert and article_type == 'brand':
-            last_alert = history.get(brand)
+            # C. COOLDOWN CHECK
+            history_key = f"{brand}_{article_type}"
+            last_alert = history.get(history_key)
 
-        if last_alert:
-            last_date = datetime.fromisoformat(last_alert)
-            if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
-                # Silent skip
-                continue
+            if not last_alert and article_type == 'brand':
+                last_alert = history.get(brand)
 
-        # --- TRIGGER ALERT ---
-        crisis_count = int(row.get('crisis_risk_count', 0) or 0)
-        print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg}")
-        
-        owner_email, owner_name = get_salesforce_owner(brand)
-        slack_id = get_slack_user_id(owner_email)
-        
-        summary_text = ""
-        llm_key = f"{brand}|{ceo_name}|{article_type}|{date_str}"
-        if LLM_API_KEY and llm_calls < LLM_SUMMARY_MAX_CALLS:
-            if llm_key in llm_cache:
-                summary_text = llm_cache.get(llm_key, "")
-            else:
-                if article_type == "ceo":
-                    top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+            if last_alert:
+                last_date = datetime.fromisoformat(last_alert)
+                if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
+                    # Silent skip
+                    continue
+
+            # --- TRIGGER ALERT ---
+            crisis_count = int(row.get('crisis_risk_count', 0) or 0)
+            print(f"🚀 Alert: {history_key} | Vol: {count} | Threshold: {threshold_msg}")
+
+            owner_email, owner_name = get_salesforce_owner(brand)
+            slack_id = get_slack_user_id(owner_email)
+
+            summary_text = ""
+            llm_key = f"{brand}|{ceo_name}|{article_type}|{date_str}"
+            if LLM_API_KEY and llm_calls < LLM_SUMMARY_MAX_CALLS:
+                if llm_key in llm_cache:
+                    summary_text = llm_cache.get(llm_key, "")
                 else:
-                    top_items = top_stories_brand_items.get((date_str, brand), [])
-                top_titles = [i.get("title", "").strip().strip('"') for i in top_items if i.get("title")]
-                if not top_titles:
-                    raw_heads = str(headlines).split('|')
-                    top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
-                prompt = build_summary_prompt(
-                    article_type,
-                    ceo_name if article_type == "ceo" else brand,
-                    top_titles[:5]
-                )
-                summary_text = call_llm_text(prompt, LLM_API_KEY, LLM_MODEL)
-                llm_cache[llm_key] = summary_text
-                llm_calls += 1
+                    if article_type == "ceo":
+                        top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+                    else:
+                        top_items = top_stories_brand_items.get((date_str, brand), [])
+                    top_titles = [i.get("title", "").strip().strip('"') for i in top_items if i.get("title")]
+                    if not top_titles:
+                        raw_heads = str(headlines).split('|')
+                        top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
+                    prompt = build_summary_prompt(
+                        article_type,
+                        ceo_name if article_type == "ceo" else brand,
+                        top_titles[:5]
+                    )
+                    summary_text = call_llm_text(prompt, LLM_API_KEY, LLM_MODEL)
+                    llm_cache[llm_key] = summary_text
+                    llm_calls += 1
 
-        if article_type == "ceo":
-            top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
-        else:
-            top_items = top_stories_brand_items.get((date_str, brand), [])
+            if article_type == "ceo":
+                top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+            else:
+                top_items = top_stories_brand_items.get((date_str, brand), [])
 
-        send_slack_alert(
-            brand, ceo_name, article_type, count, baseline_val,
-            headlines, top_items, slack_id, owner_name, summary_text, None
-        )
-                
-        # --- JITTER IMPLEMENTATION ---
-        jitter_seconds = random.randint(0, 6 * 3600)
-        effective_timestamp = current_time + timedelta(seconds=jitter_seconds)
-        
-        if DRY_RUN:
-            print(f"   [Test] Jitter applied: {jitter_seconds/3600:.1f} hours.")
-            print(f"   [Test] Next unlock time would be: {effective_timestamp}")
-        else:
-            history[history_key] = effective_timestamp.isoformat()
-            
-        updates_made = True
-        
-        # Decrement Budget
-        alerts_remaining_today -= 1
-        
-        # --- DRY RUN SLEEP ---
-        # Don't sleep for 2 seconds in testing, it's annoying.
-        if not DRY_RUN:
-            time.sleep(2) 
+            send_slack_alert(
+                brand, ceo_name, article_type, count, baseline_val,
+                headlines, top_items, slack_id, owner_name, summary_text, None
+            )
 
-    # --- SAVE CHECK ---
+            # --- JITTER IMPLEMENTATION ---
+            jitter_seconds = random.randint(0, 6 * 3600)
+            effective_timestamp = current_time + timedelta(seconds=jitter_seconds)
+
+            if DRY_RUN:
+                print(f"   [Test] Jitter applied: {jitter_seconds/3600:.1f} hours.")
+                print(f"   [Test] Next unlock time would be: {effective_timestamp}")
+            else:
+                history[history_key] = effective_timestamp.isoformat()
+
+            updates_made = True
+
+            # Decrement Budget
+            alerts_remaining_today -= 1
+
+            # --- DRY RUN SLEEP ---
+            # Don't sleep for 2 seconds in testing, it's annoying.
+            if not DRY_RUN:
+                time.sleep(2)
+
+        # --- SAVE CHECK ---
         if updates_made:
             if DRY_RUN:
                 print("🚫 [DRY RUN] Skipping DB updates. No changes made.")
