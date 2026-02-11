@@ -509,12 +509,21 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
         print(f"👀 [DRY RUN] Would send Slack alert for: {brand} (Owner: {owner_name})")
         return # <--- Stop here, do not run requests.post
 
-    requests.post(
+    resp = requests.post(
         "https://slack.com/api/chat.postMessage",
         headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
         json=payload
     )
-    print(f"✅ Alert sent for {alert_title}")
+    try:
+        data = resp.json()
+    except Exception:
+        data = {"ok": False, "error": f"http_{resp.status_code}"}
+    if data.get("ok"):
+        print(f"✅ Alert sent for {alert_title}")
+    else:
+        err = data.get("error", "unknown_error")
+        print(f"⚠️ Slack send failed for {alert_title}: {err}")
+        raise RuntimeError(f"Slack send failed: {err}")
 
 def main():
     parser = argparse.ArgumentParser()

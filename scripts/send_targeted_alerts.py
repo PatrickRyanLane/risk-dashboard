@@ -106,6 +106,7 @@ def main():
         "skipped_cooldown": 0,
         "skipped_missing_target": 0,
     }
+    per_brand = {}
     skip_details = {
         "date": set(),
         "top_missing": set(),
@@ -117,6 +118,14 @@ def main():
     skip_cooldown = os.getenv("TARGET_SKIP_COOLDOWN", "1") == "1"
     for _, row in df.iterrows():
         stats["rows"] += 1
+        per_brand.setdefault(brand, {
+            "sent": 0,
+            "skipped_date": 0,
+            "skipped_top_missing": 0,
+            "skipped_top_neg": 0,
+            "skipped_serp": 0,
+            "skipped_cooldown": 0,
+        })
         if alerts_remaining_today <= 0:
             print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
             break
@@ -145,6 +154,7 @@ def main():
         if row_date not in {server_now, server_now - timedelta(days=1)}:
             stats["skipped_date"] += 1
             skip_details["date"].add(brand)
+            per_brand[brand]["skipped_date"] += 1
             continue
 
         if sca.SERP_GATE_ENABLED and targeted_serp_gate:
@@ -157,14 +167,17 @@ def main():
             if sca.SERP_TOP_STORIES_REQUIRED and top_total <= 0:
                 stats["skipped_gate_top"] += 1
                 skip_details["top_missing"].add(brand)
+                per_brand[brand]["skipped_top_missing"] += 1
                 continue
             if targeted_top_stories_neg_gate and top_neg < sca.SERP_TOP_STORIES_NEG_MIN:
                 stats["skipped_gate_top_neg"] += 1
                 skip_details["top_neg"].add(brand)
+                per_brand[brand]["skipped_top_neg"] += 1
                 continue
             if serp_count < sca.SERP_GATE_MIN:
                 stats["skipped_gate_serp"] += 1
                 skip_details["serp"].add(brand)
+                per_brand[brand]["skipped_serp"] += 1
                 continue
         elif targeted_top_stories_gate:
             if article_type == "ceo":
@@ -189,6 +202,7 @@ def main():
             if datetime.utcnow() - last_date < timedelta(hours=sca.ALERT_COOLDOWN_HOURS):
                 stats["skipped_cooldown"] += 1
                 skip_details["cooldown"].add(brand)
+                per_brand[brand]["skipped_cooldown"] += 1
                 continue
 
         owner_email, owner_name = sca.get_salesforce_owner(brand)
@@ -247,6 +261,7 @@ def main():
             updates_made = True
             alerts_remaining_today -= 1
             stats["sent"] += 1
+            per_brand[brand]["sent"] += 1
 
     if updates_made and not sca.DRY_RUN:
         sca.upsert_alert_history_db(conn, history)
@@ -254,22 +269,19 @@ def main():
     conn.close()
     print("🧾 Targeted alerts summary:")
     print(f"   Rows scanned: {stats['rows']}")
-    print(f"   Sent: {stats['sent']}")
-    print(f"   Skipped (date window): {stats['skipped_date']}")
-    print(f"   Skipped (Top Stories missing): {stats['skipped_gate_top']}")
-    print(f"   Skipped (Top Stories neg < min): {stats['skipped_gate_top_neg']}")
-    print(f"   Skipped (SERP gate): {stats['skipped_gate_serp']}")
-    print(f"   Skipped (cooldown): {stats['skipped_cooldown']}")
-    if skip_details["date"]:
-        print(f"   Date window: {', '.join(sorted(skip_details['date']))}")
-    if skip_details["top_missing"]:
-        print(f"   Top Stories missing: {', '.join(sorted(skip_details['top_missing']))}")
-    if skip_details["top_neg"]:
-        print(f"   Top Stories neg < min: {', '.join(sorted(skip_details['top_neg']))}")
-    if skip_details["serp"]:
-        print(f"   SERP gate: {', '.join(sorted(skip_details['serp']))}")
-    if skip_details["cooldown"]:
-        print(f"   Cooldown: {', '.join(sorted(skip_details['cooldown']))}")
+    for brand, bstats in sorted(per_brand.items()):
+        parts = [f"sent {bstats['sent']}"]
+        if bstats["skipped_date"]:
+            parts.append(f"skipped date {bstats['skipped_date']}")
+        if bstats["skipped_top_missing"]:
+            parts.append(f"skipped top stories missing {bstats['skipped_top_missing']}")
+        if bstats["skipped_top_neg"]:
+            parts.append(f"skipped top stories neg {bstats['skipped_top_neg']}")
+        if bstats["skipped_serp"]:
+            parts.append(f"skipped serp gate {bstats['skipped_serp']}")
+        if bstats["skipped_cooldown"]:
+            parts.append(f"skipped cooldown {bstats['skipped_cooldown']}")
+        print(f"   {brand}: " + ", ".join(parts))
     return 0
 
 
