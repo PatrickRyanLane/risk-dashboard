@@ -70,6 +70,7 @@ def main():
         print("No DB connection available. Exiting.")
         return 0
 
+    sca.ensure_alert_tables(conn)
     history = sca.load_alert_history_db(conn)
     llm_cache = sca.load_llm_cache_db(conn, datetime.utcnow().date().isoformat())
 
