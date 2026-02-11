@@ -90,9 +90,27 @@ def main():
     alerts_remaining_today = sca.MAX_ALERTS_PER_DAY
     updates_made = False
     llm_calls = 0
+    stats = {
+        "rows": 0,
+        "sent": 0,
+        "skipped_date": 0,
+        "skipped_gate_top": 0,
+        "skipped_gate_top_neg": 0,
+        "skipped_gate_serp": 0,
+        "skipped_cooldown": 0,
+        "skipped_missing_target": 0,
+    }
+    skip_details = {
+        "date": set(),
+        "top_missing": set(),
+        "top_neg": set(),
+        "serp": set(),
+        "cooldown": set(),
+    }
 
     skip_cooldown = os.getenv("TARGET_SKIP_COOLDOWN", "1") == "1"
     for _, row in df.iterrows():
+        stats["rows"] += 1
         if alerts_remaining_today <= 0:
             print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
             break
@@ -109,6 +127,7 @@ def main():
         elif article_type == "ceo":
             pass
         else:
+            stats["skipped_missing_target"] += 1
             continue
 
         date_str = str(row["date"])
@@ -118,6 +137,8 @@ def main():
             continue
         server_now = datetime.now().date()
         if row_date not in {server_now, server_now - timedelta(days=1)}:
+            stats["skipped_date"] += 1
+            skip_details["date"].add(brand)
             continue
 
         if sca.SERP_GATE_ENABLED:
@@ -128,10 +149,16 @@ def main():
                 serp_count = serp_brand_counts.get(brand, 0)
                 top_total, top_neg = top_stories_brand.get(brand, (0, 0))
             if sca.SERP_TOP_STORIES_REQUIRED and top_total <= 0:
+                stats["skipped_gate_top"] += 1
+                skip_details["top_missing"].add(brand)
                 continue
             if top_neg < sca.SERP_TOP_STORIES_NEG_MIN:
+                stats["skipped_gate_top_neg"] += 1
+                skip_details["top_neg"].add(brand)
                 continue
             if serp_count < sca.SERP_GATE_MIN:
+                stats["skipped_gate_serp"] += 1
+                skip_details["serp"].add(brand)
                 continue
 
         history_key = f"{brand}_{article_type}"
@@ -141,6 +168,8 @@ def main():
         if last_alert and not skip_cooldown:
             last_date = datetime.fromisoformat(last_alert)
             if datetime.utcnow() - last_date < timedelta(hours=sca.ALERT_COOLDOWN_HOURS):
+                stats["skipped_cooldown"] += 1
+                skip_details["cooldown"].add(brand)
                 continue
 
         owner_email, owner_name = sca.get_salesforce_owner(brand)
@@ -198,11 +227,30 @@ def main():
             history[history_key] = effective_timestamp.isoformat()
             updates_made = True
             alerts_remaining_today -= 1
+            stats["sent"] += 1
 
     if updates_made and not sca.DRY_RUN:
         sca.upsert_alert_history_db(conn, history)
         sca.upsert_llm_cache_db(conn, llm_cache)
     conn.close()
+    print("🧾 Targeted alerts summary:")
+    print(f"   Rows scanned: {stats['rows']}")
+    print(f"   Sent: {stats['sent']}")
+    print(f"   Skipped (date window): {stats['skipped_date']}")
+    print(f"   Skipped (Top Stories missing): {stats['skipped_gate_top']}")
+    print(f"   Skipped (Top Stories neg < min): {stats['skipped_gate_top_neg']}")
+    print(f"   Skipped (SERP gate): {stats['skipped_gate_serp']}")
+    print(f"   Skipped (cooldown): {stats['skipped_cooldown']}")
+    if skip_details["date"]:
+        print(f"   Date window: {', '.join(sorted(skip_details['date']))}")
+    if skip_details["top_missing"]:
+        print(f"   Top Stories missing: {', '.join(sorted(skip_details['top_missing']))}")
+    if skip_details["top_neg"]:
+        print(f"   Top Stories neg < min: {', '.join(sorted(skip_details['top_neg']))}")
+    if skip_details["serp"]:
+        print(f"   SERP gate: {', '.join(sorted(skip_details['serp']))}")
+    if skip_details["cooldown"]:
+        print(f"   Cooldown: {', '.join(sorted(skip_details['cooldown']))}")
     return 0
 
 
