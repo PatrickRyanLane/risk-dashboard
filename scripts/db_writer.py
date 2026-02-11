@@ -391,8 +391,15 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     do update set
                       query_text = excluded.query_text,
                       provider = excluded.provider
-                    returning id, company_id
                 """, company_values, page_size=1000)
+                company_ids = [val[1] for val in company_values]
+                cur.execute("""
+                    select id, company_id
+                    from serp_runs
+                    where entity_type = 'company'
+                      and run_at = %s
+                      and company_id = any(%s)
+                """, (now, company_ids))
                 for run_id, company_id in cur.fetchall():
                     run_id_map[("company", company_id)] = run_id
 
@@ -405,8 +412,15 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     do update set
                       query_text = excluded.query_text,
                       provider = excluded.provider
-                    returning id, ceo_id
                 """, ceo_values, page_size=1000)
+                ceo_ids = [val[2] for val in ceo_values]
+                cur.execute("""
+                    select id, ceo_id
+                    from serp_runs
+                    where entity_type = 'ceo'
+                      and run_at = %s
+                      and ceo_id = any(%s)
+                """, (now, ceo_ids))
                 for run_id, ceo_id in cur.fetchall():
                     run_id_map[("ceo", ceo_id)] = run_id
 
