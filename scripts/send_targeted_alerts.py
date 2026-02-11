@@ -212,7 +212,7 @@ def main():
         if not last_alert and article_type == "brand":
             last_alert = history.get(brand)
         if last_alert and not skip_cooldown:
-            last_date = datetime.fromisoformat(last_alert)
+            last_date = datetime.fromisoformat(last_alert).replace(tzinfo=None)
             if datetime.utcnow() - last_date < timedelta(hours=sca.ALERT_COOLDOWN_HOURS):
                 stats["skipped_cooldown"] += 1
                 skip_details["cooldown"].add(brand)

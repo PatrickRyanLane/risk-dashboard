@@ -701,7 +701,7 @@ def main():
                 last_alert = history.get(brand)
 
             if last_alert:
-                last_date = datetime.fromisoformat(last_alert)
+                last_date = datetime.fromisoformat(last_alert).replace(tzinfo=None)
                 if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
                     # Silent skip
                     continue
