@@ -719,21 +719,21 @@ def main():
                 if llm_key in llm_cache:
                     summary_text = llm_cache.get(llm_key, "")
                 else:
-                if article_type == "ceo":
-                    top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
-                else:
-                    top_items = top_stories_brand_items.get((date_str, brand), [])
-                top_titles = []
-                for item in top_items:
-                    title = (item.get("title") or "").strip().strip('"')
-                    snippet = (item.get("snippet") or "").strip()
-                    if title and snippet:
-                        top_titles.append(f"{title} — {snippet}")
-                    elif title:
-                        top_titles.append(title)
-                if not top_titles:
-                    raw_heads = str(headlines).split('|')
-                    top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
+                    if article_type == "ceo":
+                        top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
+                    else:
+                        top_items = top_stories_brand_items.get((date_str, brand), [])
+                    top_titles = []
+                    for item in top_items:
+                        title = (item.get("title") or "").strip().strip('"')
+                        snippet = (item.get("snippet") or "").strip()
+                        if title and snippet:
+                            top_titles.append(f"{title} — {snippet}")
+                        elif title:
+                            top_titles.append(title)
+                    if not top_titles:
+                        raw_heads = str(headlines).split('|')
+                        top_titles = [h.strip().strip('"') for h in raw_heads if h.strip()]
                     prompt = build_summary_prompt(
                         article_type,
                         ceo_name if article_type == "ceo" else brand,
