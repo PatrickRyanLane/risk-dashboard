@@ -586,7 +586,7 @@ def main():
     HARD_FLOOR_NEW_CO = 15    
 
     updates_made = False
-        llm_cache = load_llm_cache_db(conn, current_time.date().isoformat())
+    llm_cache = load_llm_cache_db(conn, current_time.date().isoformat())
     llm_calls = 0
 
     serp_brand_counts = {}
