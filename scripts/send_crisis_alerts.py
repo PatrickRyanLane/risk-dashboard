@@ -559,7 +559,7 @@ def main():
         recent_alerts_count = 0
         for timestamp_str in history.values():
             try:
-                t_alert = datetime.fromisoformat(timestamp_str)
+                t_alert = datetime.fromisoformat(timestamp_str).replace(tzinfo=None)
                 if t_alert > one_day_ago:
                     recent_alerts_count += 1
             except ValueError:
