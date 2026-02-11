@@ -21,6 +21,10 @@ def _parse_targets():
         return []
     return [b.strip() for b in raw.split(",") if b.strip()]
 
+def _env_truthy(key: str, default: str = "0") -> bool:
+    val = os.getenv(key, default)
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 def _load_channel_map():
     raw = os.getenv("BRAND_CHANNEL_MAP", "").strip()
@@ -80,10 +84,12 @@ def main():
     top_stories_ceo = {}
     top_stories_brand_items = {}
     top_stories_ceo_items = {}
-    targeted_serp_gate = os.getenv("TARGET_SERP_GATE_ENABLED", "0") == "1"
-    targeted_top_stories_gate = os.getenv("TARGET_TOP_STORIES_GATE_ENABLED", "1") == "1"
-    targeted_top_stories_neg_gate = os.getenv("TARGET_TOP_STORIES_NEG_GATE_ENABLED", "0") == "1"
-    today_only = os.getenv("TARGET_TOP_STORIES_TODAY_ONLY", "1") == "1"
+    targeted_serp_gate = _env_truthy("TARGET_SERP_GATE_ENABLED", "0")
+    targeted_top_stories_gate = _env_truthy("TARGET_TOP_STORIES_GATE_ENABLED", "1")
+    targeted_top_stories_neg_gate = _env_truthy("TARGET_TOP_STORIES_NEG_GATE_ENABLED", "0")
+    today_only = _env_truthy("TARGET_TOP_STORIES_TODAY_ONLY", "1")
+    print(f"[CFG] TARGET_SERP_GATE_ENABLED={targeted_serp_gate} TARGET_TOP_STORIES_GATE_ENABLED={targeted_top_stories_gate} "
+          f"TARGET_TOP_STORIES_NEG_GATE_ENABLED={targeted_top_stories_neg_gate} TARGET_TOP_STORIES_TODAY_ONLY={today_only}")
     if sca.SERP_GATE_ENABLED and targeted_serp_gate:
         b_unctrl, c_unctrl, b_neg, c_neg = sca.load_serp_counts_db(sca.SERP_GATE_DAYS)
         serp_brand_counts = b_unctrl
@@ -120,7 +126,7 @@ def main():
         "cooldown": set(),
     }
 
-    skip_cooldown = os.getenv("TARGET_SKIP_COOLDOWN", "1") == "1"
+    skip_cooldown = _env_truthy("TARGET_SKIP_COOLDOWN", "1")
     for _, row in df.iterrows():
         stats["rows"] += 1
         brand = row["company"]
@@ -169,6 +175,8 @@ def main():
             else:
                 serp_count = serp_brand_counts.get(brand, 0)
                 top_total, top_neg = top_stories_brand.get(brand, (0, 0))
+            if sca.SERP_GATE_DEBUG:
+                print(f"[Gate] {brand} ({article_type}) top_total={top_total} top_neg={top_neg} serp_uncontrolled={serp_count}")
             if sca.SERP_TOP_STORIES_REQUIRED and top_total <= 0:
                 stats["skipped_gate_top"] += 1
                 skip_details["top_missing"].add(brand)
@@ -189,6 +197,7 @@ def main():
                 top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
             else:
                 top_total, top_neg = top_stories_brand.get(brand, (0, 0))
+            print(f"[Gate] {brand} ({article_type}) top_total={top_total} top_neg={top_neg}")
             if sca.SERP_TOP_STORIES_REQUIRED and top_total <= 0:
                 stats["skipped_gate_top"] += 1
                 skip_details["top_missing"].add(brand)
