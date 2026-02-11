@@ -398,7 +398,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     from serp_runs
                     where entity_type = 'company'
                       and run_at = %s
-                      and company_id = any(%s)
+                      and company_id = any(%s::uuid[])
                 """, (now, company_ids))
                 for run_id, company_id in cur.fetchall():
                     run_id_map[("company", company_id)] = run_id
@@ -419,7 +419,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     from serp_runs
                     where entity_type = 'ceo'
                       and run_at = %s
-                      and ceo_id = any(%s)
+                      and ceo_id = any(%s::uuid[])
                 """, (now, ceo_ids))
                 for run_id, ceo_id in cur.fetchall():
                     run_id_map[("ceo", ceo_id)] = run_id
