@@ -421,6 +421,10 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                     finance_routine, uncertain, uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason
                 )
             insert_rows = list(insert_map.values())
+            if not run_id_map:
+                print("[WARN] DB upsert skipped: no run IDs returned for SERP runs.")
+            if result_rows and not insert_rows:
+                print(f"[WARN] DB upsert skipped: 0 insert rows (result_rows={len(result_rows)}).")
             if insert_rows:
                 execute_values(cur, """
                     insert into serp_results (
@@ -445,7 +449,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
                 """, insert_rows, page_size=1000)
 
     conn.close()
-    return len(result_rows)
+    return len(insert_rows)
 
 
 def _parse_dates_and_values(date_history: str, value_history: str) -> List[Tuple]:
