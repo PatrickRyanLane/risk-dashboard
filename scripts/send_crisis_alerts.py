@@ -40,11 +40,11 @@ ALERT_CEOS = os.getenv("ALERT_CEOS", "1") == "1"
 
 # SERP gating (negative + uncontrolled: same URL must be negative AND uncontrolled)
 SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "1") == "1"
-SERP_GATE_MIN = int(os.getenv("SERP_GATE_MIN", "2"))
+SERP_GATE_MIN = int(os.getenv("SERP_GATE_MIN", "1"))
 SERP_GATE_DAYS = int(os.getenv("SERP_GATE_DAYS", "2"))
 SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
 SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
-SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "3"))
+SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "2"))
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
