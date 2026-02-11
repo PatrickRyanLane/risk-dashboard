@@ -118,6 +118,7 @@ def main():
     skip_cooldown = os.getenv("TARGET_SKIP_COOLDOWN", "1") == "1"
     for _, row in df.iterrows():
         stats["rows"] += 1
+        brand = row["company"]
         per_brand.setdefault(brand, {
             "sent": 0,
             "skipped_date": 0,
@@ -130,7 +131,6 @@ def main():
             print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
             break
 
-        brand = row["company"]
         count = row["negative_count"]
         headlines = row["top_headlines"]
         article_type = str(row.get("article_type", "brand")).lower().strip()
