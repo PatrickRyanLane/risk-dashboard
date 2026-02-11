@@ -80,10 +80,14 @@ def main():
     top_stories_ceo = {}
     top_stories_brand_items = {}
     top_stories_ceo_items = {}
-    if sca.SERP_GATE_ENABLED:
+    targeted_serp_gate = os.getenv("TARGET_SERP_GATE_ENABLED", "0") == "1"
+    if sca.SERP_GATE_ENABLED and targeted_serp_gate:
         b_unctrl, c_unctrl, b_neg, c_neg = sca.load_serp_counts_db(sca.SERP_GATE_DAYS)
         serp_brand_counts = b_unctrl
         serp_ceo_counts = c_unctrl
+        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(sca.SERP_GATE_DAYS)
+        top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(sca.SERP_GATE_DAYS)
+    else:
         top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(sca.SERP_GATE_DAYS)
         top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(sca.SERP_GATE_DAYS)
 
@@ -141,7 +145,7 @@ def main():
             skip_details["date"].add(brand)
             continue
 
-        if sca.SERP_GATE_ENABLED:
+        if sca.SERP_GATE_ENABLED and targeted_serp_gate:
             if article_type == "ceo":
                 serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
                 top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))

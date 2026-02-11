@@ -45,6 +45,7 @@ jobs:
           TARGET_DEFAULT_CHANNEL: ${{ vars.TARGET_DEFAULT_CHANNEL || '#crisis-alerts-test' }}
           BRAND_CHANNEL_MAP: ${{ vars.BRAND_CHANNEL_MAP || '{"Fanatics":"#fanatics-alerts-test"}' }}
           TARGET_SKIP_COOLDOWN: ${{ vars.TARGET_SKIP_COOLDOWN || '1' }}
+          TARGET_SERP_GATE_ENABLED: ${{ vars.TARGET_SERP_GATE_ENABLED || '0' }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
           SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
