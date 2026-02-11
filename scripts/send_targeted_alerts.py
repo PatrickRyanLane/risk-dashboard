@@ -90,6 +90,7 @@ def main():
     updates_made = False
     llm_calls = 0
 
+    skip_cooldown = os.getenv("TARGET_SKIP_COOLDOWN", "1") == "1"
     for _, row in df.iterrows():
         if alerts_remaining_today <= 0:
             print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
@@ -136,7 +137,7 @@ def main():
         last_alert = history.get(history_key)
         if not last_alert and article_type == "brand":
             last_alert = history.get(brand)
-        if last_alert:
+        if last_alert and not skip_cooldown:
             last_date = datetime.fromisoformat(last_alert)
             if datetime.utcnow() - last_date < timedelta(hours=sca.ALERT_COOLDOWN_HOURS):
                 continue
