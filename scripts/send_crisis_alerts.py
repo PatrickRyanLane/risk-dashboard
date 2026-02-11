@@ -629,8 +629,8 @@ def main():
                 continue
 
             server_now = datetime.now().date()
-        if row_date != server_now:
-            continue
+            if row_date != server_now:
+                continue
 
             # B. DYNAMIC THRESHOLD CHECK (disabled)
             # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
