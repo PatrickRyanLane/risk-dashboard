@@ -83,15 +83,20 @@ def main():
     targeted_serp_gate = os.getenv("TARGET_SERP_GATE_ENABLED", "0") == "1"
     targeted_top_stories_gate = os.getenv("TARGET_TOP_STORIES_GATE_ENABLED", "1") == "1"
     targeted_top_stories_neg_gate = os.getenv("TARGET_TOP_STORIES_NEG_GATE_ENABLED", "0") == "1"
+    today_only = os.getenv("TARGET_TOP_STORIES_TODAY_ONLY", "1") == "1"
     if sca.SERP_GATE_ENABLED and targeted_serp_gate:
         b_unctrl, c_unctrl, b_neg, c_neg = sca.load_serp_counts_db(sca.SERP_GATE_DAYS)
         serp_brand_counts = b_unctrl
         serp_ceo_counts = c_unctrl
-        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(sca.SERP_GATE_DAYS)
-        top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(sca.SERP_GATE_DAYS)
+        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(1 if today_only else sca.SERP_GATE_DAYS)
+        top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(
+            sca.SERP_GATE_DAYS, today_only=today_only
+        )
     else:
-        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(sca.SERP_GATE_DAYS)
-        top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(sca.SERP_GATE_DAYS)
+        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(1 if today_only else sca.SERP_GATE_DAYS)
+        top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(
+            sca.SERP_GATE_DAYS, today_only=today_only
+        )
 
     alerts_remaining_today = sca.MAX_ALERTS_PER_DAY
     updates_made = False

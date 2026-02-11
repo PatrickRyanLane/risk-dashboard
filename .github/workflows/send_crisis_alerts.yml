@@ -49,6 +49,7 @@ jobs:
           SERP_GATE_MIN: ${{ vars.SERP_GATE_MIN || '1' }}
           SERP_GATE_DAYS: ${{ vars.SERP_GATE_DAYS || '2' }}
           SERP_GATE_DEBUG: ${{ vars.SERP_GATE_DEBUG || '1' }}
+          TOP_STORIES_TODAY_ONLY: ${{ vars.TOP_STORIES_TODAY_ONLY || '1' }}
         run: |
           echo "🚀 Checking for crises and sending alerts..."
           python scripts/send_crisis_alerts.py

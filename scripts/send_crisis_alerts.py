@@ -257,7 +257,7 @@ def load_serp_counts_db(days: int):
     return brand_uncontrolled, ceo_uncontrolled, brand_negative, ceo_negative
 
 
-def load_top_stories_counts_db(days: int):
+def load_top_stories_counts_db(days: int, today_only: bool = False):
     conn = get_db_conn()
     if conn is None:
         return {}, {}
@@ -269,13 +269,16 @@ def load_top_stories_counts_db(days: int):
                sum(negative_count) as negative_count
         from serp_feature_daily
         where feature_type = 'top_stories_items'
-          and date >= (current_date - (%s || ' days')::interval)
+          and (
+            (%s = true and date = current_date)
+            or (%s = false and date >= (current_date - (%s || ' days')::interval))
+          )
         group by entity_type, entity_name
     """
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (max(1, days),))
+                cur.execute(sql, (today_only, today_only, max(1, days)))
                 for entity_type, entity_name, total_count, negative_count in cur.fetchall():
                     key = (entity_name or "").strip()
                     if not key:
@@ -293,7 +296,7 @@ def load_top_stories_counts_db(days: int):
         conn.close()
     return brand_counts, ceo_counts
 
-def load_top_stories_items_db(days: int):
+def load_top_stories_items_db(days: int, today_only: bool = False):
     conn = get_db_conn()
     if conn is None:
         return {}, {}
@@ -306,14 +309,17 @@ def load_top_stories_items_db(days: int):
         from serp_feature_items sfi
         left join serp_feature_item_overrides ov on ov.serp_feature_item_id = sfi.id
         where sfi.feature_type = 'top_stories_items'
-          and sfi.date >= (current_date - (%s || ' days')::interval)
+          and (
+            (%s = true and sfi.date = current_date)
+            or (%s = false and sfi.date >= (current_date - (%s || ' days')::interval))
+          )
           and coalesce(ov.override_sentiment_label, sfi.llm_sentiment_label, sfi.sentiment_label) = 'negative'
         order by sfi.date, sfi.entity_name, sfi.position
     """
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (max(1, days),))
+                cur.execute(sql, (today_only, today_only, max(1, days)))
                 for dval, entity_type, entity_name, title, url, sentiment in cur.fetchall():
                     key_name = (entity_name or "").strip()
                     if not key_name:
@@ -597,12 +603,19 @@ def main():
         top_stories_ceo = {}
         top_stories_brand_items = {}
         top_stories_ceo_items = {}
+        top_stories_today_only = os.getenv("TOP_STORIES_TODAY_ONLY", "1") == "1"
         if SERP_GATE_ENABLED:
             b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
             serp_brand_counts = b_unctrl
             serp_ceo_counts = c_unctrl
-            top_stories_brand, top_stories_ceo = load_top_stories_counts_db(SERP_GATE_DAYS)
-            top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(SERP_GATE_DAYS)
+            top_stories_brand, top_stories_ceo = load_top_stories_counts_db(
+                1 if top_stories_today_only else SERP_GATE_DAYS,
+                today_only=top_stories_today_only
+            )
+            top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(
+                SERP_GATE_DAYS,
+                today_only=top_stories_today_only
+            )
 
         for _, row in df.iterrows():
             # FLOOD PROTECTION CHECK
