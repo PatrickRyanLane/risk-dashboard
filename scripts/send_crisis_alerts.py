@@ -400,7 +400,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
         else:
              sub_context = "Category: Corporate Brand"
         safe_filter = urllib.parse.quote(brand)
-        dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=brands&company={safe_filter}"
+        dashboard_url = f"https://risk-dashboard-168007850529.us-west1.run.app/?tab=brands&company={safe_filter}"
 
     if owner_slack_id:
         mention_text = f"<@{owner_slack_id}>"
@@ -413,7 +413,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
     if top_stories:
         for item in top_stories[:3]:
             title = (item.get("title") or "").strip().strip('"')
-            url = (item.get("url") or "").strip()
+            url = (item.get("url") or item.get("link") or "").strip()
             if title and url:
                 headline_text += f"• <{url}|{title}>\n"
             elif title:
@@ -455,6 +455,13 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
         { "type": "divider" },
         {
             "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Top Stories:*\n{headline_text}" if headline_text else "*Top Stories:*\n_No negative top stories found_"
+            }
+        },
+        {
+            "type": "section",
             "fields": [
                 {
                     "type": "mrkdwn",
@@ -465,22 +472,6 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
                     "text": f"*Normal Negative Article Baseline (P97):*\n< {p97_val:.1f} Articles"
                 }
             ]
-        },
-        *([{
-            "type": "section",
-            "fields": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Risk Score:*\n{risk_score:.1f}"
-                }
-            ]
-        }] if risk_score is not None else []),
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Top Stories:*\n{headline_text}" if headline_text else "*Top Stories:*\n_No negative top stories found_"
-            }
         },
         # {
         #     "type": "context",
@@ -638,8 +629,8 @@ def main():
                 continue
 
             server_now = datetime.now().date()
-            if row_date != server_now and row_date != server_now - timedelta(days=1):
-                continue
+        if row_date != server_now:
+            continue
 
             # B. DYNAMIC THRESHOLD CHECK (disabled)
             # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats

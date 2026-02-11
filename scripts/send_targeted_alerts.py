@@ -151,7 +151,7 @@ def main():
         except Exception:
             continue
         server_now = datetime.now().date()
-        if row_date not in {server_now, server_now - timedelta(days=1)}:
+        if row_date != server_now:
             stats["skipped_date"] += 1
             skip_details["date"].add(brand)
             per_brand[brand]["skipped_date"] += 1
