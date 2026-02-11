@@ -21,7 +21,7 @@ import pandas as pd
 from llm_utils import build_summary_prompt, call_llm_text
 
 # --- CONFIG ---
-DRY_RUN = True  # <--- SET TO True FOR TESTING
+DRY_RUN = False  # <--- SET TO True FOR TESTING
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
@@ -52,7 +52,7 @@ PERCENTILE_CUTOFF = 0.97
 ALERT_COOLDOWN_HOURS = 168
 
 # --- FLOOD PROTECTION ---
-MAX_ALERTS_PER_DAY = 10  # Strict limit: Max 20 alerts per 24-hour rolling window
+MAX_ALERTS_PER_DAY = 3  # Strict limit: Max 20 alerts per 24-hour rolling window
 
 # Manual color mapping for your VIPs
 OWNER_COLORS = {
