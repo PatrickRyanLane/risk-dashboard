@@ -118,6 +118,7 @@ def main():
         "skipped_missing_target": 0,
     }
     per_brand = {}
+    per_brand_top_neg = {}
     skip_details = {
         "date": set(),
         "top_missing": set(),
@@ -146,6 +147,11 @@ def main():
         headlines = row["top_headlines"]
         article_type = str(row.get("article_type", "brand")).lower().strip()
         ceo_name = str(row.get("ceo", "")).strip()
+        if article_type == "ceo":
+            top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
+        else:
+            top_total, top_neg = top_stories_brand.get(brand, (0, 0))
+        per_brand_top_neg[brand] = max(per_brand_top_neg.get(brand, 0), int(top_neg or 0))
 
         # Always include CEOs for target brands
         if article_type == "brand":
@@ -290,8 +296,12 @@ def main():
     conn.close()
     print("🧾 Targeted alerts summary:")
     print(f"   Rows scanned: {stats['rows']}")
-    for brand, bstats in sorted(per_brand.items()):
-        parts = [f"sent {bstats['sent']}"]
+    for brand, bstats in sorted(
+        per_brand.items(),
+        key=lambda kv: per_brand_top_neg.get(kv[0], 0),
+        reverse=True
+    ):
+        parts = [f"sent {bstats['sent']}", f"top stories neg {per_brand_top_neg.get(brand, 0)}"]
         if bstats["skipped_date"]:
             parts.append(f"skipped date {bstats['skipped_date']}")
         if bstats["skipped_top_missing"]:
