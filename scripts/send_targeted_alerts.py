@@ -103,6 +103,8 @@ def main():
         top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(
             sca.SERP_GATE_DAYS, today_only=today_only
         )
+    top_stories_brand = top_stories_brand or {}
+    top_stories_ceo = top_stories_ceo or {}
 
     alerts_remaining_today = sca.MAX_ALERTS_PER_DAY
     updates_made = False

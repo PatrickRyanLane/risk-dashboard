@@ -577,20 +577,10 @@ def main():
 
         # --- SORT BY PRIORITY ---
         # Sort by blended signal (negatives + crisis_risk)
-        print("📊 Sorting data by Top Stories negative, then negative count...")
         if 'negative_count' in df.columns:
             if 'crisis_risk_count' not in df.columns:
                 df['crisis_risk_count'] = 0
             df['risk_signal'] = df['negative_count'].fillna(0) + (df['crisis_risk_count'].fillna(0) * RISK_LABEL_WEIGHT)
-            def _top_neg(row):
-                brand = row.get("company")
-                article_type = str(row.get("article_type", "brand")).lower().strip()
-                ceo_name = str(row.get("ceo", "")).strip()
-                if article_type == "ceo":
-                    return (top_stories_ceo.get(ceo_name, (0, 0))[1])
-                return (top_stories_brand.get(brand, (0, 0))[1])
-            df['top_stories_neg'] = df.apply(_top_neg, axis=1).fillna(0)
-            df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
 
         # --- CALCULATE THRESHOLDS & DATA MATURITY ---
         brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
@@ -624,6 +614,18 @@ def main():
                 SERP_GATE_DAYS,
                 today_only=top_stories_today_only
             )
+
+        print("📊 Sorting data by Top Stories negative, then negative count...")
+        if 'negative_count' in df.columns:
+            def _top_neg(row):
+                brand = row.get("company")
+                article_type = str(row.get("article_type", "brand")).lower().strip()
+                ceo_name = str(row.get("ceo", "")).strip()
+                if article_type == "ceo":
+                    return top_stories_ceo.get(ceo_name, (0, 0))[1]
+                return top_stories_brand.get(brand, (0, 0))[1]
+            df['top_stories_neg'] = df.apply(_top_neg, axis=1).fillna(0)
+            df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
 
         for _, row in df.iterrows():
             # FLOOD PROTECTION CHECK
