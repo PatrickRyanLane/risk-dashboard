@@ -84,4 +84,4 @@ jobs:
 
       - name: Refresh negative summary view
         run: |
-          python3 scripts/refresh_negative_summary_view.py
+          python3 scripts/refresh_negative_summary_view.py --serp-features
