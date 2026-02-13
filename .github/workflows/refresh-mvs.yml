@@ -27,6 +27,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             .github/actions/
+            requirements.txt
             scripts/
           sparse-checkout-cone-mode: false
 
