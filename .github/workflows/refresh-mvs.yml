@@ -1,0 +1,40 @@
+name: Refresh Materialized Views
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-mvs
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONUNBUFFERED: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Refresh article + SERP daily counts and negative summary
+        run: |
+          python3 scripts/refresh_negative_summary_view.py \
+            --negative-summary \
+            --article-counts \
+            --serp-counts
