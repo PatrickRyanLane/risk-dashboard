@@ -12,6 +12,7 @@ Writes to:
 from __future__ import annotations
 
 import argparse
+import time
 from urllib.parse import urlparse
 import json
 import os
@@ -22,6 +23,7 @@ from typing import Dict, List, Tuple, Set
 
 import duckdb
 import psycopg2
+import requests
 from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -36,6 +38,8 @@ FEATURES = [
     "top_stories",
     # "knowledge_graph",
 ]
+
+DOWNLOAD_TIMEOUT = int(os.getenv("PARQUET_DOWNLOAD_TIMEOUT", "60"))
 
 
 
@@ -79,6 +83,37 @@ def _vader_label(analyzer: SentimentIntensityAnalyzer, text: str) -> Tuple[str, 
     if compound <= -0.10:
         return "negative", compound
     return "neutral", compound
+
+
+def _step(label: str, fn):
+    print(f"[STEP] {label}...")
+    start = time.perf_counter()
+    result = fn()
+    elapsed = time.perf_counter() - start
+    try:
+        size = len(result)
+        print(f"[STEP] {label} done in {elapsed:.2f}s (rows={size})")
+    except Exception:
+        print(f"[STEP] {label} done in {elapsed:.2f}s")
+    return result
+
+
+def _cache_parquet(url: str, date_str: str, entity_type: str) -> str:
+    if not url.lower().startswith("http"):
+        return url
+    cache_path = f"/tmp/serp-features-{date_str}-{entity_type}.parquet"
+    if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
+        print(f"Using cached parquet: {cache_path}")
+        return cache_path
+    print(f"Downloading parquet to {cache_path}...")
+    with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT) as resp:
+        resp.raise_for_status()
+        with open(cache_path, "wb") as fh:
+            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    fh.write(chunk)
+    print(f"Downloaded parquet bytes: {os.path.getsize(cache_path)}")
+    return cache_path
 
 def load_company_map(cur) -> Dict[str, Tuple[str, str]]:
     cur.execute("select id, name from companies")
@@ -650,6 +685,9 @@ def main() -> int:
 
     url = args.source_url or parquet_url(args.date, args.entity_type)
     print(f"Reading parquet: {url}")
+    local_path = _cache_parquet(url, args.date, args.entity_type)
+    if local_path != url:
+        print(f"Using local parquet: {local_path}")
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -657,23 +695,29 @@ def main() -> int:
             ceo_map = load_ceo_map(cur)
             company_domains = load_company_domains(cur)
 
-        df = load_feature_counts(url)
-        aio_sentiment = load_aio_citation_sentiment(url)
-        paa_sentiment = load_paa_sentiment(url)
-        videos_sentiment = load_videos_sentiment(url)
-        perspectives_sentiment = load_perspectives_sentiment(url)
-        top_stories_sentiment = load_top_stories_sentiment(url)
-        rows = build_feature_rows(
-            df, args.date, args.entity_type, company_map, ceo_map,
-            aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment, top_stories_sentiment
+        df = _step("load_feature_counts", lambda: load_feature_counts(local_path))
+        aio_sentiment = _step("load_aio_citation_sentiment", lambda: load_aio_citation_sentiment(local_path))
+        paa_sentiment = _step("load_paa_sentiment", lambda: load_paa_sentiment(local_path))
+        videos_sentiment = _step("load_videos_sentiment", lambda: load_videos_sentiment(local_path))
+        perspectives_sentiment = _step("load_perspectives_sentiment", lambda: load_perspectives_sentiment(local_path))
+        top_stories_sentiment = _step("load_top_stories_sentiment", lambda: load_top_stories_sentiment(local_path))
+        rows = _step(
+            "build_feature_rows",
+            lambda: build_feature_rows(
+                df, args.date, args.entity_type, company_map, ceo_map,
+                aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment, top_stories_sentiment
+            )
         )
-        item_rows = load_feature_items(
-            url, args.date, args.entity_type, company_map, ceo_map, company_domains
+        item_rows = _step(
+            "load_feature_items",
+            lambda: load_feature_items(
+                local_path, args.date, args.entity_type, company_map, ceo_map, company_domains
+            )
         )
 
         with conn.cursor() as cur:
-            inserted = upsert_feature_rows(cur, rows, "aio_parquet")
-            inserted_items = upsert_feature_items(cur, item_rows, "aio_parquet")
+            inserted = _step("upsert_feature_rows", lambda: upsert_feature_rows(cur, rows, "aio_parquet"))
+            inserted_items = _step("upsert_feature_items", lambda: upsert_feature_items(cur, item_rows, "aio_parquet"))
         conn.commit()
 
     print(f"Rows upserted: {inserted}")
