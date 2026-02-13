@@ -4,6 +4,8 @@ import sys
 
 import psycopg2
 
+REFRESH_LOCK_KEY = int(os.getenv("REFRESH_LOCK_KEY", "918273645"))
+
 
 def refresh_view() -> None:
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
@@ -13,6 +15,11 @@ def refresh_view() -> None:
     try:
         conn.autocommit = True
         with conn.cursor() as cur:
+            cur.execute("select pg_try_advisory_lock(%s)", (REFRESH_LOCK_KEY,))
+            got_lock = bool(cur.fetchone()[0])
+            if not got_lock:
+                print("[WARN] Refresh already running, skipping")
+                return
             try:
                 cur.execute("refresh materialized view concurrently negative_articles_summary_mv")
             except Exception:
@@ -30,6 +37,11 @@ def refresh_view() -> None:
             except Exception:
                 cur.execute("refresh materialized view serp_daily_counts_mv")
     finally:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("select pg_advisory_unlock(%s)", (REFRESH_LOCK_KEY,))
+        except Exception:
+            pass
         conn.close()
 
 
