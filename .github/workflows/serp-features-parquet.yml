@@ -23,6 +23,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       PYTHONPATH: ${{ github.workspace }}
+      PYTHONUNBUFFERED: "1"
 
     steps:
       - name: Checkout repository
@@ -67,7 +68,7 @@ jobs:
           for i in $(seq 0 $((DAYS-1))); do
             DSTR=$(date -u -d "${START_DATE} -${i} day" +%F)
             echo "→ ${DSTR}"
-            python3 scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type brand
+            python3 -u scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type brand
           done
 
       - name: Ingest CEO features
@@ -78,7 +79,7 @@ jobs:
           for i in $(seq 0 $((DAYS-1))); do
             DSTR=$(date -u -d "${START_DATE} -${i} day" +%F)
             echo "→ ${DSTR}"
-            python3 scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type ceo
+            python3 -u scripts/ingest_serp_features_parquet.py --date "$DSTR" --entity-type ceo
           done
 
       - name: Refresh negative summary view
