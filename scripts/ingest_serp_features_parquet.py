@@ -98,6 +98,38 @@ def _step(label: str, fn):
     return result
 
 
+def _log_db_locks(cur):
+    try:
+        cur.execute("""
+            select
+              a.pid,
+              now() - a.query_start as wait,
+              a.state,
+              a.wait_event_type,
+              a.wait_event,
+              a.query
+            from pg_stat_activity a
+            where cardinality(pg_blocking_pids(a.pid)) > 0
+            order by wait desc
+            limit 10
+        """)
+        rows = cur.fetchall()
+        if rows:
+            print("[STEP] lock_check: blocking detected")
+            for pid, wait, state, wait_type, wait_event, query in rows:
+                print(f"[LOCK] pid={pid} wait={wait} state={state} {wait_type}:{wait_event}")
+                print(f"[LOCK] query={query[:300]}")
+        else:
+            print("[STEP] lock_check: no blocking queries")
+    except Exception as exc:
+        print(f"[STEP] lock_check: failed ({exc})")
+
+
+def _chunked(rows, size: int):
+    for i in range(0, len(rows), size):
+        yield i, rows[i:i + size]
+
+
 def _cache_parquet(url: str, date_str: str, entity_type: str) -> str:
     if not url.lower().startswith("http"):
         return url
@@ -596,7 +628,12 @@ def upsert_feature_items(cur, rows, source: str):
           source = excluded.source,
           updated_at = now()
     """
-    execute_values(cur, sql, rows, page_size=1000)
+    total = len(rows)
+    if total:
+        chunk_size = 5000
+        for idx, chunk in _chunked(rows, chunk_size):
+            execute_values(cur, sql, chunk, page_size=1000)
+            print(f"[STEP] upsert_feature_items {idx + len(chunk)}/{total}")
     return len(rows)
 def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map,
                        aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment, top_stories_sentiment):
@@ -650,11 +687,16 @@ def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map
 def upsert_feature_rows(cur, rows, source: str):
     if not rows:
         return 0
+    deduped = {}
+    for row in rows:
+        key = (row[0], row[1], row[3], row[4])
+        deduped[key] = row
+    rows = list(deduped.values())
     sql = """
         insert into serp_feature_daily
           (date, entity_type, entity_id, entity_name, feature_type, total_count,
            positive_count, neutral_count, negative_count, source)
-        values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        values %s
         on conflict (date, entity_type, entity_name, feature_type) do update set
           total_count = excluded.total_count,
           positive_count = excluded.positive_count,
@@ -663,11 +705,15 @@ def upsert_feature_rows(cur, rows, source: str):
           source = excluded.source,
           updated_at = now()
     """
-    cur.executemany(
-        sql,
-        [(d, et, eid, ename, feat, cnt, pos, neu, neg, source)
-         for d, et, eid, ename, feat, cnt, pos, neu, neg in rows]
-    )
+    values = [
+        (d, et, eid, ename, feat, cnt, pos, neu, neg, source)
+        for d, et, eid, ename, feat, cnt, pos, neu, neg in rows
+    ]
+    total = len(values)
+    chunk_size = 5000
+    for idx, chunk in _chunked(values, chunk_size):
+        execute_values(cur, sql, chunk, page_size=1000)
+        print(f"[STEP] upsert_feature_rows {idx + len(chunk)}/{total}")
     return len(rows)
 
 
@@ -716,6 +762,7 @@ def main() -> int:
         )
 
         with conn.cursor() as cur:
+            _step("lock_check", lambda: _log_db_locks(cur))
             inserted = _step("upsert_feature_rows", lambda: upsert_feature_rows(cur, rows, "aio_parquet"))
             inserted_items = _step("upsert_feature_items", lambda: upsert_feature_items(cur, item_rows, "aio_parquet"))
         conn.commit()
