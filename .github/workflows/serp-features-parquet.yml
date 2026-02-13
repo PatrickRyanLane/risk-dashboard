@@ -42,9 +42,9 @@ jobs:
         run: |
           git rev-parse HEAD
           git log -1 --oneline
-          rg -n "\\[STEP\\]" scripts/ingest_serp_features_parquet.py
+          grep -n "\\[STEP\\]" scripts/ingest_serp_features_parquet.py || true
           sed -n '1,40p' scripts/ingest_serp_features_parquet.py
-
+            
       - name: Set run date
         id: date
         run: |
