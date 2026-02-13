@@ -35,7 +35,9 @@ FINANCE_TERMS_RE = re.compile("|".join(FINANCE_TERMS), flags=re.IGNORECASE)
 FINANCE_SOURCES = {
     "yahoo.com", "marketwatch.com", "fool.com", "benzinga.com",
     "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
-    "investorplace.com", "nasdaq.com", "foolcdn.com"
+    "investorplace.com", "nasdaq.com", "foolcdn.com",
+    "primaryignition.com", "tradingview.com", "marketscreener.com",
+    "gurufocus.com"
 }
 TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
 
@@ -62,6 +64,12 @@ BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\blower\b",
     r"\benergy\b",
     r"\brebel\b",
+    r"\bpay\b",
+    r"\bcompensation\b",
+    r"\bpopular\s+comment(s)?\b",
+    r"\bshare(s|d|ing)?\b",
+    r"\bcancer\s+society\b",
+    r"\bamerican\s+cancer\s+society\b",
 ]
 BRAND_NEUTRALIZE_TITLE_RE = re.compile("|".join(BRAND_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
@@ -69,14 +77,23 @@ BRAND_LEGAL_TROUBLE_TERMS = [
     r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
     r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
     r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
-    r"\bantitrust\b", r"\bban(s|ned)?\b", r"\bdata leaks?\b",
+    r"\bantitrust\b", r"\bban(s|ned)?\b",
+    r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
     r"\brecall(s|ed)?\b",
-    r"\blayoff(s)?\b", r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
+    r"\blayoff(s)?\b",
+    r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
+    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
     r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
+    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
     r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
     r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
-    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b", r"\bepstein\b",
-    r"\bheadwinds\b", r"\bcontroversy\b",
+    r"\bdivorce\b", r"\bbankrupt(cy|cies)\b", r"\bapologizes\b", r"\bapology\b",
+    r"\bepstein\b", r"\bghislaine\b", r"\bmaxwell\b",
+    r"\bheadwinds\b", r"\bcontroversy\b", r"\bfallout\b",
+    r"\bcancel(s|ed|ing|led|ling)?\b",
+    r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
+    r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
 ]
 BRAND_LEGAL_TROUBLE_RE = re.compile("|".join(BRAND_LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
@@ -91,22 +108,36 @@ CEO_NEUTRALIZE_TITLE_TERMS = [
     r"\blower\b",
     r"\benergy\b",
     r"\brebel\b",
+    r"\bpay\b",
+    r"\bcompensation\b",
+    r"\bnet\s+worth\b",
+    r"\bpopular\s+comment(s)?\b",
+    r"\bshare(s|d|ing)?\b",
+    r"\bcancer\s+society\b",
+    r"\bamerican\s+cancer\s+society\b",
 ]
 CEO_NEUTRALIZE_TITLE_RE = re.compile("|".join(CEO_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 CEO_ALWAYS_NEGATIVE_TERMS = [
-    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b", r"\bnet worth\b",
     r"\bmandate\b",
-    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
+    r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
+    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
     r"\bstill\b", r"\bturnaround\b",
     r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b",
     r"\bapologizes\b", r"\bapology\b", r"\baware\b", r"\bepstein\b",
-    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
-    r"\bdata leaks?\b",
+    r"\bloss\b", r"\bdivorce\b", r"\bbankrupt(cy|cies)\b",
+    r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
     r"\bunion\s+buster\b",
     r"\bfired\b", r"\bfiring\b", r"\bfires\b",
     r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
     r"\bplummeting\b",
+    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
+    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
+    r"\bghislaine\b", r"\bmaxwell\b", r"\bfallout\b",
+    r"\bcancel(s|ed|ing|led|ling)?\b",
+    r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
+    r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
 ]
 CEO_ALWAYS_NEGATIVE_RE = re.compile("|".join(CEO_ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
 
@@ -118,8 +149,9 @@ def strip_neutral_terms_brand(headline: str) -> str:
     return " ".join(cleaned.split())
 
 
-def title_mentions_legal_trouble(title: str) -> bool:
-    return bool(BRAND_LEGAL_TROUBLE_RE.search(title or ""))
+def title_mentions_legal_trouble(title: str, snippet: str = "") -> bool:
+    hay = f"{title} {snippet}".strip()
+    return bool(BRAND_LEGAL_TROUBLE_RE.search(hay))
 
 
 def strip_neutral_terms_ceo(title: str) -> str:
@@ -129,8 +161,9 @@ def strip_neutral_terms_ceo(title: str) -> str:
     return s
 
 
-def should_force_negative_ceo(title: str) -> bool:
-    return bool(CEO_ALWAYS_NEGATIVE_RE.search(title or ""))
+def should_force_negative_ceo(title: str, snippet: str = "") -> bool:
+    hay = f"{title} {snippet}".strip()
+    return bool(CEO_ALWAYS_NEGATIVE_RE.search(hay) or BRAND_LEGAL_TROUBLE_RE.search(hay))
 
 
 def hostname(url: str) -> str:
@@ -218,6 +251,27 @@ def _is_linkedin_company_page(company: str, url: str) -> bool:
         return True
     return _linkedin_slug_matches_company(company, slug)
 
+
+def _is_linkedin_company_post(company: str, url: str) -> bool:
+    if not url or not company:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if host != "linkedin.com":
+        return False
+    path = (parsed.path or "").strip("/")
+    if not path.lower().startswith("posts/"):
+        return False
+    slug = path.split("/", 1)[1] if "/" in path else ""
+    slug = slug.split("/", 1)[0] if slug else ""
+    if not slug:
+        return False
+    handle = slug.split("_", 1)[0] if "_" in slug else slug
+    brand_token = _norm_token(company)
+    handle_token = _norm_token(handle)
+    if brand_token and brand_token in handle_token:
+        return True
+    return _linkedin_slug_matches_company(company, handle)
 
 def _linkedin_slug_matches_company(company: str, slug: str) -> bool:
     if not company or not slug:
@@ -357,6 +411,8 @@ def classify_control(
             return False
         return True
     if _is_brand_youtube_channel(company, url):
+        return True
+    if _is_linkedin_company_post(company, url):
         return True
     if _is_linkedin_company_page(company, url):
         return True

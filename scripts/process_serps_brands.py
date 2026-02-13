@@ -97,35 +97,45 @@ NEUTRALIZE_TITLE_TERMS = [
     r"\blower\b",      # CEO with last name Lower
     r"\benergy\b",     # Lot of brands with energy in their name   
     r"\brebel\b",      # Potential product name
+    r"\bpay\b",
+    r"\bcompensation\b",
+    r"\bpopular\s+comment(s)?\b",
+    r"\bshare(s|d|ing)?\b",
+    r"\bcancer\s+society\b",
+    r"\bamerican\s+cancer\s+society\b",
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 # Force-negative if the title mentions legal trouble
 LEGAL_TROUBLE_TERMS = [
-    # Legal actions
     r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
     r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
-    # Regulatory bodies (usually means trouble)
     r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
-    # Corporate crises
-    r"\bantitrust\b", r"\bban(s|ned)?\b", r"\bdata leaks?\b",
+    r"\bantitrust\b", r"\bban(s|ned)?\b",
+    r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
     r"\brecall(s|ed)?\b",
-    r"\blayoff(s)?\b", r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
-    # Investigations
+    r"\blayoff(s)?\b",
+    r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
+    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
     r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
+    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
     r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
-    # Scandals
     r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
-    r"\bdivorce\b", r"\bbankruptcy\b", r"\bapologizes\b", r"\bapology\b",
-    #Financial Terms
-    r"\bcontroversy\b", r"\bheadwinds\b",
+    r"\bdivorce\b", r"\bbankrupt(cy|cies)\b", r"\bapologizes\b", r"\bapology\b",
+    r"\bepstein\b", r"\bghislaine\b", r"\bmaxwell\b",
+    r"\bcontroversy\b", r"\bheadwinds\b", r"\bfallout\b",
+    r"\bcancel(s|ed|ing|led|ling)?\b",
+    r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
+    r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
 ]
 LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
 
-def _title_mentions_legal_trouble(title: str) -> bool:
-    """Return True if title mentions legal trouble terms (force negative)."""
-    return bool(LEGAL_TROUBLE_RE.search(title or ""))
+def _title_mentions_legal_trouble(title: str, snippet: str = "") -> bool:
+    """Return True if title/snippet mentions legal trouble terms (force negative)."""
+    hay = f"{title} {snippet}".strip()
+    return bool(LEGAL_TROUBLE_RE.search(hay))
 
 
 def _should_neutralize_title(title: str) -> bool:
@@ -389,7 +399,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "negative"
             forced_reason = "reddit"
         # 2) Force negative for Legal/Trouble terms
-        elif _title_mentions_legal_trouble(title):
+        elif _title_mentions_legal_trouble(title, snippet):
             label = "negative"
             forced_reason = "legal"
         # 3) Neutralize routine financial coverage
@@ -404,11 +414,10 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             # 4) VADER analysis on the raw title
             label, compound = vader_label_on_title(analyzer, title)
 
-            # 5) Force positive if controlled — but ONLY if we didn't already force negative above
-            # (Note: This is applied after VADER but before final assignment, 
-            # effectively overriding VADER but NOT overriding steps 1-3)
-            if FORCE_POSITIVE_IF_CONTROLLED and controlled:
-                label = "positive"
+        # 5) Force positive if controlled (override all prior labels)
+        if FORCE_POSITIVE_IF_CONTROLLED and controlled:
+            label = "positive"
+            forced_reason = "controlled"
 
         finance_routine = is_financial_routine(title, snippet=snippet, url=url)
         is_forced = bool(forced_reason)

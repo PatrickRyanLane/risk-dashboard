@@ -127,7 +127,7 @@ def google_news_rss(q: str) -> str:
     return f"https://news.google.com/rss/search?q={qs}&hl=en-US&gl=US&ceid=US:en"
 
 
-def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = ""):
+def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = "", snippet: str = ""):
     """
     Classify sentiment with multi-stage filtering.
     """
@@ -146,13 +146,13 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
         return "negative", flags
     
     # 2. Force NEGATIVE for legal trouble / crisis
-    if title_mentions_legal_trouble(headline):
+    if title_mentions_legal_trouble(headline, snippet):
         flags["is_legal"] = True
         flags["forced_reason"] = "legal"
         return "negative", flags
 
     # 3. Neutralize routine financial coverage
-    if is_financial_routine(headline, url=url, source=source):
+    if is_financial_routine(headline, snippet=snippet, url=url, source=source):
         flags["is_finance"] = True
         flags["forced_reason"] = "finance"
         return "neutral", flags
@@ -203,8 +203,12 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, compan
             pass
             
         source = (item.source.text or "").strip() if item.source else ""
-        sent, flags = classify(title, analyzer, source, link)
+        raw_desc = (item.description.text or "").strip() if item.description else ""
+        snippet = BeautifulSoup(raw_desc, "html.parser").get_text(" ", strip=True) if raw_desc else ""
+        sent, flags = classify(title, analyzer, source, link, snippet)
         finance_routine = flags.get("is_finance", False)
+        if control_class == "controlled":
+            sent = "positive"
         is_forced = bool(flags.get("forced_reason"))
         uncertain, uncertain_reason = is_uncertain(
             sent,

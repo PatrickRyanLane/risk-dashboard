@@ -27,7 +27,7 @@ import requests
 from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from risk_rules import classify_control, is_financial_routine, parse_company_domains
+from risk_rules import classify_control, is_financial_routine, parse_company_domains, title_mentions_legal_trouble
 
 FEATURES = [
     "aio",
@@ -442,6 +442,8 @@ def _item_hash(url: str, title: str, snippet: str, feature_type: str, position: 
 
 
 def _sentiment_for_item(analyzer: SentimentIntensityAnalyzer, title: str, snippet: str, url: str, source: str):
+    if title_mentions_legal_trouble(title, snippet):
+        return "negative", False
     finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
     if finance_routine:
         return "neutral", True
@@ -578,6 +580,8 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
                     entity_type="ceo" if entity_type == "ceo" else "company",
                     person_name=entity_name if entity_type == "ceo" else None,
                 ) else "uncontrolled"
+            if control_class == "controlled":
+                sentiment_label = "positive"
 
             url_hash = _item_hash(url, title, snippet, feature, position or 0)
             rows.append((

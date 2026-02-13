@@ -20,6 +20,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import feedparser
+from bs4 import BeautifulSoup
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
@@ -121,7 +122,7 @@ def fetch_rss(session: requests.Session, query: str) -> feedparser.FeedParserDic
     return feedparser.parse(resp.content)
 
 
-def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = ""):
+def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = "", snippet: str = ""):
     """
     Classify sentiment with multi-stage filtering.
     """
@@ -139,17 +140,17 @@ def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "",
         flags["forced_reason"] = "reddit"
         return "negative", flags
 
-    # 2. Neutralize routine financial coverage
-    if is_financial_routine(title, url=url, source=source):
-        flags["is_finance"] = True
-        flags["forced_reason"] = "finance"
-        return "neutral", flags
-    
-    # 3. Force NEGATIVE for CEO trouble terms
-    if should_force_negative_ceo(title):
+    # 2. Force NEGATIVE for CEO/legal trouble terms
+    if should_force_negative_ceo(title, snippet):
         flags["is_forced"] = True
         flags["forced_reason"] = "ceo_terms"
         return "negative", flags
+
+    # 3. Neutralize routine financial coverage
+    if is_financial_routine(title, snippet=snippet, url=url, source=source):
+        flags["is_finance"] = True
+        flags["forced_reason"] = "finance"
+        return "neutral", flags
     
     # 4. Strip neutral terms
     cleaned = strip_neutral_terms_ceo(title or "")
@@ -199,12 +200,16 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         title = html.unescape(entry.get("title", "")).strip()
         link = (entry.get("link") or entry.get("id") or "").strip()
         source = extract_source(entry)
+        raw_desc = html.unescape(entry.get("summary", "") or entry.get("description", "")).strip()
+        snippet = BeautifulSoup(raw_desc, "html.parser").get_text(" ", strip=True) if raw_desc else ""
         if not title:
             continue
             
-        finance_routine = is_financial_routine(title, url=link, source=source)
-        sent, flags = classify(title, analyzer, source, link)
+        finance_routine = is_financial_routine(title, snippet=snippet, url=link, source=source)
+        sent, flags = classify(title, analyzer, source, link, snippet)
         finance_routine = flags.get("is_finance", False)
+        if control_class == "controlled":
+            sent = "positive"
         is_forced = bool(flags.get("forced_reason"))
         uncertain, uncertain_reason = is_uncertain(
             sent,

@@ -59,16 +59,22 @@ NEUTRALIZE_TITLE_TERMS = [
     r"\blower\b",      # CEO with last name Lower
     r"\benergy\b",     # Lot of brands with energy in their name   
     r"\brebel\b",      # Potential product name
+    r"\bpay\b",
+    r"\bcompensation\b",
+    r"\bnet\s+worth\b",
+    r"\bpopular\s+comment(s)?\b",
+    r"\bshare(s|d|ing)?\b",
+    r"\bcancer\s+society\b",
+    r"\bamerican\s+cancer\s+society\b",
 ]
 NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 ALWAYS_NEGATIVE_TERMS = [
-    # Compensation scrutiny (common CEO negative coverage)
-    r"\bpaid\b", r"\bcompensation\b", r"\bpay\b", r"\bnet worth\b",
     # Corporate governance issues
     r"\bmandate\b",
     # Leadership changes (usually negative for the departing CEO)
-    r"\bexit(s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
+    r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
+    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
     # Skepticism/scrutiny language
     r"\bstill\b",  # "CEO still hasn't..." implies criticism
     r"\bturnaround\b",  # Company in trouble
@@ -76,9 +82,9 @@ ALWAYS_NEGATIVE_TERMS = [
     r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b", r"\bapologizes\b", r"\bapology\b",
     r"\baware\b",  # "CEO was aware of..." implies cover-up
     # Financial/personal troubles
-    r"\bloss\b", r"\bdivorce\b", r"\bbankruptcy\b",
+    r"\bloss\b", r"\bdivorce\b", r"\bbankrupt(cy|cies)\b",
     # Data security
-    r"\bdata leaks?\b",
+    r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
     # Labor relations
     r"\bunion\s+buster\b",
     # Termination (in any direction)
@@ -87,6 +93,14 @@ ALWAYS_NEGATIVE_TERMS = [
     r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
     # Stock performance
     r"\bplummeting\b",
+    # Legal/regulatory trouble
+    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
+    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
+    r"\bepstein\b", r"\bghislaine\b", r"\bmaxwell\b",
+    r"\bfallout\b", r"\bcancel(s|ed|ing|led|ling)?\b",
+    r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
+    r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
 ]
 ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), re.IGNORECASE)
 
@@ -106,9 +120,10 @@ LEGAL_SUFFIXES = {
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-def _should_force_negative_title(title: str) -> bool:
+def _should_force_negative_title(title: str, snippet: str = "") -> bool:
     """Return True if title contains CEO-specific negative terms."""
-    return bool(ALWAYS_NEGATIVE_RE.search(title or ""))
+    hay = f"{title} {snippet}".strip()
+    return bool(ALWAYS_NEGATIVE_RE.search(hay))
 
 
 def _should_neutralize_title(title: str) -> bool:
@@ -443,14 +458,14 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         if host == "reddit.com" or (host and host.endswith(".reddit.com")):
             label = "negative"
             forced_reason = "reddit"
-        # 2) Neutralize routine financial coverage
+        # 2) Force negative for CEO/legal terms
+        elif _should_force_negative_title(title, snippet):
+            label = "negative"
+            forced_reason = "ceo_terms"
+        # 3) Neutralize routine financial coverage
         elif is_financial_routine(title, snippet=snippet, url=url):
             label = "neutral"
             forced_reason = "finance"
-        # 3) Force negative for CEO-specific terms
-        elif _should_force_negative_title(title):
-            label = "negative"
-            forced_reason = "ceo_terms"
         # 4) Neutralize certain terms
         elif _should_neutralize_title(title):
             label = "neutral"
@@ -460,9 +475,10 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             # (Neutral terms are already handled by step 3)
             label, compound = vader_label_on_title(analyzer, title)
 
-            # 5) Force positive if controlled
-            if FORCE_POSITIVE_IF_CONTROLLED and controlled:
-                label = "positive"
+        # 5) Force positive if controlled (override all prior labels)
+        if FORCE_POSITIVE_IF_CONTROLLED and controlled:
+            label = "positive"
+            forced_reason = "controlled"
 
         finance_routine = is_financial_routine(title, snippet=snippet, url=url)
         is_forced = bool(forced_reason)
