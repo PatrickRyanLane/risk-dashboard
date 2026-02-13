@@ -26,7 +26,8 @@ def refresh_view(selected) -> str:
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if not dsn:
         raise SystemExit("DATABASE_URL is not set")
-    conn = psycopg2.connect(dsn)
+    app_name = os.getenv("DB_APP_NAME", "refresh_mvs_workflow")
+    conn = psycopg2.connect(dsn, application_name=app_name)
     got_lock = False
     try:
         conn.autocommit = True
