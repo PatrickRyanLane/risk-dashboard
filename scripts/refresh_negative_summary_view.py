@@ -27,15 +27,17 @@ def refresh_view(selected) -> str:
     if not dsn:
         raise SystemExit("DATABASE_URL is not set")
     conn = psycopg2.connect(dsn)
+    got_lock = False
     try:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("select pg_try_advisory_lock(%s)", (REFRESH_LOCK_KEY,))
             got_lock = bool(cur.fetchone()[0])
-            if not got_lock:
-                print("[WARN] Refresh already running, skipping")
-                return "skipped"
+        if not got_lock:
+            print("[WARN] Refresh already running, skipping")
+            return "skipped"
 
+        with conn.cursor() as cur:
             if selected["negative_summary"]:
                 _refresh_one(
                     cur,
@@ -86,11 +88,12 @@ def refresh_view(selected) -> str:
                     "refresh materialized view serp_daily_counts_mv",
                 )
     finally:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("select pg_advisory_unlock(%s)", (REFRESH_LOCK_KEY,))
-        except Exception:
-            pass
+        if got_lock:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("select pg_advisory_unlock(%s)", (REFRESH_LOCK_KEY,))
+            except Exception:
+                pass
         conn.close()
     return "ok"
 
