@@ -38,6 +38,13 @@ jobs:
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
 
+      - name: Debug script revision
+        run: |
+          git rev-parse HEAD
+          git log -1 --oneline
+          rg -n "\\[STEP\\]" scripts/ingest_serp_features_parquet.py
+          sed -n '1,40p' scripts/ingest_serp_features_parquet.py
+
       - name: Set run date
         id: date
         run: |
