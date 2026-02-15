@@ -96,6 +96,14 @@ jobs:
             --date "${DATE_TO_RUN}" \
             --bucket "$GCS_BUCKET"
 
+      - name: Refresh SERP daily counts MV
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "🔁 Refreshing serp_daily_counts_mv"
+          python scripts/refresh_negative_summary_view.py --serp-counts
+
       - name: Summary
         if: always()
         env:
