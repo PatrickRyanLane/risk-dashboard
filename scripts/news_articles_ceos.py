@@ -205,9 +205,10 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         if not title:
             continue
             
-        finance_routine = is_financial_routine(title, snippet=snippet, url=link, source=source)
         sent, flags = classify(title, analyzer, source, link, snippet)
         finance_routine = flags.get("is_finance", False)
+        finance_routine = finance_routine or is_financial_routine(title, snippet=snippet, url=link, source=source)
+        control_class = "controlled" if classify_control(company, link, company_domains, entity_type="ceo", person_name=ceo) else "uncontrolled"
         if control_class == "controlled":
             sent = "positive"
         is_forced = bool(flags.get("forced_reason"))
@@ -222,7 +223,6 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
-        control_class = "controlled" if classify_control(company, link, company_domains, entity_type="ceo", person_name=ceo) else "uncontrolled"
         
         rows.append({
             "ceo": ceo,
