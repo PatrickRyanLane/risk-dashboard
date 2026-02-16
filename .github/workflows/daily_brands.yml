@@ -91,6 +91,18 @@ jobs:
             --date "${DATE_TO_RUN}" \
             --bucket "$GCS_BUCKET"
 
+      - name: Backfill brand daily mentions (safety)
+        env:
+          RUN_DATE: ${{ github.event.inputs.date || '' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          echo "🧩 Backfilling company_article_mentions_daily for ${DATE_TO_RUN}"
+          python scripts/backfill_article_mentions_daily.py \
+            --date "${DATE_TO_RUN}" \
+            --entity-type company
+
       - name: Process brand SERPs (→ GCS)
         env:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
