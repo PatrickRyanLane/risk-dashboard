@@ -1,0 +1,149 @@
+name: Backfill Brand & CEO Articles
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+        default: "2026-01-01"
+      end:
+        description: "End date (YYYY-MM-DD, defaults to today)"
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    env:
+      GCS_BUCKET: risk-dashboard
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            storage_utils.py
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Backfill brand articles (→ GCS + DB)
+        env:
+          START: ${{ github.event.inputs.start }}
+          ENDIN: ${{ github.event.inputs.end }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, sys, subprocess, datetime as dt
+          start = os.environ["START"]
+          end = os.environ.get("ENDIN") or dt.date.today().isoformat()
+          bucket = os.environ.get("GCS_BUCKET", "risk-dashboard")
+          d = dt.date.fromisoformat(start)
+          end_d = dt.date.fromisoformat(end)
+          while d <= end_d:
+            s = d.isoformat()
+            print(f"[brand] {s}")
+            rc = subprocess.call([
+              sys.executable, "scripts/news_articles_brands.py",
+              "--date", s,
+              "--bucket", bucket,
+              "--batch-size", "1500"
+            ])
+            if rc != 0:
+              print(f"[brand][skip] {s} (non-fatal error)")
+            d += dt.timedelta(days=1)
+          PY
+
+      - name: Backfill CEO articles (→ GCS + DB)
+        env:
+          START: ${{ github.event.inputs.start }}
+          ENDIN: ${{ github.event.inputs.end }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, sys, subprocess, datetime as dt
+          start = os.environ["START"]
+          end = os.environ.get("ENDIN") or dt.date.today().isoformat()
+          bucket = os.environ.get("GCS_BUCKET", "risk-dashboard")
+          d = dt.date.fromisoformat(start)
+          end_d = dt.date.fromisoformat(end)
+          while d <= end_d:
+            s = d.isoformat()
+            print(f"[ceo] {s}")
+            rc = subprocess.call([
+              sys.executable, "scripts/news_articles_ceos.py",
+              "--date", s,
+              "--bucket", bucket,
+              "--batch-size", "1500"
+            ])
+            if rc != 0:
+              print(f"[ceo][skip] {s} (non-fatal error)")
+            d += dt.timedelta(days=1)
+          PY
+
+      - name: Backfill daily mentions (safety)
+        env:
+          START: ${{ github.event.inputs.start }}
+          ENDIN: ${{ github.event.inputs.end }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, sys, subprocess, datetime as dt
+          start = os.environ["START"]
+          end = os.environ.get("ENDIN") or dt.date.today().isoformat()
+          d = dt.date.fromisoformat(start)
+          end_d = dt.date.fromisoformat(end)
+          while d <= end_d:
+            s = d.isoformat()
+            print(f"[daily] {s}")
+            rc = subprocess.call([
+              sys.executable, "scripts/backfill_article_mentions_daily.py",
+              "--date", s,
+              "--entity-type", "both"
+            ])
+            if rc != 0:
+              print(f"[daily][skip] {s} (non-fatal error)")
+            d += dt.timedelta(days=1)
+          PY
+
+      - name: Refresh article daily counts MV
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "🔁 Refreshing article_daily_counts_mv"
+          python scripts/refresh_negative_summary_view.py --article-counts
+
+      - name: Summary
+        if: always()
+        env:
+          START_IN: ${{ github.event.inputs.start }}
+          END_IN: ${{ github.event.inputs.end }}
+        run: |
+          START_DATE="${START_IN:-manual}"
+          END_DATE="${END_IN:-$(date -u +%F)}"
+          echo "### Backfill Articles Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📅 **Range:** ${START_DATE} to ${END_DATE}" >> $GITHUB_STEP_SUMMARY
+          echo "☁️ **Bucket:** gs://$GCS_BUCKET" >> $GITHUB_STEP_SUMMARY
