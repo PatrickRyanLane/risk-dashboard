@@ -207,6 +207,8 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, compan
         snippet = BeautifulSoup(raw_desc, "html.parser").get_text(" ", strip=True) if raw_desc else ""
         sent, flags = classify(title, analyzer, source, link, snippet)
         finance_routine = flags.get("is_finance", False)
+        finance_routine = finance_routine or is_financial_routine(title, snippet=snippet, url=link, source=source)
+        control_class = "controlled" if classify_control(brand, link, company_domains) else "uncontrolled"
         if control_class == "controlled":
             sent = "positive"
         is_forced = bool(flags.get("forced_reason"))
@@ -221,7 +223,6 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, compan
         llm_label = ""
         llm_severity = ""
         llm_reason = ""
-        control_class = "controlled" if classify_control(brand, link, company_domains) else "uncontrolled"
         
         out.append({
             "company": brand,
