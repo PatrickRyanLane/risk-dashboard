@@ -1,8 +1,7 @@
 # Filtering Rules
 
 This document summarizes the shared filtering logic implemented in
-`risk-dashboard/scripts/risk_rules.py` and mirrored in
-`risk-dashboard-database/src/risk_rules.py`.
+`risk-dashboard/scripts/risk_rules.py`.
 
 ## Control Classification
 
@@ -94,6 +93,17 @@ title/snippet/source/URL.
 - investorplace.com
 - nasdaq.com
 - foolcdn.com
+- primaryignition.com
+- tradingview.com
+- marketscreener.com
+- gurufocus.com
 
 ### Ticker pattern
 - Regex: `\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b`
+
+### Neutralization helper
+
+`should_neutralize_finance_routine(...)` only neutralizes routine finance items when:
+- sentiment is currently positive/negative
+- finance routine is detected
+- no material risk terms are present (lawsuit, probe/investigation, fraud, breach, recall, etc.)

@@ -28,6 +28,7 @@ from risk_rules import (
     classify_control,
     is_financial_routine,
     parse_company_domains,
+    should_neutralize_finance_routine,
     strip_neutral_terms_brand,
     title_mentions_legal_trouble,
 )
@@ -152,8 +153,16 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
         return "negative", flags
 
     # 3. Neutralize routine financial coverage
-    if is_financial_routine(headline, snippet=snippet, url=url, source=source):
-        flags["is_finance"] = True
+    finance_routine = is_financial_routine(headline, snippet=snippet, url=url, source=source)
+    flags["is_finance"] = finance_routine
+    if should_neutralize_finance_routine(
+        "negative",
+        headline,
+        snippet=snippet,
+        url=url,
+        source=source,
+        finance_routine=finance_routine,
+    ):
         flags["forced_reason"] = "finance"
         return "neutral", flags
     
@@ -208,7 +217,12 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, compan
         sent, flags = classify(title, analyzer, source, link, snippet)
         finance_routine = flags.get("is_finance", False)
         finance_routine = finance_routine or is_financial_routine(title, snippet=snippet, url=link, source=source)
-        control_class = "controlled" if classify_control(brand, link, company_domains) else "uncontrolled"
+        control_class = "controlled" if classify_control(
+            brand,
+            link,
+            company_domains,
+            publisher=source,
+        ) else "uncontrolled"
         if control_class == "controlled":
             sent = "positive"
         is_forced = bool(flags.get("forced_reason"))

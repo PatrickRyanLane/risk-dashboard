@@ -6,7 +6,12 @@ from urllib.parse import urlparse
 import psycopg2
 from psycopg2.extras import execute_values
 
-from risk_rules import classify_control, parse_company_domains
+from risk_rules import (
+    classify_control,
+    is_financial_routine,
+    parse_company_domains,
+    should_neutralize_finance_routine,
+)
 
 def get_conn():
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
@@ -80,6 +85,19 @@ def url_hash(url: str) -> str:
 def parse_bool(val):
     return str(val).strip().lower() in {"true", "1", "yes", "y", "t", "controlled"}
 
+
+def parse_optional_bool(value):
+    if value is None:
+        return None
+    val = str(value).strip().lower()
+    if val == "":
+        return None
+    if val in {"true", "1", "yes", "y", "t", "controlled"}:
+        return True
+    if val in {"false", "0", "no", "n", "f", "uncontrolled"}:
+        return False
+    return None
+
 def fetch_company_domains(cur) -> Dict[str, set[str]]:
     cur.execute("select name, websites from companies")
     domains = {}
@@ -123,8 +141,13 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
         if not canonical:
             continue
         publisher = str(row.get("source", "") or "").strip()
+        snippet = str(row.get("snippet", "") or "").strip()
         sentiment = (row.get("sentiment") or "").strip().lower() or None
-        finance_routine = parse_bool(row.get("finance_routine"))
+        finance_routine = parse_optional_bool(row.get("finance_routine"))
+        if finance_routine is None:
+            finance_routine = is_financial_routine(title, snippet, canonical, publisher)
+        if should_neutralize_finance_routine(sentiment, title, snippet, canonical, publisher, finance_routine):
+            sentiment = "neutral"
         uncertain = parse_bool(row.get("uncertain"))
         uncertain_reason = (row.get("uncertain_reason") or "").strip() or None
         llm_sentiment_label = (row.get("llm_sentiment_label") or row.get("llm_label") or "").strip() or None
@@ -132,7 +155,7 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
         llm_severity = (row.get("llm_severity") or "").strip() or None
         llm_reason = (row.get("llm_reason") or "").strip() or None
 
-        articles[canonical] = (canonical, title, publisher, None, None, now, now, "google_rss")
+        articles[canonical] = (canonical, title, publisher, snippet or None, None, now, now, "google_rss")
         article_urls.append(canonical)
 
         if entity_type == "company":
@@ -140,7 +163,12 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             company_id = company_map.get(company)
             if not company_id:
                 continue
-            control_class = "controlled" if classify_control(company, url, company_domains) else "uncontrolled"
+            control_class = "controlled" if classify_control(
+                company,
+                canonical,
+                company_domains,
+                publisher=publisher,
+            ) else "uncontrolled"
             mentions.append((company_id, canonical, sentiment, finance_routine, uncertain,
                              uncertain_reason, llm_sentiment_label, llm_risk_label, control_class,
                              llm_severity, llm_reason))
@@ -153,7 +181,14 @@ def upsert_articles_mentions(df, entity_type: str, date_str: str) -> int:
             ceo_id = ceo_map.get((ceo, company_id))
             if not ceo_id:
                 continue
-            control_class = "controlled" if classify_control(company, url, company_domains, entity_type="ceo", person_name=ceo) else "uncontrolled"
+            control_class = "controlled" if classify_control(
+                company,
+                canonical,
+                company_domains,
+                entity_type="ceo",
+                person_name=ceo,
+                publisher=publisher,
+            ) else "uncontrolled"
             mentions.append((ceo_id, canonical, sentiment, finance_routine, uncertain,
                              uncertain_reason, llm_sentiment_label, llm_risk_label, control_class,
                              llm_severity, llm_reason))
@@ -312,6 +347,8 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
         canonical = normalize_url(url)
         if not canonical:
             continue
+        snippet = str(row.get("snippet", "") or "").strip()
+        source = str(row.get("source", "") or "").strip()
         domain = ""
         try:
             domain = (urlparse(url).hostname or "").replace("www.", "")
@@ -319,6 +356,11 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
             domain = ""
 
         sentiment = str(row.get("sentiment") or "").strip().lower() or None
+        finance_routine = parse_optional_bool(row.get("finance_routine"))
+        if finance_routine is None:
+            finance_routine = is_financial_routine(title, snippet, canonical, source)
+        if should_neutralize_finance_routine(sentiment, title, snippet, canonical, source, finance_routine):
+            sentiment = "neutral"
         controlled = str(row.get("controlled") or "").strip().lower()
         control_class = None
         if controlled in {"true", "1", "controlled"}:
@@ -326,7 +368,6 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
         elif controlled in {"false", "0", "uncontrolled"}:
             control_class = "uncontrolled"
 
-        finance_routine = parse_bool(row.get("finance_routine"))
         uncertain = parse_bool(row.get("uncertain"))
         uncertain_reason = (row.get("uncertain_reason") or "").strip() or None
         llm_sentiment_label = (row.get("llm_sentiment_label") or row.get("llm_label") or "").strip() or None
@@ -359,7 +400,7 @@ def upsert_serp_results(df, entity_type: str, date_str: str) -> int:
             }
 
         result_rows.append((
-            run_key, rank, url, url_hash(canonical), title, row.get("snippet") or "",
+            run_key, rank, url, url_hash(canonical), title, snippet,
             domain, sentiment, control_class, finance_routine, uncertain,
             uncertain_reason, llm_sentiment_label, llm_risk_label, llm_severity, llm_reason
         ))

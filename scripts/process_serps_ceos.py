@@ -30,7 +30,12 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
-from risk_rules import classify_control, is_financial_routine, parse_company_domains
+from risk_rules import (
+    classify_control,
+    is_financial_routine,
+    parse_company_domains,
+    should_neutralize_finance_routine,
+)
 
 # Config
 PARQUET_URL_TEMPLATE = (
@@ -440,6 +445,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         title = str(row.get("title", "") or "").strip()
         url = str(row.get("url", "") or "").strip()
         snippet = str(row.get("snippet", "") or "").strip()
+        source = str(row.get("source", "") or "").strip()
 
         pos_val = row.get("position", 0)
         try:
@@ -447,7 +453,15 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         except Exception:
             position = 0
 
-        controlled = classify_control(company, url, company_domains, entity_type="ceo", person_name=ceo)
+        controlled = classify_control(
+            company,
+            url,
+            company_domains,
+            entity_type="ceo",
+            person_name=ceo,
+            publisher=source,
+        )
+        finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
 
         # --- Sentiment rules (deterministic order) ---
         host = _hostname(url)
@@ -463,7 +477,14 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "negative"
             forced_reason = "ceo_terms"
         # 3) Neutralize routine financial coverage
-        elif is_financial_routine(title, snippet=snippet, url=url):
+        elif should_neutralize_finance_routine(
+            "negative",
+            title,
+            snippet=snippet,
+            url=url,
+            source=source,
+            finance_routine=finance_routine,
+        ):
             label = "neutral"
             forced_reason = "finance"
         # 4) Neutralize certain terms
@@ -480,7 +501,6 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "positive"
             forced_reason = "controlled"
 
-        finance_routine = is_financial_routine(title, snippet=snippet, url=url)
         is_forced = bool(forced_reason)
         uncertain, uncertain_reason = is_uncertain(
             label,

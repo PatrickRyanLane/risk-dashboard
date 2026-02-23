@@ -40,6 +40,25 @@ FINANCE_SOURCES = {
     "gurufocus.com"
 }
 TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
+MATERIAL_RISK_TERMS = [
+    r"\blawsuits?\b", r"\blegal action\b", r"\bclass action\b", r"\bsu(?:e|es|ed|ing)\b",
+    r"\bsettle(?:ment|d|s)?\b", r"\bprobe\b", r"\binvestigat(?:e|es|ed|ion|ions)\b",
+    r"\bsubpoena(?:s)?\b", r"\bsec (?:probe|investigation|charge|charges)\b", r"\bdoj\b",
+    r"\bcharge(?:d|s)?\b", r"\bindict(?:ed|ment)?\b", r"\bfraud\b", r"\bscandal\b",
+    r"\bbankrupt(?:cy|cies)?\b", r"\blayoffs?\b", r"\brecall(?:s|ed)?\b", r"\bdata breach(?:es)?\b",
+    r"\bcyber(?:attack|attacks|breach|breaches)\b", r"\bwhistleblower(?:s)?\b",
+    r"\bmisconduct\b", r"\bboycott(?:s|ed)?\b",
+]
+MATERIAL_RISK_TERMS_RE = re.compile("|".join(MATERIAL_RISK_TERMS), flags=re.IGNORECASE)
+
+NAME_IGNORE_TOKENS = {
+    "inc", "incorporated", "corporation", "corp", "company", "co",
+    "llc", "ltd", "limited", "plc", "group", "holdings", "holding",
+    "the", "and", "of", "services",
+}
+PUBLISHER_SUFFIX_TOKENS = {
+    "news", "newsroom", "media", "press", "wire", "blog", "official"
+}
 
 BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\bgrand\b",
@@ -178,6 +197,43 @@ def _norm_token(s: str) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
 
+def _name_tokens(value: str, *, min_len: int = 4) -> list[str]:
+    tokens = []
+    for raw in re.split(r"[\W_]+", value or ""):
+        token = _norm_token(raw)
+        if not token:
+            continue
+        if token in NAME_IGNORE_TOKENS:
+            continue
+        if len(token) < min_len:
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _publisher_matches_company(company: str, publisher: str) -> bool:
+    if not company or not publisher:
+        return False
+    brand_token = _norm_token(company)
+    publisher_token = _norm_token(publisher)
+    if brand_token and brand_token == publisher_token:
+        return True
+
+    company_tokens = _name_tokens(company)
+    publisher_tokens = set(_name_tokens(publisher, min_len=3))
+    if len(company_tokens) >= 2 and set(company_tokens).issubset(publisher_tokens):
+        return True
+
+    if len(company_tokens) == 1 and brand_token:
+        if publisher_token == brand_token:
+            return True
+        if publisher_token.startswith(brand_token):
+            suffix = publisher_token[len(brand_token):]
+            if suffix and suffix in PUBLISHER_SUFFIX_TOKENS:
+                return True
+    return False
+
+
 def _company_handle_tokens(company: str) -> set[str]:
     words = [w for w in re.split(r"\W+", company or "") if w]
     tokens = set()
@@ -276,16 +332,11 @@ def _is_linkedin_company_post(company: str, url: str) -> bool:
 def _linkedin_slug_matches_company(company: str, slug: str) -> bool:
     if not company or not slug:
         return False
-    ignore = {
-        "inc", "incorporated", "corporation", "corp", "company", "co",
-        "llc", "ltd", "limited", "plc", "group", "holdings", "holding",
-        "the", "and", "of", "services",
-    }
     company_tokens = [
         _norm_token(t) for t in re.split(r"\W+", company.lower()) if t
     ]
     company_tokens = [
-        t for t in company_tokens if t and t not in ignore and len(t) >= 4
+        t for t in company_tokens if t and t not in NAME_IGNORE_TOKENS and len(t) >= 4
     ]
     slug_tokens = [
         _norm_token(t) for t in re.split(r"[\W_]+", slug.lower()) if t
@@ -382,7 +433,10 @@ def classify_control(
     *,
     entity_type: str = "company",
     person_name: str | None = None,
+    publisher: str | None = None,
 ) -> bool:
+    if _publisher_matches_company(company, publisher or ""):
+        return True
     host = hostname(url)
     if not host:
         return False
@@ -449,3 +503,26 @@ def is_financial_routine(title: str, snippet: str = "", url: str = "", source: s
     if host and any(host == d or host.endswith("." + d) for d in FINANCE_SOURCES):
         return True
     return False
+
+
+def has_material_risk_terms(title: str, snippet: str = "", source: str = "") -> bool:
+    hay = f"{title} {snippet} {source}".strip()
+    return bool(MATERIAL_RISK_TERMS_RE.search(hay))
+
+
+def should_neutralize_finance_routine(
+    sentiment: str | None,
+    title: str,
+    snippet: str = "",
+    url: str = "",
+    source: str = "",
+    finance_routine: bool | None = None,
+) -> bool:
+    if sentiment not in {"positive", "negative"}:
+        return False
+    is_routine = finance_routine if finance_routine is not None else is_financial_routine(title, snippet, url, source)
+    if not is_routine:
+        return False
+    if has_material_risk_terms(title, snippet, source):
+        return False
+    return True

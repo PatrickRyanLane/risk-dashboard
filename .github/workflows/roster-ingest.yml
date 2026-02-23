@@ -17,19 +17,12 @@ jobs:
       - name: Checkout risk-dashboard
         uses: actions/checkout@v4
 
-      - name: Checkout risk-dashboard-database
-        uses: actions/checkout@v4
-        with:
-          repository: PatrickRyanLane/risk-dashboard-database
-          path: risk-dashboard-database
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install deps
-        working-directory: risk-dashboard-database
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -40,7 +33,6 @@ jobs:
           credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
 
       - name: Run roster ingest
-        working-directory: risk-dashboard-database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -52,7 +44,7 @@ jobs:
           if [ -z "$BOARDS_PATH" ]; then
             BOARDS_PATH="gs://risk-dashboard/rosters/boards-roster.csv"
           fi
-          PYTHONPATH="$PWD" python -m src.ingest_roster_only \
+          python scripts/ingest_roster_only.py \
             --roster-path "$ROSTER_PATH" \
             --boards-path "$BOARDS_PATH"
 

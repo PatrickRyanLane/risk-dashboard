@@ -22,19 +22,12 @@ jobs:
       - name: Checkout risk-dashboard
         uses: actions/checkout@v4
 
-      - name: Checkout risk-dashboard-database
-        uses: actions/checkout@v4
-        with:
-          repository: PatrickRyanLane/risk-dashboard-database
-          path: risk-dashboard-database
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install deps
-        working-directory: risk-dashboard-database
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -45,7 +38,6 @@ jobs:
           credentials_json: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
 
       - name: Run bulk ingest
-        working-directory: risk-dashboard-database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -60,12 +52,12 @@ jobs:
             SERP_FLAG="--include-serps"
           fi
           if [ -n "$DAYS_BACK" ]; then
-            python -m src.bulk_ingest \
+            python scripts/bulk_ingest.py \
               --data-dir gs://risk-dashboard/data \
               --days-back "$DAYS_BACK" \
               $SERP_FLAG
           else
-            python -m src.bulk_ingest \
+            python scripts/bulk_ingest.py \
               --data-dir gs://risk-dashboard/data \
               --date "$RUN_DATE" \
               $SERP_FLAG
