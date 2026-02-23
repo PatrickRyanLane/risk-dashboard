@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import os, sys
 from datetime import datetime
 from typing import Dict, Tuple, Set
 from urllib.parse import urlparse
@@ -32,6 +31,8 @@ from risk_rules import (
     is_financial_routine,
     parse_company_domains,
     should_neutralize_finance_routine,
+    should_neutralize_brand_title,
+    title_mentions_legal_trouble,
 )
 
 
@@ -73,79 +74,6 @@ OUT_DAILY_DIR = "data/processed_serps"
 OUT_ROLLUP = "data/daily_counts/brand-serps-daily-counts-chart.csv"
 
 FORCE_POSITIVE_IF_CONTROLLED = True
-
-# ============================================================================
-# WORD FILTERING RULES
-# Words/phrases to ignore for title-based sentiment classification
-# ============================================================================
-NEUTRALIZE_TITLE_TERMS = [
-    # Brand names that contain emotional-sounding words
-    r"\bgrand\b",           # Grand Hyatt, Grand Cherokee
-    r"\bdiamond\b",         # Diamond Foods
-    r"\bsell\b",            # Headlines about "selling" aren't inherently negative
-    r"\blow\b",             # Low prices, Lowe's
-    r"\bdream\b",           # DreamWorks
-    r"\bdarling\b",         # Darling Ingredients
-    r"\bwells\b",           # Wells Fargo
-    r"\bbest\s+buy\b",      # Best Buy (positive brand name)
-    r"\bkilled\b",          # Often used hyperbolically in headlines
-    r"\bmlm\b",             # Multi-level marketing discussions
-    r"\bmad\s+money\b",     # Jim Cramer's show
-    r"\brate\s+cut\b",      # Interest rate discussions
-    r"\bone\s+stop\s+shop\b",  # Stop & Shop stores
-    r"\bfuneral\b",         # Service Corporation (funeral services)
-    r"\bcremation\b",       # Service Corporation
-    r"\bcemetery\b",        # Service Corporation
-    r"\blimited\b",         # The Limited Brands
-    r"\bno\s+organic\b",    # About organic food availability
-    r"\brob\b",        # Potentially a person's name
-    r"\blower\b",      # CEO with last name Lower
-    r"\benergy\b",     # Lot of brands with energy in their name   
-    r"\brebel\b",      # Potential product name
-    r"\bpay\b",
-    r"\bcompensation\b",
-    r"\bpopular\s+comment(s)?\b",
-    r"\bshare(s|d|ing)?\b",
-    r"\bcancer\s+society\b",
-    r"\bamerican\s+cancer\s+society\b",
-]
-NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
-
-# Force-negative if the title mentions legal trouble
-LEGAL_TROUBLE_TERMS = [
-    r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
-    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
-    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
-    r"\bantitrust\b", r"\bban(s|ned)?\b",
-    r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
-    r"\brecall(s|ed)?\b",
-    r"\blayoff(s)?\b",
-    r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
-    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
-    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
-    r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
-    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
-    r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
-    r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
-    r"\bdivorce\b", r"\bbankrupt(cy|cies)\b", r"\bapologizes\b", r"\bapology\b",
-    r"\bepstein\b", r"\bghislaine\b", r"\bmaxwell\b",
-    r"\bcontroversy\b", r"\bheadwinds\b", r"\bfallout\b",
-    r"\bcancel(s|ed|ing|led|ling)?\b",
-    r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
-    r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
-]
-LEGAL_TROUBLE_RE = re.compile("|".join(LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
-
-
-def _title_mentions_legal_trouble(title: str, snippet: str = "") -> bool:
-    """Return True if title/snippet mentions legal trouble terms (force negative)."""
-    hay = f"{title} {snippet}".strip()
-    return bool(LEGAL_TROUBLE_RE.search(hay))
-
-
-def _should_neutralize_title(title: str) -> bool:
-    """Return True if the title contains terms that should neutralize sentiment."""
-    return bool(NEUTRALIZE_TITLE_RE.search(title or ""))
 
 # Argument parsing
 def parse_args() -> argparse.Namespace:
@@ -393,7 +321,13 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
         except Exception:
             position = 0
 
-        controlled = classify_control(company, url, company_domains, publisher=source)
+        controlled = classify_control(
+            company,
+            url,
+            company_domains,
+            publisher=source,
+            snippet=snippet,
+        )
         finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
 
         # --- Sentiment rules (deterministic order) ---
@@ -406,7 +340,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "negative"
             forced_reason = "reddit"
         # 2) Force negative for Legal/Trouble terms
-        elif _title_mentions_legal_trouble(title, snippet):
+        elif title_mentions_legal_trouble(title, snippet, url=url, source=source):
             label = "negative"
             forced_reason = "legal"
         # 3) Neutralize routine financial coverage
@@ -421,7 +355,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "neutral"
             forced_reason = "finance"
         # 4) Neutralize certain terms
-        elif _should_neutralize_title(title):
+        elif should_neutralize_brand_title(title):
             label = "neutral"
             forced_reason = "neutral_terms"
         else:

@@ -442,7 +442,7 @@ def _item_hash(url: str, title: str, snippet: str, feature_type: str, position: 
 
 
 def _sentiment_for_item(analyzer: SentimentIntensityAnalyzer, title: str, snippet: str, url: str, source: str):
-    if title_mentions_legal_trouble(title, snippet):
+    if title_mentions_legal_trouble(title, snippet, url=url, source=source):
         return "negative", False
     finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
     if finance_routine:
@@ -579,6 +579,8 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
                     company_domains,
                     entity_type="ceo" if entity_type == "ceo" else "company",
                     person_name=entity_name if entity_type == "ceo" else None,
+                    publisher=source,
+                    snippet=snippet,
                 ) else "uncontrolled"
             if control_class == "controlled":
                 sentiment_label = "positive"

@@ -142,7 +142,7 @@ def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "",
         return "negative", flags
 
     # 2. Force NEGATIVE for CEO/legal trouble terms
-    if should_force_negative_ceo(title, snippet):
+    if should_force_negative_ceo(title, snippet, url=url, source=source):
         flags["is_forced"] = True
         flags["forced_reason"] = "ceo_terms"
         return "negative", flags
@@ -224,6 +224,7 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
             entity_type="ceo",
             person_name=ceo,
             publisher=source,
+            snippet=snippet,
         ) else "uncontrolled"
         if control_class == "controlled":
             sent = "positive"

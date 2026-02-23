@@ -20,3 +20,10 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+
+# Local parquet cache/output
+parquet/

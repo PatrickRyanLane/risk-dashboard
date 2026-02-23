@@ -1,109 +1,88 @@
 # Filtering Rules
 
-This document summarizes the shared filtering logic implemented in
-`risk-dashboard/scripts/risk_rules.py`.
+This document is the source of truth for shared sentiment/control helpers in
+`scripts/risk_rules.py`, and where each helper is used in the pipeline.
 
-## Control Classification
+## Rule Families In `risk_rules.py`
 
-Control status is computed by `classify_control(...)` and is applied to
-articles, SERPs, and SERP features. Rules are evaluated in this order:
+- `classify_control(...)`
+- `parse_company_domains(...)`
+- `is_financial_routine(...)`
+- `should_neutralize_finance_routine(...)`
+- `title_mentions_legal_trouble(...)`
+- `strip_neutral_terms_brand(...)`
+- `should_neutralize_brand_title(...)`
+- `strip_neutral_terms_ceo(...)`
+- `should_neutralize_ceo_title(...)`
+- `should_force_negative_ceo(...)`
 
-1) CEO-only hard exclusions (entity_type = ceo)
-   - If host is in the CEO uncontrolled list, return uncontrolled.
-   - If LinkedIn profile (`/in/` or `/pub/`) matches the CEO name, return controlled.
-   - If X/Twitter handle matches the CEO name, return controlled.
+## Rule Usage Matrix
 
-2) Domain-specific path rules
-   - facebook.com: uncontrolled if path contains `/posts/`, `/photos/`, or `/videos/`
-   - instagram.com: uncontrolled if path contains `/p/` or `/reels/`
-   - threads.net: uncontrolled if path contains `/posts/`
-   - x.com / twitter.com: uncontrolled if path contains `/status/`
+| Script | Pipeline Stage | Entity | Shared Rules Used |
+|---|---|---|---|
+| `scripts/news_articles_brands.py` | Google News article classification | Brand | `parse_company_domains`, `classify_control`, `is_financial_routine`, `should_neutralize_finance_routine`, `title_mentions_legal_trouble`, `strip_neutral_terms_brand` |
+| `scripts/news_articles_ceos.py` | Google News article classification | CEO | `parse_company_domains`, `classify_control`, `is_financial_routine`, `should_neutralize_finance_routine`, `should_force_negative_ceo`, `strip_neutral_terms_ceo` |
+| `scripts/process_serps_brands.py` | Raw SERP row processing | Brand | `parse_company_domains`, `classify_control`, `is_financial_routine`, `should_neutralize_finance_routine`, `title_mentions_legal_trouble`, `should_neutralize_brand_title` |
+| `scripts/process_serps_ceos.py` | Raw SERP row processing | CEO | `parse_company_domains`, `classify_control`, `is_financial_routine`, `should_neutralize_finance_routine`, `should_force_negative_ceo`, `should_neutralize_ceo_title` |
+| `scripts/ingest_v2.py` | CSV/backfill ingest into DB | Brand + CEO | `parse_company_domains`, `classify_control`, `is_financial_routine`, `should_neutralize_finance_routine` |
+| `scripts/ingest_serp_features_parquet.py` | SERP features ingest into DB | Brand + CEO | `parse_company_domains`, `classify_control`, `is_financial_routine`, `title_mentions_legal_trouble` |
 
-3) Platform and profile rules
-   - YouTube brand channel (slug contains normalized company token): controlled
-   - LinkedIn company page (`/company/`) with slug match: controlled
-     - Uses strict match first, then a relaxed token match
-   - X/Twitter company handle match: controlled
+## Control Classification (`classify_control`)
 
-4) Always-controlled domains
-   - play.google.com
-   - apps.apple.com
+Control status is computed with ordered checks:
 
-5) Company domain rules
-   - If host matches a roster domain, controlled
-   - If a company token appears in subdomain, controlled
+1. CEO-only exclusions and profile handle checks.
+2. Platform path rules (`facebook.com`, `instagram.com`, `threads.net`, `x.com`/`twitter.com`).
+   - Instagram reel URLs (`/reel/` or `/reels/`) are controlled when either:
+     - snippet byline attribution matches the brand (for example: `by Brand Name on Instagram`), or
+     - the Instagram handle in the URL path matches the brand/CEO handle tokens.
+   - Social URLs can still be controlled when snippet byline attribution matches the brand
+     (for example: `by Brand Name on Instagram`; supported for Facebook/Instagram/Threads/YouTube/X).
+3. YouTube, LinkedIn, and X/Twitter handle matching.
+4. Always-controlled domains (`play.google.com`, `apps.apple.com`, etc.).
+5. Company roster domain match.
+6. Fallback token match in subdomain.
+7. CEO-only path keyword fallback (`/leadership/`, `/about/`, `/team/`, etc.).
 
-6) CEO-only path keywords (entity_type = ceo)
-   - If the URL path contains any of the keywords below and the host
-     matches the company domain or company token, controlled.
+CEO hard-uncontrolled domains:
 
-CEO uncontrolled domains:
-- wikipedia.org
-- youtube.com
-- youtu.be
-- tiktok.com
+- `wikipedia.org`
+- `youtube.com`
+- `youtu.be`
+- `tiktok.com`
 
-CEO controlled path keywords:
-- /leadership/
-- /about/
-- /governance/
-- /team/
-- /investors/
-- /board-of-directors
-- /members/
-- /member/
+## Financial Routine Neutralization
 
-## Financial Routine Filter
+`is_financial_routine(...)` returns true if any of the following match:
 
-`is_financial_routine(...)` marks items as routine financial coverage based on
-title/snippet/source/URL.
+- finance regex terms (earnings, EPS, revenue, guidance, buyback, shares, stock, market cap, fiscal, 10-K/10-Q, IPO, etc.)
+- ticker pattern: `\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b`
+- finance source domains (`yahoo.com`, `marketwatch.com`, `wsj.com`, `seekingalpha.com`, etc.)
 
-### Financial terms (regex list)
-- \bearnings\b
-- \beps\b
-- \brevenue\b
-- \bguidance\b
-- \bforecast\b
-- \bprice target\b
-- \bupgrade\b
-- \bdowngrade\b
-- \bdividend\b
-- \bbuyback\b
-- \bshares?\b
-- \bstock\b
-- \bmarket cap\b
-- \bquarterly\b
-- \bfiscal\b
-- \bprofit\b
-- \bEBITDA\b
-- \b10-q\b
-- \b10-k\b
-- \bsec\b
-- \bipo\b
+`should_neutralize_finance_routine(...)` neutralizes only when:
 
-### Financial sources (host match)
-- yahoo.com
-- marketwatch.com
-- fool.com
-- benzinga.com
-- seekingalpha.com
-- thefly.com
-- barrons.com
-- wsj.com
-- investorplace.com
-- nasdaq.com
-- foolcdn.com
-- primaryignition.com
-- tradingview.com
-- marketscreener.com
-- gurufocus.com
+- current sentiment is `positive` or `negative`
+- routine finance pattern matched
+- no material risk term matched (lawsuit, fraud, investigation, breach, recall, layoffs, etc.)
 
-### Ticker pattern
-- Regex: `\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b`
+## Brand And CEO Sentiment Lexicons
 
-### Neutralization helper
+Centralized lexicons now live in `scripts/risk_rules.py`:
 
-`should_neutralize_finance_routine(...)` only neutralizes routine finance items when:
-- sentiment is currently positive/negative
-- finance routine is detected
-- no material risk terms are present (lawsuit, probe/investigation, fraud, breach, recall, etc.)
+- brand neutralization terms: `BRAND_NEUTRALIZE_TITLE_TERMS`
+- brand legal-trouble terms: `BRAND_LEGAL_TROUBLE_TERMS`
+- CEO neutralization terms: `CEO_NEUTRALIZE_TITLE_TERMS`
+- CEO forced-negative terms: `CEO_ALWAYS_NEGATIVE_TERMS`
+- force-negative source domains: `FORCE_NEGATIVE_SOURCE_DOMAINS`
+
+These are consumed through helper functions (not directly in pipeline scripts).
+
+## Rule Authoring Guideline
+
+When adding or changing sentiment/control lexicons:
+
+1. Add the regex terms and helper function in `scripts/risk_rules.py`.
+2. Import the helper in pipeline scripts (`news_*`, `process_serps_*`, `ingest_*`).
+3. Update this file's Rule Usage Matrix if a new helper is added.
+
+Avoid adding new sentiment word lists directly inside pipeline scripts.

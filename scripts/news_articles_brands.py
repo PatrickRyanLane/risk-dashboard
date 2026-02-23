@@ -147,7 +147,7 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
         return "negative", flags
     
     # 2. Force NEGATIVE for legal trouble / crisis
-    if title_mentions_legal_trouble(headline, snippet):
+    if title_mentions_legal_trouble(headline, snippet, url=url, source=source):
         flags["is_legal"] = True
         flags["forced_reason"] = "legal"
         return "negative", flags
@@ -222,6 +222,7 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, compan
             link,
             company_domains,
             publisher=source,
+            snippet=snippet,
         ) else "uncontrolled"
         if control_class == "controlled":
             sent = "positive"

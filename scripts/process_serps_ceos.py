@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import os, sys
 from datetime import datetime
 from typing import Dict, Set, Tuple
 from urllib.parse import urlparse
@@ -34,6 +33,8 @@ from risk_rules import (
     classify_control,
     is_financial_routine,
     parse_company_domains,
+    should_force_negative_ceo,
+    should_neutralize_ceo_title,
     should_neutralize_finance_routine,
 )
 
@@ -49,67 +50,6 @@ OUT_ROLLUP = "data/daily_counts/ceo-serps-daily-counts-chart.csv"
 
 FORCE_POSITIVE_IF_CONTROLLED = True
 
-# ============================================================================
-# CEO-SPECIFIC WORD FILTERING RULES
-# ============================================================================
-# REMOVED (?i) prefixes because re.IGNORECASE is used in re.compile
-NEUTRALIZE_TITLE_TERMS = [
-    r"\bflees\b",           # Often used figuratively or in names
-    r"\bsavage\b",          # Common surname (e.g., Dan Savage)
-    r"\brob\b",             # Common first name (e.g., Rob Walton)
-    r"\bnicholas\s+lower\b", # Specific CEO name combination
-    r"\bmad\s+money\b",     # Jim Cramer's show
-    r"\bno\s+organic\b",    # About organic food availability
-    r"\brob\b",        # Potentially a person's name
-    r"\blower\b",      # CEO with last name Lower
-    r"\benergy\b",     # Lot of brands with energy in their name   
-    r"\brebel\b",      # Potential product name
-    r"\bpay\b",
-    r"\bcompensation\b",
-    r"\bnet\s+worth\b",
-    r"\bpopular\s+comment(s)?\b",
-    r"\bshare(s|d|ing)?\b",
-    r"\bcancer\s+society\b",
-    r"\bamerican\s+cancer\s+society\b",
-]
-NEUTRALIZE_TITLE_RE = re.compile("|".join(NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
-
-ALWAYS_NEGATIVE_TERMS = [
-    # Corporate governance issues
-    r"\bmandate\b",
-    # Leadership changes (usually negative for the departing CEO)
-    r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
-    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
-    # Skepticism/scrutiny language
-    r"\bstill\b",  # "CEO still hasn't..." implies criticism
-    r"\bturnaround\b",  # Company in trouble
-    # Personal accusations
-    r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b", r"\bapologizes\b", r"\bapology\b",
-    r"\baware\b",  # "CEO was aware of..." implies cover-up
-    # Financial/personal troubles
-    r"\bloss\b", r"\bdivorce\b", r"\bbankrupt(cy|cies)\b",
-    # Data security
-    r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
-    # Labor relations
-    r"\bunion\s+buster\b",
-    # Termination (in any direction)
-    r"\bfired\b", r"\bfiring\b", r"\bfires\b",
-    r"(?<!t)\bax(e|ed|es)?\b",  # "axed" but not "taxes"
-    r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
-    # Stock performance
-    r"\bplummeting\b",
-    # Legal/regulatory trouble
-    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
-    r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
-    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
-    r"\bepstein\b", r"\bghislaine\b", r"\bmaxwell\b",
-    r"\bfallout\b", r"\bcancel(s|ed|ing|led|ling)?\b",
-    r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
-    r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
-]
-ALWAYS_NEGATIVE_RE = re.compile("|".join(ALWAYS_NEGATIVE_TERMS), re.IGNORECASE)
-
-
 # Legal suffixes to strip when matching company names
 LEGAL_SUFFIXES = {
     "inc", "inc.", "incorporated",
@@ -121,19 +61,6 @@ LEGAL_SUFFIXES = {
     "exchange", "insurance",
 }
 
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-def _should_force_negative_title(title: str, snippet: str = "") -> bool:
-    """Return True if title contains CEO-specific negative terms."""
-    hay = f"{title} {snippet}".strip()
-    return bool(ALWAYS_NEGATIVE_RE.search(hay))
-
-
-def _should_neutralize_title(title: str) -> bool:
-    """Return True if the title contains terms that should neutralize sentiment."""
-    return bool(NEUTRALIZE_TITLE_RE.search(str(title or "")))
 
 def vader_label_on_title(analyzer: SentimentIntensityAnalyzer, title: str) -> Tuple[str, float]:
     """
@@ -460,6 +387,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             entity_type="ceo",
             person_name=ceo,
             publisher=source,
+            snippet=snippet,
         )
         finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
 
@@ -473,7 +401,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "negative"
             forced_reason = "reddit"
         # 2) Force negative for CEO/legal terms
-        elif _should_force_negative_title(title, snippet):
+        elif should_force_negative_ceo(title, snippet, url=url, source=source):
             label = "negative"
             forced_reason = "ceo_terms"
         # 3) Neutralize routine financial coverage
@@ -488,7 +416,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             label = "neutral"
             forced_reason = "finance"
         # 4) Neutralize certain terms
-        elif _should_neutralize_title(title):
+        elif should_neutralize_ceo_title(title):
             label = "neutral"
             forced_reason = "neutral_terms"
         else:

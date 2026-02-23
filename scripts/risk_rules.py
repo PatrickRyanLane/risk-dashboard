@@ -39,6 +39,10 @@ FINANCE_SOURCES = {
     "primaryignition.com", "tradingview.com", "marketscreener.com",
     "gurufocus.com"
 }
+# Broad source-level override; remove if this forces too many unrelated negatives.
+FORCE_NEGATIVE_SOURCE_DOMAINS = {
+    "bankinfosecurity.com",
+}
 TICKER_RE = re.compile(r"\b(?:NYSE|NASDAQ|AMEX):\s?[A-Z]{1,5}\b")
 MATERIAL_RISK_TERMS = [
     r"\blawsuits?\b", r"\blegal action\b", r"\bclass action\b", r"\bsu(?:e|es|ed|ing)\b",
@@ -59,11 +63,22 @@ NAME_IGNORE_TOKENS = {
 PUBLISHER_SUFFIX_TOKENS = {
     "news", "newsroom", "media", "press", "wire", "blog", "official"
 }
+SOCIAL_BYLINE_PLATFORM_PATTERNS = {
+    "facebook.com": ("facebook",),
+    "instagram.com": ("instagram",),
+    "threads.net": ("threads",),
+    "youtube.com": ("youtube", "youtu"),
+    "youtu.be": ("youtube", "youtu"),
+    "x.com": ("x", "twitter"),
+    "twitter.com": ("twitter", "x"),
+}
 
 BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\bgrand\b",
     r"\bdiamond\b",
     r"\bsell\b",
+    r"\bsells?\s+\d[\d,]*\s+shares?\b",
+    r"\bsells?\s+shares?\b",
     r"\blow\b",
     r"\bdream\b",
     r"\bdarling\b",
@@ -73,6 +88,8 @@ BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\bmlm\b",
     r"\bmad\s+money\b",
     r"\brate\s+cut\b",
+    r"\brates?\s+(drop|drops|dropped|fall|falls|fell)\b",
+    r"\b(drop|drops|dropped|fall|falls|fell)\s+in\s+rates?\b",
     r"\bone\s+stop\s+shop\b",
     r"\bfuneral\b",
     r"\bcremation\b",
@@ -89,17 +106,27 @@ BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\bshare(s|d|ing)?\b",
     r"\bcancer\s+society\b",
     r"\bamerican\s+cancer\s+society\b",
+    r"\bthe\s+block\b",
+    r"\bblock\s+by\s+jack\s+dorsey\b",
 ]
 BRAND_NEUTRALIZE_TITLE_RE = re.compile("|".join(BRAND_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
 BRAND_LEGAL_TROUBLE_TERMS = [
     r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
-    r"\bsettlement(s)?\b", r"\bfine(d)?\b", r"\bclass[- ]action\b",
+    # Broad legal-context terms: keep for now; remove/narrow if false positives increase.
+    r"\bsettlement(s)?\b", r"\bsettl(?:e|es|ed|ing)\b", r"\bfine(d)?\b", r"\bfine(?:d|s|ing)?\b", r"\bclass[- ]action\b",
     r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
+    r"\battorney\s+general\b",
     r"\bantitrust\b", r"\bban(s|ned)?\b",
+    r"\btone[- ]deaf\b",
+    r"\binvestigat(?:e|es|ed|ing|ion|ions)\b",
     r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
+    # Broad cyber terms: keep for recall; remove/narrow if they over-force negatives.
+    r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bexpos(?:e|es|ed|ing)\b",
+    r"\bleak(?:ed|s|ing)?\b",
     r"\brecall(s|ed)?\b",
     r"\blayoff(s)?\b",
+    r"\bboycott(?:ing|ed|s)?\b",
     r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
     r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
     r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
@@ -113,6 +140,9 @@ BRAND_LEGAL_TROUBLE_TERMS = [
     r"\bcancel(s|ed|ing|led|ling)?\b",
     r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
     r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
+    # Broad terms intentionally enabled for recall; remove or narrow if they over-force negatives.
+    r"\btoxic\b", r"\bden(?:ied|ies|y)\b", r"\bdenounc(?:e|es|ed|ing)\b",
+    r"\bcrisis\b", r"\bcrises\b", r"\barbitration\b",
 ]
 BRAND_LEGAL_TROUBLE_RE = re.compile("|".join(BRAND_LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
@@ -120,8 +150,12 @@ CEO_NEUTRALIZE_TITLE_TERMS = [
     r"\bflees\b",
     r"\bsavage\b",
     r"\brob\b",
+    r"\bsells?\s+\d[\d,]*\s+shares?\b",
+    r"\bsells?\s+shares?\b",
     r"\bnicholas\s+lower\b",
     r"\bmad\s+money\b",
+    r"\brates?\s+(drop|drops|dropped|fall|falls|fell)\b",
+    r"\b(drop|drops|dropped|fall|falls|fell)\s+in\s+rates?\b",
     r"\bno\s+organic\b",
     r"\brob\b",
     r"\blower\b",
@@ -134,6 +168,8 @@ CEO_NEUTRALIZE_TITLE_TERMS = [
     r"\bshare(s|d|ing)?\b",
     r"\bcancer\s+society\b",
     r"\bamerican\s+cancer\s+society\b",
+    r"\bthe\s+block\b",
+    r"\bblock\s+by\s+jack\s+dorsey\b",
 ]
 CEO_NEUTRALIZE_TITLE_RE = re.compile("|".join(CEO_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
@@ -168,7 +204,23 @@ def strip_neutral_terms_brand(headline: str) -> str:
     return " ".join(cleaned.split())
 
 
-def title_mentions_legal_trouble(title: str, snippet: str = "") -> bool:
+def should_neutralize_brand_title(title: str) -> bool:
+    return bool(BRAND_NEUTRALIZE_TITLE_RE.search(title or ""))
+
+
+def _is_force_negative_source(url: str = "", source: str = "") -> bool:
+    host = hostname(url)
+    if host and any(host == d or host.endswith("." + d) for d in FORCE_NEGATIVE_SOURCE_DOMAINS):
+        return True
+    source_l = (source or "").lower()
+    if "bank info security" in source_l or "bankinfosecurity" in source_l:
+        return True
+    return False
+
+
+def title_mentions_legal_trouble(title: str, snippet: str = "", url: str = "", source: str = "") -> bool:
+    if _is_force_negative_source(url=url, source=source):
+        return True
     hay = f"{title} {snippet}".strip()
     return bool(BRAND_LEGAL_TROUBLE_RE.search(hay))
 
@@ -180,9 +232,15 @@ def strip_neutral_terms_ceo(title: str) -> str:
     return s
 
 
-def should_force_negative_ceo(title: str, snippet: str = "") -> bool:
+def should_neutralize_ceo_title(title: str) -> bool:
+    return bool(CEO_NEUTRALIZE_TITLE_RE.search(str(title or "")))
+
+
+def should_force_negative_ceo(title: str, snippet: str = "", url: str = "", source: str = "") -> bool:
+    if title_mentions_legal_trouble(title, snippet, url=url, source=source):
+        return True
     hay = f"{title} {snippet}".strip()
-    return bool(CEO_ALWAYS_NEGATIVE_RE.search(hay) or BRAND_LEGAL_TROUBLE_RE.search(hay))
+    return bool(CEO_ALWAYS_NEGATIVE_RE.search(hay))
 
 
 def hostname(url: str) -> str:
@@ -231,6 +289,92 @@ def _publisher_matches_company(company: str, publisher: str) -> bool:
             suffix = publisher_token[len(brand_token):]
             if suffix and suffix in PUBLISHER_SUFFIX_TOKENS:
                 return True
+    return False
+
+
+def _host_matches_social(base_host: str, host: str) -> bool:
+    return host == base_host or host.endswith("." + base_host)
+
+
+def _social_platform_tokens_for_host(host: str) -> tuple[str, ...]:
+    for base_host, tokens in SOCIAL_BYLINE_PLATFORM_PATTERNS.items():
+        if _host_matches_social(base_host, host):
+            return tokens
+    return ()
+
+
+def _extract_social_byline_author(snippet: str, host: str) -> str:
+    if not snippet or not host:
+        return ""
+    platform_tokens = _social_platform_tokens_for_host(host)
+    if not platform_tokens:
+        return ""
+    platforms = "|".join(re.escape(token) for token in platform_tokens)
+    pattern = re.compile(
+        rf"\bby\s+(.{{2,120}}?)\s+on\s+(?:{platforms})\b",
+        flags=re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(snippet))
+    if not matches:
+        return ""
+    author = matches[-1].group(1).strip(" \"'.,:;()[]{}")
+    return " ".join(author.split())
+
+
+def _social_byline_matches_company(company: str, snippet: str, host: str) -> bool:
+    if not company or not snippet or not host:
+        return False
+    author = _extract_social_byline_author(snippet, host)
+    if not author:
+        return False
+    return _publisher_matches_company(company, author)
+
+
+def _instagram_handle_from_path(path: str) -> str:
+    if not path:
+        return ""
+    segments = [seg for seg in path.strip("/").split("/") if seg]
+    if not segments:
+        return ""
+    first = segments[0].lstrip("@").lower()
+    reserved = {
+        "p", "reel", "reels", "stories", "explore", "accounts", "tv",
+        "about", "privacy", "legal", "developer",
+    }
+    if first in reserved:
+        return ""
+    return first
+
+
+def _is_instagram_company_handle(company: str, url: str) -> bool:
+    if not company or not url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if not _host_matches_social("instagram.com", host):
+        return False
+    handle_token = _norm_token(_instagram_handle_from_path(parsed.path or ""))
+    if not handle_token:
+        return False
+    for token in _company_handle_tokens(company):
+        if token and (token in handle_token or handle_token in token):
+            return True
+    return False
+
+
+def _is_instagram_person_handle(name: str, url: str) -> bool:
+    if not name or not url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if not _host_matches_social("instagram.com", host):
+        return False
+    handle_token = _norm_token(_instagram_handle_from_path(parsed.path or ""))
+    if not handle_token:
+        return False
+    for token in _person_handle_tokens(name):
+        if token and (token in handle_token or handle_token in token):
+            return True
     return False
 
 
@@ -434,6 +578,7 @@ def classify_control(
     entity_type: str = "company",
     person_name: str | None = None,
     publisher: str | None = None,
+    snippet: str | None = None,
 ) -> bool:
     if _publisher_matches_company(company, publisher or ""):
         return True
@@ -444,33 +589,58 @@ def classify_control(
         path = (urlparse(url).path or "").lower()
     except Exception:
         path = ""
+    social_byline_controlled = _social_byline_matches_company(company, snippet or "", host)
+    is_facebook = _host_matches_social("facebook.com", host)
+    is_instagram = _host_matches_social("instagram.com", host)
+    is_threads = _host_matches_social("threads.net", host)
+    is_x = _host_matches_social("x.com", host) or _host_matches_social("twitter.com", host)
+
     if entity_type == "ceo":
         for bad in CEO_UNCONTROLLED_DOMAINS:
             if host == bad or host.endswith("." + bad):
+                if social_byline_controlled:
+                    return True
                 return False
         if person_name and _is_linkedin_person_profile(person_name, url):
             return True
         if person_name and _is_x_person_handle(person_name, url):
             return True
-    if host == "facebook.com":
+    if is_facebook:
         if any(seg in path for seg in ("/posts/", "/photos/", "/videos/")):
-            return False
+            return social_byline_controlled
         return True
-    if host == "instagram.com":
-        if any(seg in path for seg in ("/p/", "/reels/")):
+    if is_instagram:
+        if "/reels/" in path or "/reel/" in path:
+            # Reels are only controlled when snippet attribution matches the brand.
+            if social_byline_controlled:
+                return True
+            if _is_instagram_company_handle(company, url):
+                return True
+            if entity_type == "ceo" and person_name and _is_instagram_person_handle(person_name, url):
+                return True
             return False
+        if "/p/" in path:
+            return social_byline_controlled
         return True
-    if host == "threads.net":
+    if is_threads:
         if "/posts/" in path:
-            return False
+            return social_byline_controlled
         return True
     if _is_brand_youtube_channel(company, url):
+        return True
+    if social_byline_controlled and (
+        _host_matches_social("youtube.com", host)
+        or _host_matches_social("youtu.be", host)
+        or is_x
+    ):
         return True
     if _is_linkedin_company_post(company, url):
         return True
     if _is_linkedin_company_page(company, url):
         return True
-    if "/status/" in path and host in {"x.com", "twitter.com"}:
+    if "/status/" in path and is_x:
+        if social_byline_controlled:
+            return True
         return False
     if _is_x_company_handle(company, url):
         return True
