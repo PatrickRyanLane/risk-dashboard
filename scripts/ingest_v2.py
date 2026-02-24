@@ -86,6 +86,52 @@ def fetch_company_domains(conn) -> dict[str, set[str]]:
 ARTICLES_LOCK_KEY = zlib.crc32(b"risk_dashboard_articles") & 0x7FFFFFFF
 
 
+LEGAL_SUFFIX_TOKENS = {
+    "inc", "incorporated",
+    "corp", "corporation",
+    "co", "company",
+    "llc", "plc", "ltd", "limited",
+    "group", "holdings", "holding", "hldgs",
+    "exchange", "insurance",
+    "the",
+}
+
+
+def normalize_name(name: str) -> str:
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    text = text.replace("&", " and ")
+    text = text.replace(".com", " ").replace(".net", " ").replace(".org", " ")
+    text = re.sub(r"[^a-z0-9\s]+", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def simplify_company_name(name: str) -> str:
+    tokens = normalize_name(name).split()
+    tokens = [t for t in tokens if t not in LEGAL_SUFFIX_TOKENS]
+    return " ".join(tokens).strip()
+
+
+def build_unique_lookup(pairs):
+    """
+    Build a lookup map only for unambiguous normalized keys.
+    If multiple different IDs map to the same key, drop that key.
+    """
+    out = {}
+    ambiguous = set()
+    for key, value in pairs:
+        if not key:
+            continue
+        if key in out and out[key] != value:
+            ambiguous.add(key)
+        else:
+            out[key] = value
+    for key in ambiguous:
+        out.pop(key, None)
+    return out
+
+
 def run_with_deadlock_retry(conn, fn, retries: int = 3, base_delay: float = 0.5):
     for attempt in range(retries):
         try:
@@ -465,8 +511,39 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
     company_map = fetch_company_map(conn)
     ceo_map = fetch_ceo_map(conn)
 
+    # Build fallback maps for normalized matching between SERP rows and DB entities.
+    company_norm_map = build_unique_lookup(
+        (normalize_name(name), cid) for name, cid in company_map.items()
+    )
+    company_simple_map = build_unique_lookup(
+        (simplify_company_name(name), cid) for name, cid in company_map.items()
+    )
+    ceo_norm_map_by_company = {}
+    ceo_norm_ambiguous_by_company = {}
+    for (ceo_name, company_id), ceo_id in ceo_map.items():
+        key = normalize_name(ceo_name)
+        if not key:
+            continue
+        bucket = ceo_norm_map_by_company.setdefault(company_id, {})
+        ambiguous = ceo_norm_ambiguous_by_company.setdefault(company_id, set())
+        if key in bucket and bucket[key] != ceo_id:
+            ambiguous.add(key)
+        else:
+            bucket[key] = ceo_id
+    for company_id, keys in ceo_norm_ambiguous_by_company.items():
+        bucket = ceo_norm_map_by_company.get(company_id, {})
+        for key in keys:
+            bucket.pop(key, None)
+
     run_rows = {}
     result_rows = []
+    company_fallback_norm = 0
+    company_fallback_simple = 0
+    ceo_fallback_norm = 0
+    skipped_company = 0
+    skipped_ceo = 0
+    skipped_companies = {}
+    skipped_ceos = {}
 
     for row in rows:
         company = (row.get('company') or '').strip()
@@ -512,14 +589,41 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
         if entity_type == 'company':
             company_id = company_map.get(company)
             if not company_id:
+                company_id = company_norm_map.get(normalize_name(company))
+                if company_id:
+                    company_fallback_norm += 1
+            if not company_id:
+                company_id = company_simple_map.get(simplify_company_name(company))
+                if company_id:
+                    company_fallback_simple += 1
+            if not company_id:
+                skipped_company += 1
+                skipped_companies[company] = skipped_companies.get(company, 0) + 1
                 continue
             run_key = ('company', company_id)
         else:
             company_id = company_map.get(company)
             if not company_id:
+                company_id = company_norm_map.get(normalize_name(company))
+                if company_id:
+                    company_fallback_norm += 1
+            if not company_id:
+                company_id = company_simple_map.get(simplify_company_name(company))
+                if company_id:
+                    company_fallback_simple += 1
+            if not company_id:
+                skipped_company += 1
+                skipped_companies[company] = skipped_companies.get(company, 0) + 1
                 continue
             ceo_id = ceo_map.get((ceo, company_id))
             if not ceo_id:
+                ceo_id = ceo_norm_map_by_company.get(company_id, {}).get(normalize_name(ceo))
+                if ceo_id:
+                    ceo_fallback_norm += 1
+            if not ceo_id:
+                skipped_ceo += 1
+                key = f"{ceo} | {company}"
+                skipped_ceos[key] = skipped_ceos.get(key, 0) + 1
                 continue
             run_key = ('ceo', ceo_id)
 
@@ -630,5 +734,27 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
             with conn:
                 with conn.cursor() as cur:
                     execute_values(cur, sql, insert_rows, page_size=1000)
+
+    if company_fallback_norm or company_fallback_simple or ceo_fallback_norm:
+        print(
+            "[METRIC] DB lookup fallbacks: "
+            f"company_norm={company_fallback_norm} "
+            f"company_simple={company_fallback_simple} "
+            f"ceo_norm={ceo_fallback_norm}"
+        )
+    if skipped_company:
+        print(f"[WARN] DB lookup skipped {skipped_company} SERP rows due missing company match")
+        top = sorted(skipped_companies.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if top:
+            print("[WARN] Top missing companies in DB lookup:")
+            for name, count in top:
+                print(f"  - {name}: {count}")
+    if skipped_ceo:
+        print(f"[WARN] DB lookup skipped {skipped_ceo} SERP rows due missing CEO match")
+        top = sorted(skipped_ceos.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if top:
+            print("[WARN] Top missing CEO/company in DB lookup:")
+            for name, count in top:
+                print(f"  - {name}: {count}")
 
     return len(insert_rows)
