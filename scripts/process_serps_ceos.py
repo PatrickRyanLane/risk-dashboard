@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 from datetime import datetime
 from typing import Dict, Set, Tuple
 from urllib.parse import urlparse
@@ -109,6 +110,47 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--local", action="store_true",
                    help="Use local file storage instead of GCS")
     ap.add_argument("--roster", default=MAIN_ROSTER_PATH, help="Path to roster file")
+    ap.add_argument(
+        "--source-path",
+        default="",
+        help="Optional parquet source path/URL override (defaults to daily S3 raw parquet).",
+    )
+    ap.add_argument(
+        "--max-source-wait-minutes",
+        type=int,
+        default=20,
+        help="How long to wait/poll for a complete raw parquet before failing (default: 20).",
+    )
+    ap.add_argument(
+        "--source-check-interval-seconds",
+        type=int,
+        default=90,
+        help="Polling interval while waiting for raw parquet readiness (default: 90).",
+    )
+    ap.add_argument(
+        "--min-raw-queries",
+        type=int,
+        default=100,
+        help="Absolute minimum raw queries required before processing (default: 100).",
+    )
+    ap.add_argument(
+        "--min-raw-query-ratio",
+        type=float,
+        default=0.50,
+        help="Minimum raw queries as ratio of expected CEO queries (default: 0.50).",
+    )
+    ap.add_argument(
+        "--min-mapped-queries",
+        type=int,
+        default=100,
+        help="Absolute minimum mapped queries required before writing/upsert (default: 100).",
+    )
+    ap.add_argument(
+        "--min-mapped-query-ratio",
+        type=float,
+        default=0.40,
+        help="Minimum mapped queries as ratio of expected CEO queries (default: 0.40).",
+    )
     return ap.parse_args()
 
 
@@ -122,29 +164,48 @@ def get_target_date(arg_date: str | None) -> str:
     return datetime.utcnow().strftime("%Y-%m-%d")
 
 
-def fetch_parquet_from_s3(url: str) -> pd.DataFrame | None:
+def fetch_parquet_with_metrics(path_or_url: str) -> Tuple[pd.DataFrame | None, Dict[str, int]]:
+    metrics: Dict[str, int] = {
+        "parquet_rows": 0,
+        "raw_queries": 0,
+        "raw_queries_with_payload": 0,
+        "valid_json_rows": 0,
+        "raw_queries_with_organic": 0,
+        "organic_rows": 0,
+    }
     try:
         con = duckdb.connect()
         con.execute("INSTALL httpfs; LOAD httpfs;")
-        df = con.execute(f"select query, raw_json from read_parquet('{url}')").fetch_df()
+        df = con.execute(f"select query, raw_json from read_parquet('{path_or_url}')").fetch_df()
     except Exception as e:
-        print(f"[WARN] Could not fetch {url} – {e}")
-        return None
+        print(f"[WARN] Could not fetch {path_or_url} – {e}")
+        return None, metrics
+
+    metrics["parquet_rows"] = int(len(df))
+
+    all_queries: Set[str] = set()
+    payload_queries: Set[str] = set()
+    organic_queries: Set[str] = set()
 
     rows = []
     for _, row in df.iterrows():
         query = str(row.get("query") or "").strip()
         if not query:
             continue
+        all_queries.add(query)
         raw = row.get("raw_json")
         if not raw:
             continue
+        payload_queries.add(query)
         try:
             obj = json.loads(raw)
         except Exception:
             continue
+        metrics["valid_json_rows"] += 1
         data = obj.get("data", obj)
         organic = data.get("organic_results") or []
+        if organic:
+            organic_queries.add(query)
         for item in organic:
             if not isinstance(item, dict):
                 continue
@@ -155,9 +216,13 @@ def fetch_parquet_from_s3(url: str) -> pd.DataFrame | None:
                 "url": item.get("link") or "",
                 "snippet": item.get("snippet") or "",
             })
+    metrics["raw_queries"] = len(all_queries)
+    metrics["raw_queries_with_payload"] = len(payload_queries)
+    metrics["raw_queries_with_organic"] = len(organic_queries)
+    metrics["organic_rows"] = len(rows)
     if not rows:
-        return pd.DataFrame()
-    return pd.DataFrame(rows)
+        return pd.DataFrame(), metrics
+    return pd.DataFrame(rows), metrics
 
 
 # ============================================================================
@@ -327,18 +392,74 @@ def resolve_ceo_company(query_alias: str, alias_map: Dict, ceo_to_company: Dict)
 # ============================================================================
 # MAIN PROCESSING
 # ============================================================================
-def process_for_date(storage, target_date: str, roster_path: str) -> None:
+def process_for_date(
+    storage,
+    target_date: str,
+    roster_path: str,
+    source_path: str,
+    max_source_wait_minutes: int,
+    source_check_interval_seconds: int,
+    min_raw_queries: int,
+    min_raw_query_ratio: float,
+    min_mapped_queries: int,
+    min_mapped_query_ratio: float,
+) -> None:
     print(f"[INFO] Processing CEO SERPs for {target_date} …")
 
     # Load roster with alias maps
     alias_map, ceo_to_company, company_domains = load_roster_data(storage, roster_path)
+    expected_queries = len(ceo_to_company)
+    print(
+        f"[METRIC] roster_ceos={expected_queries} "
+        f"roster_aliases={len(alias_map)} "
+        f"roster_domain_companies={len(company_domains)}"
+    )
 
-    # Fetch raw data from S3
-    url = PARQUET_URL_TEMPLATE.format(date=target_date)
-    raw = fetch_parquet_from_s3(url)
-    if raw is None or raw.empty:
-        print(f"[WARN] No raw CEO SERP data available for {target_date}. Nothing to write.")
-        return
+    source = source_path or PARQUET_URL_TEMPLATE.format(date=target_date)
+    min_raw_queries = max(0, int(min_raw_queries))
+    min_raw_query_ratio = max(0.0, float(min_raw_query_ratio))
+    min_mapped_queries = max(0, int(min_mapped_queries))
+    min_mapped_query_ratio = max(0.0, float(min_mapped_query_ratio))
+    required_raw_queries = max(min_raw_queries, int(expected_queries * min_raw_query_ratio))
+    required_mapped_queries = max(min_mapped_queries, int(expected_queries * min_mapped_query_ratio))
+    print(
+        f"[GUARD] expected_queries={expected_queries} "
+        f"required_raw_queries={required_raw_queries} "
+        f"required_mapped_queries={required_mapped_queries}"
+    )
+
+    wait_deadline = time.time() + max(0, max_source_wait_minutes) * 60
+    attempt = 0
+    raw = None
+    raw_metrics: Dict[str, int] = {}
+    while True:
+        attempt += 1
+        raw, raw_metrics = fetch_parquet_with_metrics(source)
+        raw_query_count = int(raw_metrics.get("raw_queries_with_payload", 0))
+        print(
+            f"[METRIC] source_attempt={attempt} "
+            f"raw_parquet_rows={raw_metrics.get('parquet_rows', 0)} "
+            f"raw_queries={raw_metrics.get('raw_queries', 0)} "
+            f"raw_queries_with_payload={raw_query_count} "
+            f"raw_queries_with_organic={raw_metrics.get('raw_queries_with_organic', 0)} "
+            f"raw_organic_rows={raw_metrics.get('organic_rows', 0)}"
+        )
+
+        if raw is not None and not raw.empty and raw_query_count >= required_raw_queries:
+            break
+
+        if max_source_wait_minutes <= 0 or time.time() >= wait_deadline:
+            raise RuntimeError(
+                "Raw SERP guardrail failed: "
+                f"source={source} raw_queries_with_payload={raw_query_count} "
+                f"required_raw_queries={required_raw_queries}"
+            )
+
+        print(
+            "[WARN] Raw source below guardrail; "
+            f"retrying in {max(1, source_check_interval_seconds)}s ..."
+        )
+        time.sleep(max(1, source_check_interval_seconds))
 
     print(f"[INFO] Raw S3 data: {len(raw)} rows, columns: {list(raw.columns)}")
 
@@ -354,6 +475,7 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
 
     analyzer = SentimentIntensityAnalyzer()
     processed_rows = []
+    mapped_queries: Set[str] = set()
     unresolved_count = 0
     unresolved_names: Dict[str, int] = {}
     # DB connection is handled by db_writer during upsert.
@@ -368,6 +490,9 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             if query_alias:
                 unresolved_names[query_alias] = unresolved_names.get(query_alias, 0) + 1
             continue
+        query_alias = str(row.get("query_alias", "") or "").strip()
+        if query_alias:
+            mapped_queries.add(query_alias)
 
         title = str(row.get("title", "") or "").strip()
         url = str(row.get("url", "") or "").strip()
@@ -460,8 +585,20 @@ def process_for_date(storage, target_date: str, roster_path: str) -> None:
             "llm_reason": llm_reason,
         })
 
-    if unresolved_count > 0:
-        print(f"[WARN] {unresolved_count} rows could not be resolved to CEO/company")
+    mapped_query_count = len(mapped_queries)
+    unresolved_query_count = len(unresolved_names)
+    print(
+        f"[METRIC] mapped_queries={mapped_query_count} "
+        f"mapped_rows={len(processed_rows)} "
+        f"unmapped_queries={unresolved_query_count} "
+        f"unmapped_rows={unresolved_count}"
+    )
+    if mapped_query_count < required_mapped_queries:
+        raise RuntimeError(
+            "Mapped SERP guardrail failed: "
+            f"mapped_queries={mapped_query_count} required_mapped_queries={required_mapped_queries} "
+            f"source={source}"
+        )
 
     if not processed_rows:
         print(f"[WARN] No processed rows for {target_date}.")
@@ -604,7 +741,18 @@ def main() -> None:
         print(f"☁️  Using Cloud Storage bucket: {args.bucket}")
         storage = CloudStorageManager(args.bucket)
     
-    process_for_date(storage, date_str, args.roster)
+    process_for_date(
+        storage,
+        date_str,
+        args.roster,
+        args.source_path,
+        args.max_source_wait_minutes,
+        args.source_check_interval_seconds,
+        args.min_raw_queries,
+        args.min_raw_query_ratio,
+        args.min_mapped_queries,
+        args.min_mapped_query_ratio,
+    )
 
 
 if __name__ == "__main__":

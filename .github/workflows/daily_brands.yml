@@ -66,6 +66,16 @@ jobs:
           echo "Testing GCS access..."
           gsutil ls gs://$GCS_BUCKET/rosters/ || echo "Warning: Could not list rosters"
 
+      - name: Sync roster entities to DB
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "🔁 Syncing companies/CEOs from roster into DB"
+          python scripts/ingest_roster_only.py \
+            --roster-path "gs://$GCS_BUCKET/rosters/main-roster.csv" \
+            --boards-path ""
+
       - name: Build brand articles (→ GCS)
         id: build_brand_articles
         env:
@@ -131,6 +141,28 @@ jobs:
           fi
           echo "db_rows=$DB_ROWS" >> "$GITHUB_OUTPUT"
 
+          python - "$LOG_FILE" "$GITHUB_OUTPUT" <<'PY'
+          import re
+          import sys
+
+          log_path, out_path = sys.argv[1], sys.argv[2]
+          text = open(log_path, encoding="utf-8", errors="ignore").read()
+
+          def last(pattern: str) -> str:
+              vals = re.findall(pattern, text)
+              return vals[-1] if vals else "unknown"
+
+          metrics = {
+              "raw_queries": last(r"\braw_queries=(\d+)"),
+              "raw_organic_rows": last(r"\braw_organic_rows=(\d+)"),
+              "mapped_queries": last(r"\bmapped_queries=(\d+)"),
+              "mapped_rows": last(r"\bmapped_rows=(\d+)"),
+          }
+          with open(out_path, "a", encoding="utf-8") as f:
+              for key, val in metrics.items():
+                  f.write(f"{key}={val}\n")
+          PY
+
       - name: Refresh article + SERP daily counts MVs
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -162,6 +194,12 @@ jobs:
           echo "#### DB rows upserted:" >> $GITHUB_STEP_SUMMARY
           echo "- Brand article rows: ${{ steps.build_brand_articles.outputs.db_rows }}" >> $GITHUB_STEP_SUMMARY
           echo "- Brand SERP rows: ${{ steps.process_brand_serps.outputs.db_rows }}" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### SERP source/mapping metrics:" >> $GITHUB_STEP_SUMMARY
+          echo "- Raw queries: ${{ steps.process_brand_serps.outputs.raw_queries }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Raw organic rows: ${{ steps.process_brand_serps.outputs.raw_organic_rows }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Mapped queries: ${{ steps.process_brand_serps.outputs.mapped_queries }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Mapped rows: ${{ steps.process_brand_serps.outputs.mapped_rows }}" >> $GITHUB_STEP_SUMMARY
 
           echo "#### SERP unmapped queries:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

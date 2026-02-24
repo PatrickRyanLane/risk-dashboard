@@ -53,6 +53,16 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Sync roster entities to DB
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "🔁 Syncing companies/CEOs from roster into DB"
+          python scripts/ingest_roster_only.py \
+            --roster-path "gs://$GCS_BUCKET/rosters/main-roster.csv" \
+            --boards-path ""
+
       - name: Backfill brand SERPs (→ GCS)
         shell: bash
         env:
