@@ -537,6 +537,8 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
 
     run_rows = {}
     result_rows = []
+    rows_seen = 0
+    rows_missing_title_url = 0
     company_fallback_norm = 0
     company_fallback_simple = 0
     ceo_fallback_norm = 0
@@ -546,6 +548,7 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
     skipped_ceos = {}
 
     for row in rows:
+        rows_seen += 1
         company = (row.get('company') or '').strip()
         ceo = (row.get('ceo') or '').strip()
         title = (row.get('title') or '').strip()
@@ -553,6 +556,7 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
         source = (row.get('source') or '').strip()
         url = (row.get('url') or row.get('link') or '').strip()
         if not title or not url:
+            rows_missing_title_url += 1
             continue
 
         rank = row.get('position')
@@ -688,6 +692,7 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
         run_id_map = {}
 
     insert_rows = []
+    missing_run_id = 0
     if result_rows:
         insert_map = {}
         for (
@@ -697,6 +702,7 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
         ) in result_rows:
             run_id = run_id_map.get(run_key)
             if not run_id:
+                missing_run_id += 1
                 continue
             key = (run_id, rank, uhash)
             insert_map[key] = (
@@ -734,6 +740,23 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
             with conn:
                 with conn.cursor() as cur:
                     execute_values(cur, sql, insert_rows, page_size=1000)
+
+    print(
+        "[METRIC] ingest_serp_results_rows "
+        f"entity_type={entity_type} "
+        f"input_rows={rows_seen} "
+        f"eligible_rows={len(result_rows)} "
+        f"run_rows={len(run_rows)} "
+        f"run_ids={len(run_id_map)} "
+        f"insert_rows={len(insert_rows)} "
+        f"missing_title_url={rows_missing_title_url} "
+        f"missing_run_id={missing_run_id} "
+        f"skipped_company={skipped_company} "
+        f"skipped_ceo={skipped_ceo} "
+        f"fallback_company_norm={company_fallback_norm} "
+        f"fallback_company_simple={company_fallback_simple} "
+        f"fallback_ceo_norm={ceo_fallback_norm}"
+    )
 
     if company_fallback_norm or company_fallback_simple or ceo_fallback_norm:
         print(
