@@ -67,18 +67,26 @@ jobs:
           gsutil ls gs://$GCS_BUCKET/rosters/ || echo "Warning: Could not list rosters"
 
       - name: Build brand articles (→ GCS)
+        id: build_brand_articles
         env:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          LOG_FILE="$(mktemp)"
           echo "🚀 Running news_articles_brands.py for ${DATE_TO_RUN}"
           echo "📦 Batch size: 1500 (all companies in one run)"
           python scripts/news_articles_brands.py \
             --date "${DATE_TO_RUN}" \
             --bucket "$GCS_BUCKET" \
-            --batch-size 1500
+            --batch-size 1500 2>&1 | tee "$LOG_FILE"
+
+          DB_ROWS="$(grep -Eo 'DB upserted [0-9]+ brand article rows' "$LOG_FILE" | tail -n1 | grep -Eo '[0-9]+' || true)"
+          if [ -z "${DB_ROWS:-}" ]; then
+            DB_ROWS="unknown"
+          fi
+          echo "db_rows=$DB_ROWS" >> "$GITHUB_OUTPUT"
 
       - name: Aggregate brand news sentiment (→ GCS)
         env:
@@ -104,16 +112,24 @@ jobs:
             --entity-type company
 
       - name: Process brand SERPs (→ GCS)
+        id: process_brand_serps
         env:
           RUN_DATE: ${{ github.event.inputs.date || '' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           DATE_TO_RUN="${RUN_DATE:-$(date -u +%F)}"
+          LOG_FILE="$(mktemp)"
           echo "🔍 Processing brand SERPs for ${DATE_TO_RUN}"
           python scripts/process_serps_brands.py \
             --date "${DATE_TO_RUN}" \
-            --bucket "$GCS_BUCKET"
+            --bucket "$GCS_BUCKET" 2>&1 | tee "$LOG_FILE"
+
+          DB_ROWS="$(grep -Eo 'DB upserted [0-9]+ brand SERP rows' "$LOG_FILE" | tail -n1 | grep -Eo '[0-9]+' || true)"
+          if [ -z "${DB_ROWS:-}" ]; then
+            DB_ROWS="unknown"
+          fi
+          echo "db_rows=$DB_ROWS" >> "$GITHUB_OUTPUT"
 
       - name: Refresh SERP daily counts MV
         env:
@@ -143,10 +159,9 @@ jobs:
           gsutil ls -l "gs://$GCS_BUCKET/data/processed_serps/${DATE_TO_USE}*brand*" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No SERP files found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-          echo "#### DB write status:" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "Check logs for: ✅ DB upserted ... rows" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "#### DB rows upserted:" >> $GITHUB_STEP_SUMMARY
+          echo "- Brand article rows: ${{ steps.build_brand_articles.outputs.db_rows }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Brand SERP rows: ${{ steps.process_brand_serps.outputs.db_rows }}" >> $GITHUB_STEP_SUMMARY
 
           echo "#### SERP unmapped queries:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

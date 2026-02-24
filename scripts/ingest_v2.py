@@ -37,7 +37,11 @@ def parse_optional_bool(value):
 
 
 def parse_control_class(value: str | None) -> str | None:
-    val = (value or "").strip().lower()
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "controlled" if value else "uncontrolled"
+    val = str(value).strip().lower()
     if val in {"controlled", "true", "1", "yes", "y"}:
         return "controlled"
     if val in {"uncontrolled", "false", "0", "no", "n"}:
@@ -503,12 +507,7 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
             llm_severity,
             llm_reason,
         ) = parse_llm_fields(row)
-        controlled = (row.get('controlled') or '').strip().lower()
-        control_class = None
-        if controlled in {'true', '1', 'controlled'}:
-            control_class = 'controlled'
-        elif controlled in {'false', '0', 'uncontrolled'}:
-            control_class = 'uncontrolled'
+        control_class = parse_control_class(row.get('controlled'))
 
         if entity_type == 'company':
             company_id = company_map.get(company)
