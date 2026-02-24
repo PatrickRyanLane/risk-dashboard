@@ -131,13 +131,13 @@ jobs:
           fi
           echo "db_rows=$DB_ROWS" >> "$GITHUB_OUTPUT"
 
-      - name: Refresh SERP daily counts MV
+      - name: Refresh article + SERP daily counts MVs
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
-          echo "🔁 Refreshing serp_daily_counts_mv"
-          python scripts/refresh_negative_summary_view.py --serp-counts
+          echo "🔁 Refreshing article_daily_counts_mv + serp_daily_counts_mv"
+          python scripts/refresh_negative_summary_view.py --article-counts --serp-counts
 
       - name: Summary
         if: always()
