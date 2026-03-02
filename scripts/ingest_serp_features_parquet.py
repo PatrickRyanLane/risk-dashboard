@@ -27,7 +27,13 @@ import requests
 from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from risk_rules import classify_control, is_financial_routine, parse_company_domains, title_mentions_legal_trouble
+from risk_rules import (
+    classify_control,
+    classify_narrative_tags,
+    is_financial_routine,
+    parse_company_domains,
+    title_mentions_legal_trouble,
+)
 
 FEATURES = [
     "aio",
@@ -210,6 +216,15 @@ def load_company_domains(cur) -> Dict[str, Set[str]]:
         if domains:
             company_domains.setdefault(company, set()).update(domains)
     return company_domains
+
+
+def ensure_narrative_columns(cur) -> None:
+    cur.execute("alter table if exists serp_feature_items add column if not exists narrative_primary_tag text")
+    cur.execute("alter table if exists serp_feature_items add column if not exists narrative_primary_group text")
+    cur.execute("alter table if exists serp_feature_items add column if not exists narrative_tags text[]")
+    cur.execute("alter table if exists serp_feature_items add column if not exists narrative_is_crisis boolean")
+    cur.execute("alter table if exists serp_feature_items add column if not exists narrative_rule_version text")
+    cur.execute("alter table if exists serp_feature_items add column if not exists narrative_tagged_at timestamptz")
 
 
 def parquet_url(date_str: str, entity_type: str) -> str:
@@ -585,6 +600,30 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
             if control_class == "controlled":
                 sentiment_label = "positive"
 
+            narrative_primary_tag = None
+            narrative_primary_group = None
+            narrative_tags = None
+            narrative_is_crisis = None
+            narrative_rule_version = None
+            narrative_tagged_at = None
+            if feature == "top_stories_items" and sentiment_label == "negative" and not finance_routine:
+                narrative = classify_narrative_tags(
+                    title,
+                    snippet,
+                    url=url,
+                    source=source,
+                    sentiment=sentiment_label,
+                    finance_routine=finance_routine,
+                )
+                narrative_primary_tag = narrative.get("primary_tag") or None
+                narrative_primary_group = narrative.get("primary_group") or None
+                tags = narrative.get("tags") or []
+                narrative_tags = list(tags) if tags else None
+                narrative_is_crisis = narrative.get("is_crisis")
+                narrative_rule_version = narrative.get("rule_version") or None
+                if narrative_primary_tag:
+                    narrative_tagged_at = datetime.utcnow()
+
             url_hash = _item_hash(url, title, snippet, feature, position or 0)
             rows.append((
                 date_str,
@@ -603,6 +642,12 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
                 control_class,
                 finance_routine,
                 source,
+                narrative_primary_tag,
+                narrative_primary_group,
+                narrative_tags,
+                narrative_is_crisis,
+                narrative_rule_version,
+                narrative_tagged_at,
             ))
 
     return rows
@@ -620,7 +665,9 @@ def upsert_feature_items(cur, rows, source: str):
         insert into serp_feature_items
           (date, entity_type, entity_id, entity_name, feature_type, item_type,
            title, snippet, url, domain, position, url_hash,
-           sentiment_label, control_class, finance_routine, source)
+           sentiment_label, control_class, finance_routine, source,
+           narrative_primary_tag, narrative_primary_group, narrative_tags, narrative_is_crisis,
+           narrative_rule_version, narrative_tagged_at)
         values %s
         on conflict (date, entity_type, entity_name, feature_type, url_hash) do update set
           title = excluded.title,
@@ -632,6 +679,12 @@ def upsert_feature_items(cur, rows, source: str):
           control_class = excluded.control_class,
           finance_routine = excluded.finance_routine,
           source = excluded.source,
+          narrative_primary_tag = excluded.narrative_primary_tag,
+          narrative_primary_group = excluded.narrative_primary_group,
+          narrative_tags = excluded.narrative_tags,
+          narrative_is_crisis = excluded.narrative_is_crisis,
+          narrative_rule_version = excluded.narrative_rule_version,
+          narrative_tagged_at = excluded.narrative_tagged_at,
           updated_at = now()
     """
     total = len(rows)
@@ -743,6 +796,7 @@ def main() -> int:
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            ensure_narrative_columns(cur)
             company_map = load_company_map(cur)
             ceo_map = load_ceo_map(cur)
             company_domains = load_company_domains(cur)
