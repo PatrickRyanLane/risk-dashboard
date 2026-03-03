@@ -8,6 +8,10 @@ Inputs:
 
 Writes to:
   serp_feature_daily (date, entity_type, entity_id, entity_name, feature_type, total_count)
+
+Narrative tagging:
+  - Only tags Top Stories narrative categories when an entity/date has at least
+    N negative, non-financial Top Stories URLs (default N=2).
 """
 from __future__ import annotations
 
@@ -31,6 +35,8 @@ from risk_rules import (
     classify_control,
     classify_narrative_tags,
     is_financial_routine,
+    NARRATIVE_MIN_NEG_TOP_STORIES,
+    narrative_tag_gate_met,
     parse_company_domains,
     title_mentions_legal_trouble,
 )
@@ -466,12 +472,22 @@ def _sentiment_for_item(analyzer: SentimentIntensityAnalyzer, title: str, snippe
     return label, False
 
 
-def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
-                       company_map, ceo_map, company_domains: Dict[str, Set[str]]):
+def load_feature_items(
+    path_or_url: str,
+    date_str: str,
+    entity_type: str,
+    company_map,
+    ceo_map,
+    company_domains: Dict[str, Set[str]],
+    *,
+    narrative_min_negative_top_stories: int = NARRATIVE_MIN_NEG_TOP_STORIES,
+):
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
     df = con.execute(f"select query, raw_json from read_parquet('{path_or_url}')").fetch_df()
     analyzer = SentimentIntensityAnalyzer()
+    staged_rows = []
+    neg_top_stories_by_entity: Dict[Tuple[str, str, str], int] = {}
     rows = []
 
     for _, row in df.iterrows():
@@ -573,6 +589,7 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
                 "position": idx + 1,
             })
 
+        entity_key = (entity_type, str(entity_id or ""), str(entity_name or ""))
         for item in items:
             title = item.get("title", "")
             snippet = item.get("snippet", "")
@@ -600,20 +617,59 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
             if control_class == "controlled":
                 sentiment_label = "positive"
 
-            narrative_primary_tag = None
-            narrative_primary_group = None
-            narrative_tags = None
-            narrative_is_crisis = None
-            narrative_rule_version = None
-            narrative_tagged_at = None
-            if feature == "top_stories_items" and sentiment_label == "negative" and not finance_routine:
+            is_neg_top_story = (
+                feature == "top_stories_items"
+                and sentiment_label == "negative"
+                and not finance_routine
+            )
+            if is_neg_top_story:
+                neg_top_stories_by_entity[entity_key] = neg_top_stories_by_entity.get(entity_key, 0) + 1
+
+            staged_rows.append({
+                "entity_key": entity_key,
+                "entity_id": entity_id,
+                "entity_name": entity_name,
+                "feature": feature,
+                "item_type": item_type,
+                "title": title,
+                "snippet": snippet,
+                "url": url,
+                "domain": domain,
+                "position": position,
+                "url_hash": _item_hash(url, title, snippet, feature, position or 0),
+                "sentiment_label": sentiment_label,
+                "control_class": control_class,
+                "finance_routine": finance_routine,
+                "source": source,
+                "is_neg_top_story": is_neg_top_story,
+            })
+
+    narrative_candidates = 0
+    narrative_tagged = 0
+    narrative_suppressed_by_gate = 0
+    for item in staged_rows:
+        narrative_primary_tag = None
+        narrative_primary_group = None
+        narrative_tags = None
+        narrative_is_crisis = None
+        narrative_rule_version = None
+        narrative_tagged_at = None
+
+        if item["is_neg_top_story"]:
+            narrative_candidates += 1
+            entity_neg_count = neg_top_stories_by_entity.get(item["entity_key"], 0)
+            gate_ok = narrative_tag_gate_met(
+                entity_neg_count,
+                min_negative_top_stories=narrative_min_negative_top_stories,
+            )
+            if gate_ok:
                 narrative = classify_narrative_tags(
-                    title,
-                    snippet,
-                    url=url,
-                    source=source,
-                    sentiment=sentiment_label,
-                    finance_routine=finance_routine,
+                    item["title"],
+                    item["snippet"],
+                    url=item["url"],
+                    source=item["source"],
+                    sentiment=item["sentiment_label"],
+                    finance_routine=item["finance_routine"],
                 )
                 narrative_primary_tag = narrative.get("primary_tag") or None
                 narrative_primary_group = narrative.get("primary_group") or None
@@ -622,34 +678,42 @@ def load_feature_items(path_or_url: str, date_str: str, entity_type: str,
                 narrative_is_crisis = narrative.get("is_crisis")
                 narrative_rule_version = narrative.get("rule_version") or None
                 if narrative_primary_tag:
+                    narrative_tagged += 1
                     narrative_tagged_at = datetime.utcnow()
+            else:
+                narrative_suppressed_by_gate += 1
 
-            url_hash = _item_hash(url, title, snippet, feature, position or 0)
-            rows.append((
-                date_str,
-                entity_type,
-                entity_id,
-                entity_name,
-                feature,
-                item_type,
-                title,
-                snippet,
-                url,
-                domain,
-                position,
-                url_hash,
-                sentiment_label,
-                control_class,
-                finance_routine,
-                source,
-                narrative_primary_tag,
-                narrative_primary_group,
-                narrative_tags,
-                narrative_is_crisis,
-                narrative_rule_version,
-                narrative_tagged_at,
-            ))
+        rows.append((
+            date_str,
+            entity_type,
+            item["entity_id"],
+            item["entity_name"],
+            item["feature"],
+            item["item_type"],
+            item["title"],
+            item["snippet"],
+            item["url"],
+            item["domain"],
+            item["position"],
+            item["url_hash"],
+            item["sentiment_label"],
+            item["control_class"],
+            item["finance_routine"],
+            item["source"],
+            narrative_primary_tag,
+            narrative_primary_group,
+            narrative_tags,
+            narrative_is_crisis,
+            narrative_rule_version,
+            narrative_tagged_at,
+        ))
 
+    print(
+        "[METRIC] narrative_tags "
+        f"min_neg_top_stories={max(1, int(narrative_min_negative_top_stories or 1))} "
+        f"candidates={narrative_candidates} tagged={narrative_tagged} "
+        f"suppressed_by_gate={narrative_suppressed_by_gate}"
+    )
     return rows
 
 
@@ -781,6 +845,15 @@ def main() -> int:
     parser.add_argument("--date", required=True, help="YYYY-MM-DD")
     parser.add_argument("--entity-type", choices=["brand", "ceo"], required=True)
     parser.add_argument("--source-url", default="", help="Override parquet URL")
+    parser.add_argument(
+        "--narrative-min-negative-top-stories",
+        type=int,
+        default=int(os.getenv("NARRATIVE_MIN_NEG_TOP_STORIES", str(NARRATIVE_MIN_NEG_TOP_STORIES))),
+        help=(
+            "Minimum negative, non-financial Top Stories URLs required per entity/day "
+            "before assigning narrative tags (default: env NARRATIVE_MIN_NEG_TOP_STORIES or 2)."
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -793,6 +866,8 @@ def main() -> int:
     local_path = _cache_parquet(url, args.date, args.entity_type)
     if local_path != url:
         print(f"Using local parquet: {local_path}")
+    narrative_min_negative_top_stories = max(1, int(args.narrative_min_negative_top_stories or 1))
+    print(f"[INFO] Narrative gate: min_negative_top_stories={narrative_min_negative_top_stories}")
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -817,7 +892,13 @@ def main() -> int:
         item_rows = _step(
             "load_feature_items",
             lambda: load_feature_items(
-                local_path, args.date, args.entity_type, company_map, ceo_map, company_domains
+                local_path,
+                args.date,
+                args.entity_type,
+                company_map,
+                ceo_map,
+                company_domains,
+                narrative_min_negative_top_stories=narrative_min_negative_top_stories,
             )
         )
 

@@ -1,0 +1,110 @@
+name: Backfill Narrative Category Tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Lookback window in days"
+        required: true
+        default: "90"
+      entity_type:
+        description: "Entity type to backfill"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - brand
+          - ceo
+      min_negative_top_stories:
+        description: "Minimum negative, non-financial Top Stories URLs per entity/day required to tag"
+        required: true
+        default: "2"
+      batch_size:
+        description: "DB update batch size"
+        required: true
+        default: "2000"
+      refresh_mvs:
+        description: "Refresh SERP feature materialized views after backfill"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: backfill-narrative-tags
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DAYS: ${{ github.event.inputs.days }}
+      ENTITY_TYPE: ${{ github.event.inputs.entity_type }}
+      MIN_NEGATIVE_TOP_STORIES: ${{ github.event.inputs.min_negative_top_stories }}
+      BATCH_SIZE: ${{ github.event.inputs.batch_size }}
+      REFRESH_MVS: ${{ github.event.inputs.refresh_mvs }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            requirements.txt
+            scripts/
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DAYS" =~ ^[0-9]+$ ]] || { echo "days must be an integer"; exit 1; }
+          [[ "$MIN_NEGATIVE_TOP_STORIES" =~ ^[0-9]+$ ]] || { echo "min_negative_top_stories must be an integer"; exit 1; }
+          [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] || { echo "batch_size must be an integer"; exit 1; }
+          [ "$DAYS" -ge 1 ] || { echo "days must be >= 1"; exit 1; }
+          [ "$MIN_NEGATIVE_TOP_STORIES" -ge 1 ] || { echo "min_negative_top_stories must be >= 1"; exit 1; }
+          [ "$BATCH_SIZE" -ge 100 ] || { echo "batch_size must be >= 100"; exit 1; }
+
+      - name: Backfill narrative category tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u scripts/backfill_narrative_tags.py \
+            --days "$DAYS" \
+            --entity-type "$ENTITY_TYPE" \
+            --batch-size "$BATCH_SIZE" \
+            --narrative-min-negative-top-stories "$MIN_NEGATIVE_TOP_STORIES"
+
+      - name: Refresh SERP feature MVs
+        if: ${{ github.event.inputs.refresh_mvs == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u scripts/refresh_negative_summary_view.py --serp-features
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Narrative Tag Backfill Summary"
+            echo ""
+            echo "- Days: \`$DAYS\`"
+            echo "- Entity type: \`$ENTITY_TYPE\`"
+            echo "- Min negative Top Stories gate: \`$MIN_NEGATIVE_TOP_STORIES\`"
+            echo "- Batch size: \`$BATCH_SIZE\`"
+            echo "- Refreshed SERP feature MVs: \`$REFRESH_MVS\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -196,11 +196,13 @@ CEO_ALWAYS_NEGATIVE_TERMS = [
 ]
 CEO_ALWAYS_NEGATIVE_RE = re.compile("|".join(CEO_ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
 
-NARRATIVE_RULE_VERSION = "v1"
+NARRATIVE_RULE_VERSION = "v2"
+NARRATIVE_MIN_NEG_TOP_STORIES = 2
 NARRATIVE_CRISIS_TAGS = [
     "Workforce Reductions",
     "Accidents & Disasters",
     "Data Breaches",
+    "Activist Investor Interest",
     "Legal & Regulatory",
     "Unforced Errors (marketing, executive actions/comments)",
     "Labor Disputes",
@@ -234,34 +236,50 @@ NARRATIVE_PLANNED_EXEC_EXCLUDE_RE = re.compile(
 )
 NARRATIVE_WORKFORCE_RE = re.compile(
     r"\b(layoffs?|job cuts?|workforce reduction(?:s)?|workforce cuts?|headcount reduction(?:s)?|"
-    r"staff reduction(?:s)?|restructuring plan)\b",
+    r"staff reduction(?:s)?|restructuring plan|downsiz(?:e|ing)|right[- ]siz(?:e|ing)|"
+    r"redundanc(?:y|ies)|furlough(?:s|ed|ing)?|position eliminations?)\b",
     flags=re.IGNORECASE,
 )
 NARRATIVE_ACCIDENT_RE = re.compile(
     r"\b(accident(?:s)?|explosion(?:s)?|fire(?:s)?|disaster(?:s)?|fatal(?:ity|ities)|"
-    r"injur(?:y|ies)|crash(?:es|ed)?|derailment|collapse(?:d|s)?|plant incident)\b",
+    r"injur(?:y|ies)|crash(?:es|ed)?|derailment|collapse(?:d|s)?|plant incident|"
+    r"chemical spill|oil spill|gas leak|toxic release|hazmat|contamination|"
+    r"industrial incident|site shutdown|evacuat(?:e|ed|ion))\b",
     flags=re.IGNORECASE,
 )
 NARRATIVE_DATA_BREACH_RE = re.compile(
     r"\b(data breach(?:es)?|cyber(?:attack|attacks)|ransomware|hack(?:ed|s|ing)?|"
-    r"security breach(?:es)?|data leak(?:s|ed|ing)?|expos(?:e|ed|ure|ing))\b",
+    r"security breach(?:es)?|data leak(?:s|ed|ing)?|expos(?:e|ed|ure|ing)|"
+    r"unauthori[sz]ed access|stolen data|compromised (?:accounts?|systems?|credentials)|"
+    r"malware|phishing|ddos|privacy incident|zero[- ]day|vulnerabilit(?:y|ies))\b",
+    flags=re.IGNORECASE,
+)
+NARRATIVE_ACTIVIST_INVESTOR_RE = re.compile(
+    r"\b(activist investor(?:s)?|activist hedge fund(?:s)?|proxy (?:fight|battle|contest)|"
+    r"dissident shareholder(?:s)?|board seat(?:s)?|board representation|"
+    r"nominat(?:e|es|ed|ing) (?:director|directors)|shareholder campaign|campaign letter|"
+    r"schedule 13d|13d filing|push(?:ing)? for (?:a sale|breakup|spin-?off|board changes?))\b",
     flags=re.IGNORECASE,
 )
 NARRATIVE_LEGAL_RE = re.compile(
     r"\b(attorney general|lawsuit(?:s)?|legal action|regulator(?:y)?|regulatory|"
     r"investigat(?:e|es|ed|ing|ion)|probe(?:s|d)?|settle(?:ment|s|d|ing)?|fine(?:d|s|ing)?|"
-    r"charged|indict(?:ed|ment)?|sec\b|doj\b|ftc\b|cfpb\b)\b",
+    r"charged|indict(?:ed|ment)?|class[- ]action|subpoena(?:s)?|consent (?:order|decree)|"
+    r"injunction|violat(?:ion|ions)|non[- ]compliance|sec\b|doj\b|ftc\b|cfpb\b|"
+    r"epa\b|fda\b|osha\b|eeoc\b|nlrb\b|cpsc\b)\b",
     flags=re.IGNORECASE,
 )
 NARRATIVE_UNFORCED_RE = re.compile(
     r"\b(backlash|boycott(?:s|ed|ing)?|tone[- ]deaf|ad campaign|advertising campaign|"
     r"public apology|apolog(?:y|ies|ize|ized|izing)|controversial comment(?:s)?|"
-    r"executive comment(?:s)?|social media post)\b",
+    r"executive comment(?:s)?|social media post|pr disaster|gaffe|offensive (?:remark|remarks|post)|"
+    r"insensitive (?:remark|remarks|post)|walked back|deleted post|viral backlash)\b",
     flags=re.IGNORECASE,
 )
 NARRATIVE_LABOR_RE = re.compile(
     r"\b(strike(?:s|d|ing)?|walkout(?:s)?|labor dispute(?:s)?|union dispute(?:s)?|"
-    r"picket(?:ing)?|collective bargaining|contract talks?)\b",
+    r"picket(?:ing)?|collective bargaining|contract talks?|lockout(?:s)?|work stoppage(?:s)?|"
+    r"unionization drive|organizing drive|unfair labor practice(?:s)?|nlrb charge(?:s)?|contract impasse)\b",
     flags=re.IGNORECASE,
 )
 NARRATIVE_CEO_DEPART_RE = re.compile(
@@ -270,11 +288,38 @@ NARRATIVE_CEO_DEPART_RE = re.compile(
     r"fired|ouste?d|removed)|resign(?:s|ed|ing|ation)? as ceo|ouste?d ceo|fired ceo)\b",
     flags=re.IGNORECASE,
 )
-NARRATIVE_FRAUD_RE = re.compile(
-    r"\b(fraud|embezzl(?:e|ed|ing|ement)|briber(?:y|ies)|corruption|ponzi|accounting fraud|"
-    r"falsif(?:y|ied|ication)|misappropriation)\b",
+NARRATIVE_CEO_DEPART_EXCLUDE_RE = re.compile(
+    r"\b(retire(?:s|d|ment|ing)?|succession plan(?:ning)?|planned succession|planned transition|"
+    r"named successor|interim ceo)\b",
     flags=re.IGNORECASE,
 )
+NARRATIVE_FRAUD_RE = re.compile(
+    r"\b(fraud|embezzl(?:e|ed|ing|ement)|briber(?:y|ies)|corruption|ponzi|accounting fraud|"
+    r"falsif(?:y|ied|ication)|misappropriation|insider trading|securities fraud|wire fraud|"
+    r"mail fraud|money laundering|kickback(?:s)?|tax evasion|false claims|bid rigging)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def narrative_tag_gate_met(
+    negative_top_stories_count: int,
+    *,
+    min_negative_top_stories: int = NARRATIVE_MIN_NEG_TOP_STORIES,
+) -> bool:
+    """
+    Require a minimum number of negative, non-financial Top Stories URLs
+    before assigning narrative tags for an entity/date.
+    """
+    try:
+        count = int(negative_top_stories_count or 0)
+    except Exception:
+        count = 0
+    try:
+        minimum = int(min_negative_top_stories or NARRATIVE_MIN_NEG_TOP_STORIES)
+    except Exception:
+        minimum = NARRATIVE_MIN_NEG_TOP_STORIES
+    minimum = max(1, minimum)
+    return count >= minimum
 
 
 def strip_neutral_terms_brand(headline: str) -> str:
@@ -847,22 +892,25 @@ def classify_narrative_tags(
     if NARRATIVE_PLANNED_EXEC_RE.search(hay) and not NARRATIVE_PLANNED_EXEC_EXCLUDE_RE.search(hay):
         non_crisis_tags.append("Planned Executive Turnover")
 
-    if NARRATIVE_WORKFORCE_RE.search(hay):
-        crisis_tags.append("Workforce Reductions")
-    if NARRATIVE_ACCIDENT_RE.search(hay):
-        crisis_tags.append("Accidents & Disasters")
-    if NARRATIVE_DATA_BREACH_RE.search(hay):
-        crisis_tags.append("Data Breaches")
-    if NARRATIVE_LEGAL_RE.search(hay):
-        crisis_tags.append("Legal & Regulatory")
-    if NARRATIVE_UNFORCED_RE.search(hay):
-        crisis_tags.append("Unforced Errors (marketing, executive actions/comments)")
-    if NARRATIVE_LABOR_RE.search(hay):
-        crisis_tags.append("Labor Disputes")
-    if NARRATIVE_CEO_DEPART_RE.search(hay):
-        crisis_tags.append("CEO Departures (firings, resignations)")
+    # Specific signals first; broader categories (unforced/legal) come later.
     if NARRATIVE_FRAUD_RE.search(hay):
         crisis_tags.append("Fraud")
+    if NARRATIVE_DATA_BREACH_RE.search(hay):
+        crisis_tags.append("Data Breaches")
+    if NARRATIVE_CEO_DEPART_RE.search(hay) and not NARRATIVE_CEO_DEPART_EXCLUDE_RE.search(hay):
+        crisis_tags.append("CEO Departures (firings, resignations)")
+    if NARRATIVE_WORKFORCE_RE.search(hay):
+        crisis_tags.append("Workforce Reductions")
+    if NARRATIVE_LABOR_RE.search(hay):
+        crisis_tags.append("Labor Disputes")
+    if NARRATIVE_ACCIDENT_RE.search(hay):
+        crisis_tags.append("Accidents & Disasters")
+    if NARRATIVE_ACTIVIST_INVESTOR_RE.search(hay):
+        crisis_tags.append("Activist Investor Interest")
+    if NARRATIVE_UNFORCED_RE.search(hay):
+        crisis_tags.append("Unforced Errors (marketing, executive actions/comments)")
+    if NARRATIVE_LEGAL_RE.search(hay):
+        crisis_tags.append("Legal & Regulatory")
 
     crisis_tags = _dedupe_preserve(crisis_tags)
     non_crisis_tags = _dedupe_preserve(non_crisis_tags)

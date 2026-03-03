@@ -5,6 +5,8 @@ Backfill rule-based narrative tags on SERP Top Stories items.
 Defaults:
   - 90-day lookback
   - both brand/company and ceo entities
+  - narrative tags require at least 2 negative, non-financial Top Stories URLs
+    per entity/day (override with --narrative-min-negative-top-stories)
 """
 from __future__ import annotations
 
@@ -15,7 +17,11 @@ from datetime import date, datetime, timedelta
 import psycopg2
 from psycopg2.extras import execute_batch
 
-from risk_rules import classify_narrative_tags
+from risk_rules import (
+    classify_narrative_tags,
+    NARRATIVE_MIN_NEG_TOP_STORIES,
+    narrative_tag_gate_met,
+)
 
 
 def get_conn():
@@ -44,6 +50,15 @@ def parse_args():
         help="Filter by entity type (default: all)",
     )
     p.add_argument("--batch-size", type=int, default=2000, help="Update batch size (default: 2000)")
+    p.add_argument(
+        "--narrative-min-negative-top-stories",
+        type=int,
+        default=int(os.getenv("NARRATIVE_MIN_NEG_TOP_STORIES", str(NARRATIVE_MIN_NEG_TOP_STORIES))),
+        help=(
+            "Minimum negative, non-financial Top Stories URLs required per entity/day "
+            "before assigning narrative tags (default: env NARRATIVE_MIN_NEG_TOP_STORIES or 2)"
+        ),
+    )
     return p.parse_args()
 
 
@@ -59,7 +74,12 @@ def main() -> int:
     args = parse_args()
     days = max(1, int(args.days or 90))
     batch_size = max(100, int(args.batch_size or 2000))
+    narrative_min_negative_top_stories = max(1, int(args.narrative_min_negative_top_stories or 1))
     start_date = date.today() - timedelta(days=days)
+    print(
+        f"[INFO] Narrative gate: min_negative_top_stories={narrative_min_negative_top_stories} "
+        f"(window={days}d, entity_type={args.entity_type})"
+    )
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -67,6 +87,10 @@ def main() -> int:
             clause, clause_params = entity_type_clause(args.entity_type)
             sql = f"""
                 select sfi.id,
+                       sfi.date,
+                       sfi.entity_type,
+                       sfi.entity_id,
+                       sfi.entity_name,
                        sfi.title,
                        sfi.snippet,
                        sfi.url,
@@ -84,23 +108,67 @@ def main() -> int:
             rows = cur.fetchall()
             print(f"[INFO] Loaded {len(rows)} rows to classify from {start_date.isoformat()} onward")
 
-        updates = []
-        now = datetime.utcnow()
-        for item_id, title, snippet, url, source, sentiment, finance_routine in rows:
-            tag = classify_narrative_tags(
-                title or "",
-                snippet or "",
-                url=url or "",
-                source=source or "",
-                sentiment=sentiment,
-                finance_routine=bool(finance_routine),
+        neg_top_stories_by_entity_day = {}
+        for _, row_date, row_entity_type, row_entity_id, row_entity_name, _, _, _, _, sentiment, finance_routine in rows:
+            if str(sentiment or "").strip().lower() != "negative":
+                continue
+            if bool(finance_routine):
+                continue
+            key = (
+                str(row_date),
+                str(row_entity_type or ""),
+                str(row_entity_id or ""),
+                str(row_entity_name or ""),
             )
-            primary_tag = tag.get("primary_tag") or None
-            primary_group = tag.get("primary_group") or None
-            tags = tag.get("tags") or None
-            is_crisis = tag.get("is_crisis")
-            rule_version = tag.get("rule_version") or None
-            tagged_at = now if primary_tag else None
+            neg_top_stories_by_entity_day[key] = neg_top_stories_by_entity_day.get(key, 0) + 1
+
+        updates = []
+        candidates = 0
+        tagged = 0
+        suppressed = 0
+        now = datetime.utcnow()
+        for item_id, row_date, row_entity_type, row_entity_id, row_entity_name, title, snippet, url, source, sentiment, finance_routine in rows:
+            primary_tag = None
+            primary_group = None
+            tags = None
+            is_crisis = None
+            rule_version = None
+            tagged_at = None
+            sentiment_l = str(sentiment or "").strip().lower()
+            is_candidate = sentiment_l == "negative" and not bool(finance_routine)
+            if is_candidate:
+                candidates += 1
+                key = (
+                    str(row_date),
+                    str(row_entity_type or ""),
+                    str(row_entity_id or ""),
+                    str(row_entity_name or ""),
+                )
+                entity_day_neg = neg_top_stories_by_entity_day.get(key, 0)
+                gate_ok = narrative_tag_gate_met(
+                    entity_day_neg,
+                    min_negative_top_stories=narrative_min_negative_top_stories,
+                )
+                if gate_ok:
+                    tag = classify_narrative_tags(
+                        title or "",
+                        snippet or "",
+                        url=url or "",
+                        source=source or "",
+                        sentiment=sentiment,
+                        finance_routine=bool(finance_routine),
+                    )
+                    primary_tag = tag.get("primary_tag") or None
+                    primary_group = tag.get("primary_group") or None
+                    tags = tag.get("tags") or None
+                    is_crisis = tag.get("is_crisis")
+                    rule_version = tag.get("rule_version") or None
+                    tagged_at = now if primary_tag else None
+                    if primary_tag:
+                        tagged += 1
+                else:
+                    suppressed += 1
+
             updates.append(
                 (
                     primary_tag,
@@ -112,6 +180,11 @@ def main() -> int:
                     item_id,
                 )
             )
+
+        print(
+            "[INFO] Narrative tagging summary: "
+            f"candidates={candidates} tagged={tagged} suppressed_by_gate={suppressed}"
+        )
 
         if not updates:
             print("[INFO] Nothing to update")
@@ -141,4 +214,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
