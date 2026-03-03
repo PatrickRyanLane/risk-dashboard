@@ -45,6 +45,7 @@ SERP_GATE_DAYS = int(os.getenv("SERP_GATE_DAYS", "2"))
 SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
 SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
 SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "2"))
+ALERT_LOOKBACK_DAYS = max(1, int(os.getenv("ALERT_LOOKBACK_DAYS", "1")))
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -541,6 +542,7 @@ def main():
             print(f"🧭 SERP gate: enabled (min={SERP_GATE_MIN}, days={SERP_GATE_DAYS})")
         else:
             print("🧭 SERP gate: disabled")
+        print(f"🗓️ Alert lookback: last {ALERT_LOOKBACK_DAYS} day(s)")
 
         # 1. Load Data (DB only)
         df = load_negative_summary_db(NEGATIVE_HISTORY_DAYS)
@@ -601,7 +603,10 @@ def main():
         top_stories_ceo = {}
         top_stories_brand_items = {}
         top_stories_ceo_items = {}
-        top_stories_today_only = os.getenv("TOP_STORIES_TODAY_ONLY", "1") == "1"
+        top_stories_today_only_raw = os.getenv("TOP_STORIES_TODAY_ONLY", "1")
+        top_stories_today_only = str(top_stories_today_only_raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+        if top_stories_today_only and ALERT_LOOKBACK_DAYS > 1:
+            print("⚠️ TOP_STORIES_TODAY_ONLY=1 while ALERT_LOOKBACK_DAYS>1; older rows may fail Top Stories gate.")
         if SERP_GATE_ENABLED:
             b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
             serp_brand_counts = b_unctrl
@@ -627,10 +632,44 @@ def main():
             df['top_stories_neg'] = df.apply(_top_neg, axis=1).fillna(0)
             df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
 
+        server_now = datetime.now().date()
+        window_start = server_now - timedelta(days=ALERT_LOOKBACK_DAYS - 1)
+        parsed_dates = pd.to_datetime(df.get("date"), errors="coerce").dt.date if "date" in df.columns else None
+        latest_data_date = parsed_dates.max() if parsed_dates is not None and not parsed_dates.empty else None
+        in_window_rows = int(((parsed_dates >= window_start) & (parsed_dates <= server_now)).sum()) if parsed_dates is not None else 0
+        print(f"🗓️ Date gate window: {window_start} → {server_now} (inclusive)")
+        print(f"📅 Rows in summary: {len(df)} | in-window rows: {in_window_rows} | latest data date: {latest_data_date}")
+        if parsed_dates is not None:
+            recent_dates = (
+                pd.Series(parsed_dates.dropna())
+                .value_counts()
+                .sort_index(ascending=False)
+                .head(3)
+            )
+            if not recent_dates.empty:
+                preview = ", ".join(f"{idx}:{int(val)}" for idx, val in recent_dates.items())
+                print(f"📆 Latest summary date counts: {preview}")
+
+        stats = {
+            "rows_scanned": 0,
+            "rows_in_window": 0,
+            "sent": 0,
+            "skipped_type": 0,
+            "skipped_bad_date": 0,
+            "skipped_date": 0,
+            "skipped_gate_top": 0,
+            "skipped_gate_top_neg": 0,
+            "skipped_gate_serp": 0,
+            "skipped_cooldown": 0,
+            "stopped_budget": 0,
+        }
+
         for _, row in df.iterrows():
+            stats["rows_scanned"] += 1
             # FLOOD PROTECTION CHECK
             if alerts_remaining_today <= 0:
                 print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
+                stats["stopped_budget"] = 1
                 break
 
             brand = row['company']
@@ -640,20 +679,24 @@ def main():
             article_type = str(row.get('article_type', 'brand')).lower().strip()
             ceo_name = str(row.get('ceo', '')).strip()
             if article_type == "brand" and not ALERT_BRANDS:
+                stats["skipped_type"] += 1
                 continue
             if article_type == "ceo" and not ALERT_CEOS:
+                stats["skipped_type"] += 1
                 continue
 
-            # A. STRICT DATE FILTER (Last 48 Hours Only)
+            # A. DATE FILTER (configurable lookback window)
             date_str = str(row['date'])
             try:
                 row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             except Exception:
+                stats["skipped_bad_date"] += 1
                 continue
 
-            server_now = datetime.now().date()
-            if row_date != server_now:
+            if row_date < window_start or row_date > server_now:
+                stats["skipped_date"] += 1
                 continue
+            stats["rows_in_window"] += 1
 
             # B. DYNAMIC THRESHOLD CHECK (disabled)
             # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
@@ -689,14 +732,17 @@ def main():
                 if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
                     if SERP_GATE_DEBUG:
                         print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
+                    stats["skipped_gate_top"] += 1
                     continue
                 if top_neg < SERP_TOP_STORIES_NEG_MIN:
                     if SERP_GATE_DEBUG:
                         print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
+                    stats["skipped_gate_top_neg"] += 1
                     continue
                 if serp_count < SERP_GATE_MIN:
                     if SERP_GATE_DEBUG:
                         print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
+                    stats["skipped_gate_serp"] += 1
                     continue
             elif article_type == 'ceo':
                 serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
@@ -714,6 +760,7 @@ def main():
                 last_date = datetime.fromisoformat(last_alert).replace(tzinfo=None)
                 if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
                     # Silent skip
+                    stats["skipped_cooldown"] += 1
                     continue
 
             # --- TRIGGER ALERT ---
@@ -774,6 +821,7 @@ def main():
                 history[history_key] = effective_timestamp.isoformat()
 
             updates_made = True
+            stats["sent"] += 1
 
             # Decrement Budget
             alerts_remaining_today -= 1
@@ -791,6 +839,15 @@ def main():
                 upsert_alert_history_db(conn, history)
                 upsert_llm_cache_db(conn, llm_cache)
                 print("💾 Alert history + LLM cache updated.")
+
+        print("📣 Alert run summary:")
+        print(f"   scanned={stats['rows_scanned']} in_window={stats['rows_in_window']} sent={stats['sent']}")
+        print(f"   skipped_type={stats['skipped_type']} skipped_bad_date={stats['skipped_bad_date']} skipped_date={stats['skipped_date']}")
+        print(f"   skipped_no_top_stories={stats['skipped_gate_top']} skipped_top_stories_neg={stats['skipped_gate_top_neg']} skipped_serp={stats['skipped_gate_serp']} skipped_cooldown={stats['skipped_cooldown']}")
+        if stats["stopped_budget"]:
+            print("   budget_stop=1")
+        if stats["sent"] == 0:
+            print("ℹ️ No alerts sent this run. Use the skip counts above to identify the blocking gate.")
     finally:
         conn.close()
 
