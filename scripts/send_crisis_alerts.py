@@ -46,6 +46,7 @@ SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
 SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
 SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "2"))
 ALERT_LOOKBACK_DAYS = max(1, int(os.getenv("ALERT_LOOKBACK_DAYS", "1")))
+ALERT_FAIL_FAST_ON_EMPTY_WINDOW = os.getenv("ALERT_FAIL_FAST_ON_EMPTY_WINDOW", "1") == "1"
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -648,6 +649,14 @@ def main():
             if not recent_dates.empty:
                 preview = ", ".join(f"{idx}:{int(val)}" for idx, val in recent_dates.items())
                 print(f"📆 Latest summary date counts: {preview}")
+
+        if ALERT_FAIL_FAST_ON_EMPTY_WINDOW and in_window_rows == 0:
+            print("❌ Fail-fast: no summary rows in the alert date window.")
+            print(f"   Expected window: {window_start} → {server_now}")
+            print(f"   Latest date present in negative_articles_summary_mv: {latest_data_date}")
+            print("   This usually means negative_articles_summary_mv is stale for today.")
+            print("   Run refresh workflow (or: python scripts/refresh_negative_summary_view.py --negative-summary)")
+            raise SystemExit(2)
 
         stats = {
             "rows_scanned": 0,

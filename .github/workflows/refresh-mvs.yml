@@ -3,7 +3,7 @@ name: Refresh Materialized Views
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 7 * * *"
+    - cron: "0 12 * * *"  # 08:00 ET during DST (07:00 ET during standard time)
 
 permissions:
   contents: read
