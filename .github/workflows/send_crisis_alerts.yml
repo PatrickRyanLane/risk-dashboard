@@ -31,6 +31,13 @@ jobs:
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
 
+      - name: Refresh summary view for alerts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "🔁 Refreshing negative_articles_summary_mv before alert evaluation..."
+          python scripts/refresh_negative_summary_view.py --negative-summary
+
       - name: Send Crisis Alerts (Slack + Salesforce)
         env:
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
