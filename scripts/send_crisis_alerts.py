@@ -53,7 +53,7 @@ PERCENTILE_CUTOFF = 0.97
 ALERT_COOLDOWN_HOURS = 168
 
 # --- FLOOD PROTECTION ---
-MAX_ALERTS_PER_DAY = 10  # Strict limit: Max 20 alerts per 24-hour rolling window
+MAX_ALERTS_PER_DAY = 10  # Daily cap resets at calendar-day boundary (server date)
 
 # Manual color mapping for your VIPs
 OWNER_COLORS = {
@@ -556,13 +556,12 @@ def main():
 
         # --- CALCULATE DAILY BUDGET ---
         current_time = datetime.now()
-        one_day_ago = current_time - timedelta(hours=20) # ensures a fresh 20 alert budget every morning.
-
+        budget_date = current_time.date()
         recent_alerts_count = 0
         for timestamp_str in history.values():
             try:
-                t_alert = datetime.fromisoformat(timestamp_str).replace(tzinfo=None)
-                if t_alert > one_day_ago:
+                t_alert = datetime.fromisoformat(timestamp_str)
+                if t_alert.date() == budget_date:
                     recent_alerts_count += 1
             except ValueError:
                 pass
@@ -570,7 +569,7 @@ def main():
         alerts_remaining_today = MAX_ALERTS_PER_DAY - recent_alerts_count
 
         print(f"📉 Daily Alert Budget: {MAX_ALERTS_PER_DAY} total.")
-        print(f"🕒 Used in last 24h: {recent_alerts_count}")
+        print(f"🕒 Used today ({budget_date}): {recent_alerts_count}")
         print(f"✅ Remaining capacity: {alerts_remaining_today}")
 
         if alerts_remaining_today <= 0:
