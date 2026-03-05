@@ -13,7 +13,8 @@ import time
 import hashlib
 import random
 from difflib import get_close_matches
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from simple_salesforce import Salesforce
 import psycopg2
 import pandas as pd
@@ -46,6 +47,7 @@ SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
 SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "2"))
 ALERT_LOOKBACK_DAYS = max(1, int(os.getenv("ALERT_LOOKBACK_DAYS", "1")))
 ALERT_FAIL_FAST_ON_EMPTY_WINDOW = os.getenv("ALERT_FAIL_FAST_ON_EMPTY_WINDOW", "1") == "1"
+ALERT_TIMEZONE = os.getenv("ALERT_TIMEZONE", "America/New_York")
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -66,6 +68,16 @@ OWNER_COLORS = {
     "Chris Loman":   "#00586d", 
     "Fall Back":     "#ffc32e",  
 }
+
+try:
+    ALERT_TZ = ZoneInfo(ALERT_TIMEZONE)
+except Exception:
+    print(f"⚠️ Invalid ALERT_TIMEZONE={ALERT_TIMEZONE}; defaulting to UTC")
+    ALERT_TZ = timezone.utc
+
+
+def get_alert_today_date():
+    return datetime.now(ALERT_TZ).date()
 
 def get_owner_color(owner_name):
     """Returns a specific color for VIPs, or the Fall Back yellow for EVERYONE else."""
@@ -169,7 +181,8 @@ def upsert_llm_cache_db(conn, cache: dict):
             from psycopg2.extras import execute_values
             execute_values(cur, sql, rows, page_size=1000)
 
-def load_alert_candidates_db(history_days: int):
+def load_alert_candidates_db(history_days: int, anchor_date=None):
+    anchor_date = anchor_date or get_alert_today_date()
     conn = get_db_conn()
     if conn is None:
         return None
@@ -189,7 +202,7 @@ def load_alert_candidates_db(history_days: int):
                         join companies c on c.id = sfd.entity_id
                         where sfd.feature_type = 'top_stories_items'
                           and sfd.entity_type in ('brand', 'company')
-                          and sfd.date >= (current_date - (%s || ' days')::interval)
+                          and sfd.date >= (%s::date - (%s || ' days')::interval)
                         group by sfd.date, c.name
 
                         union all
@@ -205,7 +218,7 @@ def load_alert_candidates_db(history_days: int):
                         join companies c on c.id = ceo.company_id
                         where sfd.feature_type = 'top_stories_items'
                           and sfd.entity_type = 'ceo'
-                          and sfd.date >= (current_date - (%s || ' days')::interval)
+                          and sfd.date >= (%s::date - (%s || ' days')::interval)
                         group by sfd.date, c.name, ceo.name
                     )
                     select date,
@@ -220,7 +233,7 @@ def load_alert_candidates_db(history_days: int):
                     from candidates
                     order by date desc, company, ceo
                     """,
-                    (max(1, history_days), max(1, history_days)),
+                    (anchor_date, max(1, history_days), anchor_date, max(1, history_days)),
                 )
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
@@ -233,10 +246,11 @@ def load_alert_candidates_db(history_days: int):
 
 
 # Backward-compatible alias used by send_targeted_alerts.py
-def load_negative_summary_db(history_days: int):
-    return load_alert_candidates_db(history_days)
+def load_negative_summary_db(history_days: int, anchor_date=None):
+    return load_alert_candidates_db(history_days, anchor_date=anchor_date)
 
-def load_serp_counts_db(days: int):
+def load_serp_counts_db(days: int, anchor_date=None):
+    anchor_date = anchor_date or get_alert_today_date()
     conn = get_db_conn()
     if conn is None:
         return {}, {}, {}, {}
@@ -256,7 +270,7 @@ def load_serp_counts_db(days: int):
             join serp_results r on r.serp_run_id = sr.id
             left join serp_result_overrides ov on ov.serp_result_id = r.id
             where sr.entity_type = 'company'
-              and sr.run_at::date >= (current_date - (%s || ' days')::interval)
+              and sr.run_at::date >= (%s::date - (%s || ' days')::interval)
             group by c.name
         ),
         ceo_rows as (
@@ -271,7 +285,7 @@ def load_serp_counts_db(days: int):
             join serp_results r on r.serp_run_id = sr.id
             left join serp_result_overrides ov on ov.serp_result_id = r.id
             where sr.entity_type = 'ceo'
-              and sr.run_at::date >= (current_date - (%s || ' days')::interval)
+              and sr.run_at::date >= (%s::date - (%s || ' days')::interval)
             group by c.name, ceo.name
         )
         select 'brand'::text as kind, company, null::text as ceo, neg_count, neg_uncontrolled from brand_rows
@@ -281,7 +295,7 @@ def load_serp_counts_db(days: int):
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (max(1, days), max(1, days)))
+                cur.execute(sql, (anchor_date, max(1, days), anchor_date, max(1, days)))
                 for kind, company, ceo, neg_count, neg_uncontrolled in cur.fetchall():
                     if kind == "brand":
                         if company:
@@ -299,7 +313,8 @@ def load_serp_counts_db(days: int):
     return brand_uncontrolled, ceo_uncontrolled, brand_negative, ceo_negative
 
 
-def load_top_stories_counts_db(days: int, today_only: bool = False):
+def load_top_stories_counts_db(days: int, today_only: bool = False, anchor_date=None):
+    anchor_date = anchor_date or get_alert_today_date()
     conn = get_db_conn()
     if conn is None:
         return {}, {}
@@ -312,15 +327,15 @@ def load_top_stories_counts_db(days: int, today_only: bool = False):
         from serp_feature_daily
         where feature_type = 'top_stories_items'
           and (
-            (%s = true and date = current_date)
-            or (%s = false and date >= (current_date - (%s || ' days')::interval))
+            (%s = true and date = %s::date)
+            or (%s = false and date >= (%s::date - (%s || ' days')::interval))
           )
         group by entity_type, entity_name
     """
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (today_only, today_only, max(1, days)))
+                cur.execute(sql, (today_only, anchor_date, today_only, anchor_date, max(1, days)))
                 for entity_type, entity_name, total_count, negative_count in cur.fetchall():
                     key = (entity_name or "").strip()
                     if not key:
@@ -338,7 +353,8 @@ def load_top_stories_counts_db(days: int, today_only: bool = False):
         conn.close()
     return brand_counts, ceo_counts
 
-def load_top_stories_items_db(days: int, today_only: bool = False):
+def load_top_stories_items_db(days: int, today_only: bool = False, anchor_date=None):
+    anchor_date = anchor_date or get_alert_today_date()
     conn = get_db_conn()
     if conn is None:
         return {}, {}
@@ -352,8 +368,8 @@ def load_top_stories_items_db(days: int, today_only: bool = False):
         left join serp_feature_item_overrides ov on ov.serp_feature_item_id = sfi.id
         where sfi.feature_type = 'top_stories_items'
           and (
-            (%s = true and sfi.date = current_date)
-            or (%s = false and sfi.date >= (current_date - (%s || ' days')::interval))
+            (%s = true and sfi.date = %s::date)
+            or (%s = false and sfi.date >= (%s::date - (%s || ' days')::interval))
           )
           and coalesce(ov.override_sentiment_label, sfi.llm_sentiment_label, sfi.sentiment_label) = 'negative'
         order by sfi.date, sfi.entity_name, sfi.position
@@ -361,7 +377,7 @@ def load_top_stories_items_db(days: int, today_only: bool = False):
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (today_only, today_only, max(1, days)))
+                cur.execute(sql, (today_only, anchor_date, today_only, anchor_date, max(1, days)))
                 for dval, entity_type, entity_name, title, url, snippet, sentiment in cur.fetchall():
                     key_name = (entity_name or "").strip()
                     if not key_name:
@@ -583,10 +599,13 @@ def main():
             print(f"🧭 SERP gate: enabled (min={SERP_GATE_MIN}, days={SERP_GATE_DAYS})")
         else:
             print("🧭 SERP gate: disabled")
+        print(f"🌎 Alert timezone: {ALERT_TIMEZONE}")
         print(f"🗓️ Alert lookback: last {ALERT_LOOKBACK_DAYS} day(s)")
 
+        alert_today = get_alert_today_date()
+
         # 1. Load Data (DB only)
-        df = load_alert_candidates_db(NEGATIVE_HISTORY_DAYS)
+        df = load_alert_candidates_db(NEGATIVE_HISTORY_DAYS, anchor_date=alert_today)
         if df is None or df.empty:
             print("No DB Top Stories candidate data found. Exiting.")
             return
@@ -597,7 +616,7 @@ def main():
 
         # --- CALCULATE DAILY BUDGET ---
         current_time = datetime.now()
-        budget_date = current_time.date()
+        budget_date = alert_today
         recent_alerts_count = 0
         for timestamp_str in history.values():
             try:
@@ -638,23 +657,25 @@ def main():
         if top_stories_today_only and ALERT_LOOKBACK_DAYS > 1:
             print("⚠️ TOP_STORIES_TODAY_ONLY=1 while ALERT_LOOKBACK_DAYS>1; older rows may fail Top Stories gate.")
         if SERP_GATE_ENABLED:
-            b_unctrl, c_unctrl, _b_neg, _c_neg = load_serp_counts_db(SERP_GATE_DAYS)
+            b_unctrl, c_unctrl, _b_neg, _c_neg = load_serp_counts_db(SERP_GATE_DAYS, anchor_date=alert_today)
             serp_brand_counts = b_unctrl
             serp_ceo_counts = c_unctrl
             top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(
                 max(SERP_GATE_DAYS, ALERT_LOOKBACK_DAYS),
-                today_only=top_stories_today_only
+                today_only=top_stories_today_only,
+                anchor_date=alert_today,
             )
         else:
             top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(
                 max(SERP_GATE_DAYS, ALERT_LOOKBACK_DAYS),
-                today_only=top_stories_today_only
+                today_only=top_stories_today_only,
+                anchor_date=alert_today,
             )
 
         print("📊 Sorting data by Top Stories negative, then risk signal...")
         df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
 
-        server_now = datetime.now().date()
+        server_now = alert_today
         window_start = server_now - timedelta(days=ALERT_LOOKBACK_DAYS - 1)
         parsed_dates = pd.to_datetime(df.get("date"), errors="coerce").dt.date if "date" in df.columns else None
         latest_data_date = parsed_dates.max() if parsed_dates is not None and not parsed_dates.empty else None
@@ -678,6 +699,7 @@ def main():
             print(f"   Latest date present in Top Stories candidates: {latest_data_date}")
             print("   This usually means SERP feature ingest/refresh is stale for today.")
             print("   Run: python scripts/refresh_negative_summary_view.py --serp-features")
+            print(f"   Alert timezone in use: {ALERT_TIMEZONE}")
             raise SystemExit(2)
 
         stats = {

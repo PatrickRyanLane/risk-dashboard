@@ -51,6 +51,7 @@ jobs:
           SERP_GATE_DEBUG: ${{ vars.SERP_GATE_DEBUG || '1' }}
           ALERT_LOOKBACK_DAYS: ${{ vars.ALERT_LOOKBACK_DAYS || '1' }}
           TOP_STORIES_TODAY_ONLY: ${{ vars.TOP_STORIES_TODAY_ONLY || '1' }}
+          ALERT_TIMEZONE: ${{ vars.ALERT_TIMEZONE || 'America/New_York' }}
         run: |
           echo "🚀 Checking for crises and sending alerts..."
           python scripts/send_crisis_alerts.py

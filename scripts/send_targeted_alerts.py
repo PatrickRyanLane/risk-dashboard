@@ -55,8 +55,10 @@ def main():
             return 0
 
     sca.DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
+    alert_today = sca.get_alert_today_date()
+    print(f"[CFG] ALERT_TIMEZONE={sca.ALERT_TIMEZONE} alert_today={alert_today}")
 
-    df = sca.load_negative_summary_db(sca.NEGATIVE_HISTORY_DAYS)
+    df = sca.load_negative_summary_db(sca.NEGATIVE_HISTORY_DAYS, anchor_date=alert_today)
     if df is None or df.empty:
         print("No DB Top Stories candidate data found. Exiting.")
         return 0
@@ -91,17 +93,29 @@ def main():
     print(f"[CFG] TARGET_SERP_GATE_ENABLED={targeted_serp_gate} TARGET_TOP_STORIES_GATE_ENABLED={targeted_top_stories_gate} "
           f"TARGET_TOP_STORIES_NEG_GATE_ENABLED={targeted_top_stories_neg_gate} TARGET_TOP_STORIES_TODAY_ONLY={today_only}")
     if sca.SERP_GATE_ENABLED and targeted_serp_gate:
-        b_unctrl, c_unctrl, b_neg, c_neg = sca.load_serp_counts_db(sca.SERP_GATE_DAYS)
+        b_unctrl, c_unctrl, b_neg, c_neg = sca.load_serp_counts_db(sca.SERP_GATE_DAYS, anchor_date=alert_today)
         serp_brand_counts = b_unctrl
         serp_ceo_counts = c_unctrl
-        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(1 if today_only else sca.SERP_GATE_DAYS)
+        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(
+            1 if today_only else sca.SERP_GATE_DAYS,
+            today_only=today_only,
+            anchor_date=alert_today,
+        )
         top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(
-            sca.SERP_GATE_DAYS, today_only=today_only
+            sca.SERP_GATE_DAYS,
+            today_only=today_only,
+            anchor_date=alert_today,
         )
     else:
-        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(1 if today_only else sca.SERP_GATE_DAYS)
+        top_stories_brand, top_stories_ceo = sca.load_top_stories_counts_db(
+            1 if today_only else sca.SERP_GATE_DAYS,
+            today_only=today_only,
+            anchor_date=alert_today,
+        )
         top_stories_brand_items, top_stories_ceo_items = sca.load_top_stories_items_db(
-            sca.SERP_GATE_DAYS, today_only=today_only
+            sca.SERP_GATE_DAYS,
+            today_only=today_only,
+            anchor_date=alert_today,
         )
     top_stories_brand = top_stories_brand or {}
     top_stories_ceo = top_stories_ceo or {}
@@ -169,8 +183,7 @@ def main():
             row_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except Exception:
             continue
-        server_now = datetime.now().date()
-        if row_date != server_now:
+        if row_date != alert_today:
             stats["skipped_date"] += 1
             skip_details["date"].add(brand)
             per_brand[brand]["skipped_date"] += 1
