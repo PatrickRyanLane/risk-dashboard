@@ -58,7 +58,7 @@ def main():
 
     df = sca.load_negative_summary_db(sca.NEGATIVE_HISTORY_DAYS)
     if df is None or df.empty:
-        print("No DB negative summary data found. Exiting.")
+        print("No DB Top Stories candidate data found. Exiting.")
         return 0
 
     targets_norm = {_norm(t) for t in targets}
@@ -271,7 +271,7 @@ def main():
             ceo_name,
             article_type,
             count,
-            0,
+            sca.SERP_TOP_STORIES_NEG_MIN,
             headlines,
             top_items,
             slack_id,

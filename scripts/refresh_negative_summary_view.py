@@ -39,14 +39,6 @@ def refresh_view(selected) -> str:
             return "skipped"
 
         with conn.cursor() as cur:
-            if selected["negative_summary"]:
-                _refresh_one(
-                    cur,
-                    "negative_articles_summary_mv",
-                    "refresh materialized view concurrently negative_articles_summary_mv",
-                    "refresh materialized view negative_articles_summary_mv",
-                )
-
             if selected["serp_features"]:
                 _refresh_one(
                     cur,
@@ -101,20 +93,22 @@ def refresh_view(selected) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--negative-summary", action="store_true")
     parser.add_argument("--serp-features", action="store_true")
     parser.add_argument("--article-counts", action="store_true")
     parser.add_argument("--serp-counts", action="store_true")
     args = parser.parse_args()
 
     selected = {
-        "negative_summary": args.negative_summary,
         "serp_features": args.serp_features,
         "article_counts": args.article_counts,
         "serp_counts": args.serp_counts,
     }
     if not any(selected.values()):
-        selected = {k: True for k in selected}
+        selected = {
+            "serp_features": True,
+            "article_counts": True,
+            "serp_counts": True,
+        }
 
     try:
         status = refresh_view(selected)

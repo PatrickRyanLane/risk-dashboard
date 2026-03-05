@@ -34,9 +34,8 @@ jobs:
       - name: Setup Python environment
         uses: ./.github/actions/setup-python-env
 
-      - name: Refresh article + SERP daily counts and negative summary
+      - name: Refresh article + SERP daily counts
         run: |
           python3 scripts/refresh_negative_summary_view.py \
-            --negative-summary \
             --article-counts \
             --serp-counts

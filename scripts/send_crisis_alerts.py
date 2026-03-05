@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Reads negative summary data from the DB and sends Slack alerts to Salesforce account owners.
-Tracks alert history in GCS to prevent spamming.
-Implements Dynamic Thresholding, Type-Specific Alerts, DAILY VOLUME CAPS, and JITTER.
+Sends crisis alerts to Slack/Salesforce owners using SERP Top Stories signals from DB.
+Tracks alert history in DB to prevent spamming.
 """
 
 import os
@@ -170,7 +169,7 @@ def upsert_llm_cache_db(conn, cache: dict):
             from psycopg2.extras import execute_values
             execute_values(cur, sql, rows, page_size=1000)
 
-def load_negative_summary_db(history_days: int):
+def load_alert_candidates_db(history_days: int):
     conn = get_db_conn()
     if conn is None:
         return None
@@ -179,22 +178,63 @@ def load_negative_summary_db(history_days: int):
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    select date, company, ceo, article_type,
-                           negative_count, crisis_risk_count, top_headlines
-                    from negative_articles_summary_mv
-                    where date >= (current_date - (%s || ' days')::interval)
-                    order by date desc, company
+                    with candidates as (
+                        select sfd.date as date,
+                               c.name as company,
+                               ''::text as ceo,
+                               'brand'::text as article_type,
+                               sum(coalesce(sfd.negative_count, 0))::int as negative_count,
+                               sum(coalesce(sfd.total_count, 0))::int as top_stories_total
+                        from serp_feature_daily sfd
+                        join companies c on c.id = sfd.entity_id
+                        where sfd.feature_type = 'top_stories_items'
+                          and sfd.entity_type in ('brand', 'company')
+                          and sfd.date >= (current_date - (%s || ' days')::interval)
+                        group by sfd.date, c.name
+
+                        union all
+
+                        select sfd.date as date,
+                               c.name as company,
+                               ceo.name as ceo,
+                               'ceo'::text as article_type,
+                               sum(coalesce(sfd.negative_count, 0))::int as negative_count,
+                               sum(coalesce(sfd.total_count, 0))::int as top_stories_total
+                        from serp_feature_daily sfd
+                        join ceos ceo on ceo.id = sfd.entity_id
+                        join companies c on c.id = ceo.company_id
+                        where sfd.feature_type = 'top_stories_items'
+                          and sfd.entity_type = 'ceo'
+                          and sfd.date >= (current_date - (%s || ' days')::interval)
+                        group by sfd.date, c.name, ceo.name
+                    )
+                    select date,
+                           company,
+                           ceo,
+                           article_type,
+                           negative_count,
+                           0::int as crisis_risk_count,
+                           ''::text as top_headlines,
+                           negative_count as top_stories_neg,
+                           top_stories_total
+                    from candidates
+                    order by date desc, company, ceo
                     """,
-                    (history_days,),
+                    (max(1, history_days), max(1, history_days)),
                 )
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
         return pd.DataFrame(rows, columns=cols)
     except Exception as exc:
-        print(f"⚠️ DB summary load failed, falling back to CSV: {exc}")
+        print(f"⚠️ DB top stories candidate load failed: {exc}")
         return None
     finally:
         conn.close()
+
+
+# Backward-compatible alias used by send_targeted_alerts.py
+def load_negative_summary_db(history_days: int):
+    return load_alert_candidates_db(history_days)
 
 def load_serp_counts_db(days: int):
     conn = get_db_conn()
@@ -473,11 +513,11 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
             "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*Today's Negative Article Volume:*\n{count} Articles"
+                    "text": f"*Top Stories Negative URLs (date):*\n{int(count or 0)} URLs"
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Normal Negative Article Baseline (P97):*\n< {p97_val:.1f} Articles"
+                    "text": f"*Trigger Threshold (Top Stories):*\n≥ {int(p97_val or 0)} URLs"
                 }
             ]
         },
@@ -546,11 +586,11 @@ def main():
         print(f"🗓️ Alert lookback: last {ALERT_LOOKBACK_DAYS} day(s)")
 
         # 1. Load Data (DB only)
-        df = load_negative_summary_db(NEGATIVE_HISTORY_DAYS)
+        df = load_alert_candidates_db(NEGATIVE_HISTORY_DAYS)
         if df is None or df.empty:
-            print("No DB negative summary data found. Exiting.")
+            print("No DB Top Stories candidate data found. Exiting.")
             return
-        print("🗄️ Using DB summary for alerts.")
+        print("🗄️ Using DB Top Stories candidates for alerts.")
 
         # 2. Load History
         history = load_alert_history_db(conn)
@@ -578,18 +618,12 @@ def main():
             return
 
         # --- SORT BY PRIORITY ---
-        # Sort by blended signal (negatives + crisis_risk)
-        if 'negative_count' in df.columns:
-            if 'crisis_risk_count' not in df.columns:
-                df['crisis_risk_count'] = 0
-            df['risk_signal'] = df['negative_count'].fillna(0) + (df['crisis_risk_count'].fillna(0) * RISK_LABEL_WEIGHT)
-
-        # --- CALCULATE THRESHOLDS & DATA MATURITY ---
-        brand_stats = df[df['article_type'] == 'brand'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
-        ceo_stats = df[df['article_type'] == 'ceo'].groupby('company')['negative_count'].agg(['count', lambda x: x.quantile(PERCENTILE_CUTOFF)]).to_dict('index')
-
-        MIN_HISTORY_POINTS = 14
-        HARD_FLOOR_NEW_CO = 15
+        if 'top_stories_neg' not in df.columns:
+            df['top_stories_neg'] = df.get('negative_count', 0)
+        df['top_stories_neg'] = pd.to_numeric(df['top_stories_neg'], errors='coerce').fillna(0)
+        if 'negative_count' not in df.columns:
+            df['negative_count'] = df['top_stories_neg']
+        df['risk_signal'] = df['top_stories_neg']
 
         updates_made = False
         llm_cache = load_llm_cache_db(conn, current_time.date().isoformat())
@@ -597,10 +631,6 @@ def main():
 
         serp_brand_counts = {}
         serp_ceo_counts = {}
-        serp_brand_neg_counts = {}
-        serp_ceo_neg_counts = {}
-        top_stories_brand = {}
-        top_stories_ceo = {}
         top_stories_brand_items = {}
         top_stories_ceo_items = {}
         top_stories_today_only_raw = os.getenv("TOP_STORIES_TODAY_ONLY", "1")
@@ -608,29 +638,21 @@ def main():
         if top_stories_today_only and ALERT_LOOKBACK_DAYS > 1:
             print("⚠️ TOP_STORIES_TODAY_ONLY=1 while ALERT_LOOKBACK_DAYS>1; older rows may fail Top Stories gate.")
         if SERP_GATE_ENABLED:
-            b_unctrl, c_unctrl, b_neg, c_neg = load_serp_counts_db(SERP_GATE_DAYS)
+            b_unctrl, c_unctrl, _b_neg, _c_neg = load_serp_counts_db(SERP_GATE_DAYS)
             serp_brand_counts = b_unctrl
             serp_ceo_counts = c_unctrl
-            top_stories_brand, top_stories_ceo = load_top_stories_counts_db(
-                1 if top_stories_today_only else SERP_GATE_DAYS,
+            top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(
+                max(SERP_GATE_DAYS, ALERT_LOOKBACK_DAYS),
                 today_only=top_stories_today_only
             )
+        else:
             top_stories_brand_items, top_stories_ceo_items = load_top_stories_items_db(
-                SERP_GATE_DAYS,
+                max(SERP_GATE_DAYS, ALERT_LOOKBACK_DAYS),
                 today_only=top_stories_today_only
             )
 
-        print("📊 Sorting data by Top Stories negative, then negative count...")
-        if 'negative_count' in df.columns:
-            def _top_neg(row):
-                brand = row.get("company")
-                article_type = str(row.get("article_type", "brand")).lower().strip()
-                ceo_name = str(row.get("ceo", "")).strip()
-                if article_type == "ceo":
-                    return top_stories_ceo.get(ceo_name, (0, 0))[1]
-                return top_stories_brand.get(brand, (0, 0))[1]
-            df['top_stories_neg'] = df.apply(_top_neg, axis=1).fillna(0)
-            df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
+        print("📊 Sorting data by Top Stories negative, then risk signal...")
+        df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
 
         server_now = datetime.now().date()
         window_start = server_now - timedelta(days=ALERT_LOOKBACK_DAYS - 1)
@@ -638,7 +660,7 @@ def main():
         latest_data_date = parsed_dates.max() if parsed_dates is not None and not parsed_dates.empty else None
         in_window_rows = int(((parsed_dates >= window_start) & (parsed_dates <= server_now)).sum()) if parsed_dates is not None else 0
         print(f"🗓️ Date gate window: {window_start} → {server_now} (inclusive)")
-        print(f"📅 Rows in summary: {len(df)} | in-window rows: {in_window_rows} | latest data date: {latest_data_date}")
+        print(f"📅 Rows in candidates: {len(df)} | in-window rows: {in_window_rows} | latest data date: {latest_data_date}")
         if parsed_dates is not None:
             recent_dates = (
                 pd.Series(parsed_dates.dropna())
@@ -651,11 +673,11 @@ def main():
                 print(f"📆 Latest summary date counts: {preview}")
 
         if ALERT_FAIL_FAST_ON_EMPTY_WINDOW and in_window_rows == 0:
-            print("❌ Fail-fast: no summary rows in the alert date window.")
+            print("❌ Fail-fast: no candidate rows in the alert date window.")
             print(f"   Expected window: {window_start} → {server_now}")
-            print(f"   Latest date present in negative_articles_summary_mv: {latest_data_date}")
-            print("   This usually means negative_articles_summary_mv is stale for today.")
-            print("   Run refresh workflow (or: python scripts/refresh_negative_summary_view.py --negative-summary)")
+            print(f"   Latest date present in Top Stories candidates: {latest_data_date}")
+            print("   This usually means SERP feature ingest/refresh is stale for today.")
+            print("   Run: python scripts/refresh_negative_summary_view.py --serp-features")
             raise SystemExit(2)
 
         stats = {
@@ -724,17 +746,17 @@ def main():
             #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
 
             threshold_msg = "SERP + Top Stories"
-            baseline_val = 0
+            baseline_val = SERP_TOP_STORIES_NEG_MIN
 
             # B2. SERP CONFIRMATION GATE
             serp_count = 0
+            top_total = int(row.get('top_stories_total', 0) or 0)
+            top_neg = int(row.get('top_stories_neg', row.get('negative_count', 0)) or 0)
             if SERP_GATE_ENABLED:
                 if article_type == 'ceo':
                     serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
-                    top_total, top_neg = top_stories_ceo.get(ceo_name, (0, 0))
                 else:
                     serp_count = serp_brand_counts.get(brand, 0)
-                    top_total, top_neg = top_stories_brand.get(brand, (0, 0))
                 if SERP_GATE_DEBUG:
                     print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count} top_total={top_total} top_neg={top_neg}")
                 if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
@@ -752,10 +774,6 @@ def main():
                         print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
                     stats["skipped_gate_serp"] += 1
                     continue
-            elif article_type == 'ceo':
-                serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
-            else:
-                serp_count = serp_brand_counts.get(brand, 0)
 
             # C. COOLDOWN CHECK
             history_key = f"{brand}_{article_type}"
