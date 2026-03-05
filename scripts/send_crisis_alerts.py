@@ -39,12 +39,12 @@ ALERT_BRANDS = os.getenv("ALERT_BRANDS", "1") == "1"
 ALERT_CEOS = os.getenv("ALERT_CEOS", "1") == "1"
 
 # SERP gating (negative + uncontrolled: same URL must be negative AND uncontrolled)
-SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "1") == "1"
+SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "0") == "1"
 SERP_GATE_MIN = int(os.getenv("SERP_GATE_MIN", "1"))
 SERP_GATE_DAYS = int(os.getenv("SERP_GATE_DAYS", "2"))
 SERP_GATE_DEBUG = os.getenv("SERP_GATE_DEBUG", "1") == "1"
 SERP_TOP_STORIES_REQUIRED = os.getenv("SERP_TOP_STORIES_REQUIRED", "1") == "1"
-SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "2"))
+SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "4"))
 ALERT_LOOKBACK_DAYS = max(1, int(os.getenv("ALERT_LOOKBACK_DAYS", "1")))
 ALERT_FAIL_FAST_ON_EMPTY_WINDOW = os.getenv("ALERT_FAIL_FAST_ON_EMPTY_WINDOW", "1") == "1"
 ALERT_TIMEZONE = os.getenv("ALERT_TIMEZONE", "America/New_York")
@@ -767,30 +767,33 @@ def main():
             # if SERP_GATE_DEBUG:
             #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
 
-            threshold_msg = "SERP + Top Stories"
+            threshold_msg = "SERP + Top Stories" if SERP_GATE_ENABLED else "Top Stories"
             baseline_val = SERP_TOP_STORIES_NEG_MIN
 
             # B2. SERP CONFIRMATION GATE
             serp_count = 0
             top_total = int(row.get('top_stories_total', 0) or 0)
             top_neg = int(row.get('top_stories_neg', row.get('negative_count', 0)) or 0)
+            if SERP_GATE_DEBUG:
+                print(f"   [Gate] {brand} ({article_type}) top_total={top_total} top_neg={top_neg}")
+            if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
+                if SERP_GATE_DEBUG:
+                    print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
+                stats["skipped_gate_top"] += 1
+                continue
+            if top_neg < SERP_TOP_STORIES_NEG_MIN:
+                if SERP_GATE_DEBUG:
+                    print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
+                stats["skipped_gate_top_neg"] += 1
+                continue
+
             if SERP_GATE_ENABLED:
                 if article_type == 'ceo':
                     serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
                 else:
                     serp_count = serp_brand_counts.get(brand, 0)
                 if SERP_GATE_DEBUG:
-                    print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count} top_total={top_total} top_neg={top_neg}")
-                if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
-                    if SERP_GATE_DEBUG:
-                        print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
-                    stats["skipped_gate_top"] += 1
-                    continue
-                if top_neg < SERP_TOP_STORIES_NEG_MIN:
-                    if SERP_GATE_DEBUG:
-                        print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
-                    stats["skipped_gate_top_neg"] += 1
-                    continue
+                    print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count}")
                 if serp_count < SERP_GATE_MIN:
                     if SERP_GATE_DEBUG:
                         print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
