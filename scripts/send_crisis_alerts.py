@@ -572,44 +572,18 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
             }
         },
         { "type": "divider" },
-                *([{
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Summary:*\n{summary_text}"
-            }
-        }] if summary_text else []),
-        { "type": "divider" },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Top Stories:*\n{headline_text}" if headline_text else "*Top Stories:*\n_No negative top stories found_"
-            }
-        },
-        {
-            "type": "section",
-            "fields": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Top Stories Negative URLs (date):*\n{int(count or 0)} URLs"
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Trigger Threshold (Top Stories):*\n≥ {int(p97_val or 0)} URLs"
-                }
-            ]
-        },
-        # {
-        #     "type": "context",
-        #     "elements": [
-        #         {
-        #             "type": "mrkdwn",
-        #             "text": f"View analysis on the <{dashboard_url}|Risk Dashboard>."
-        #         }
-        #     ]
-        # }
     ]
+
+    if summary_text:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Summary:*\n{summary_text}"
+                }
+            }
+        )
 
     if SLACK_ENABLE_ACTION_BUTTON:
         action_value = _build_outreach_action_value(
@@ -651,15 +625,37 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
             }
         )
 
-    alert_color = get_owner_color(owner_name)
+    blocks.extend(
+        [
+            { "type": "divider" },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Top Stories:*\n{headline_text}" if headline_text else "*Top Stories:*\n_No negative top stories found_"
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Top Stories Negative URLs (date):*\n{int(count or 0)} URLs"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Trigger Threshold (Top Stories):*\n≥ {int(p97_val or 0)} URLs"
+                    }
+                ]
+            },
+        ]
+    )
+
+    fallback_text = f"{alert_title} | {sub_context} | Top Stories negative URLs: {int(count or 0)}"
     payload = {
         "channel": channel or SLACK_CHANNEL,
-        "attachments": [
-            {
-                "color": alert_color,
-                "blocks": blocks
-            }
-        ]
+        "text": fallback_text,
+        "blocks": blocks
     }
 
     # --- DRY RUN CHECK ---
