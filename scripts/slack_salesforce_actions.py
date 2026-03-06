@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -55,10 +56,69 @@ OUTREACH_TASK_STATUS = os.getenv("OUTREACH_TASK_STATUS", "Not Started")
 OUTREACH_TASK_PRIORITY = os.getenv("OUTREACH_TASK_PRIORITY", "High")
 OUTREACH_TASK_OWNER_ID = os.getenv("OUTREACH_TASK_OWNER_ID", "").strip()
 OUTREACH_TASK_DUE_DAYS = max(0, int(os.getenv("OUTREACH_TASK_DUE_DAYS", "1")))
+SF_ACCOUNT_MATCH_MIN_SCORE = int(os.getenv("SF_ACCOUNT_MATCH_MIN_SCORE", "78"))
+
+_COMPANY_SUFFIXES = {
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "llc",
+    "ltd",
+    "limited",
+    "plc",
+    "holdings",
+    "holding",
+    "group",
+}
 
 
 def _sf_escape(value: str) -> str:
     return (value or "").replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _normalize_company_name(name: str) -> str:
+    raw = (name or "").lower().replace("&", " and ")
+    tokens = re.sub(r"[^a-z0-9]+", " ", raw).split()
+    filtered = [tok for tok in tokens if tok and tok not in _COMPANY_SUFFIXES]
+    return " ".join(filtered).strip()
+
+
+def _score_account_match(brand_norm: str, brand_tokens: list[str], candidate_name: str) -> int:
+    cand_norm = _normalize_company_name(candidate_name)
+    if not brand_norm or not cand_norm:
+        return 0
+    if cand_norm == brand_norm:
+        return 100
+
+    cand_tokens = cand_norm.split()
+    if not cand_tokens:
+        return 0
+
+    brand_set = set(brand_tokens)
+    cand_set = set(cand_tokens)
+    overlap = len(brand_set & cand_set)
+    if overlap == 0:
+        return 0
+
+    recall = overlap / max(1, len(brand_set))
+    precision = overlap / max(1, len(cand_set))
+    score = int(100 * (0.65 * recall + 0.35 * precision))
+
+    # Penalize extra unmatched tokens to avoid false positives like
+    # "H&R Block" for target "Block".
+    extra = max(0, len(cand_set) - len(brand_set))
+    score -= extra * 8
+
+    # Reward prefix consistency.
+    if cand_norm.startswith(brand_norm + " ") or brand_norm.startswith(cand_norm + " "):
+        score += 5
+    if brand_tokens and cand_tokens and brand_tokens[0] != cand_tokens[0]:
+        score -= 10
+
+    return max(0, score)
 
 
 def _verify_slack_signature() -> tuple[bool, str, bytes]:
@@ -283,13 +343,52 @@ def _find_account(sf: Salesforce, brand: str) -> tuple[str, str, str]:
         rec = exact["records"][0]
         return rec.get("Id", ""), rec.get("Name", brand), rec.get("OwnerId", "")
 
-    # Fallback fuzzy match.
-    like = sf.query(
-        f"SELECT Id, Name, OwnerId FROM Account WHERE Name LIKE '%{safe_brand}%' LIMIT 1"
+    brand_norm = _normalize_company_name(brand)
+    brand_tokens = brand_norm.split()
+    if not brand_tokens:
+        return "", brand, ""
+
+    # Fallback: fetch a candidate set, then score locally to avoid wrong matches.
+    candidate_records = []
+    like_full = sf.query(
+        f"SELECT Id, Name, OwnerId FROM Account WHERE Name LIKE '%{safe_brand}%' LIMIT 50"
     )
-    if like.get("totalSize", 0) > 0:
-        rec = like["records"][0]
-        return rec.get("Id", ""), rec.get("Name", brand), rec.get("OwnerId", "")
+    candidate_records.extend(like_full.get("records") or [])
+
+    first_token = brand_tokens[0]
+    if first_token and first_token not in {"the", "and"}:
+        like_token = sf.query(
+            f"SELECT Id, Name, OwnerId FROM Account WHERE Name LIKE '%{_sf_escape(first_token)}%' LIMIT 50"
+        )
+        for rec in like_token.get("records") or []:
+            rid = rec.get("Id")
+            if rid and all(rid != r.get("Id") for r in candidate_records):
+                candidate_records.append(rec)
+
+    if candidate_records:
+        scored = []
+        for rec in candidate_records:
+            name = rec.get("Name", "") or ""
+            score = _score_account_match(brand_norm, brand_tokens, name)
+            scored.append((score, rec))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        best_score, best_rec = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else -1
+
+        if best_score < SF_ACCOUNT_MATCH_MIN_SCORE:
+            print(f"[WARN] No safe Salesforce account match for '{brand}' (best score={best_score})")
+            return "", brand, ""
+        if second_score >= SF_ACCOUNT_MATCH_MIN_SCORE and (best_score - second_score) < 4:
+            print(
+                f"[WARN] Ambiguous Salesforce account match for '{brand}' "
+                f"(scores {best_score} vs {second_score}); leaving unlinked."
+            )
+            return "", brand, ""
+        return (
+            best_rec.get("Id", ""),
+            best_rec.get("Name", brand),
+            best_rec.get("OwnerId", ""),
+        )
 
     return "", brand, ""
 
