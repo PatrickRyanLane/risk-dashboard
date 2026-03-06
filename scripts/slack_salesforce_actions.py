@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg2
 from flask import Flask, jsonify, request
 from simple_salesforce import Salesforce
+from simple_salesforce.exceptions import SalesforceMalformedRequest
 
 app = Flask(__name__)
 
@@ -349,7 +350,6 @@ def _create_salesforce_task(ctx: dict, slack_user_name: str) -> tuple[str, str]:
     account_id, account_name, account_owner_id = _find_account(sf, brand)
     contact_id, contact_name, contact_email, contact_title = _find_comms_contact(sf, account_id)
 
-    owner_id = OUTREACH_TASK_OWNER_ID or account_owner_id
     due_date = (datetime.now(timezone.utc).date() + timedelta(days=OUTREACH_TASK_DUE_DAYS)).isoformat()
     description = _build_description(
         ctx,
@@ -364,20 +364,51 @@ def _create_salesforce_task(ctx: dict, slack_user_name: str) -> tuple[str, str]:
         "ActivityDate": due_date,
         "Description": description[:32000],
     }
-    if owner_id:
-        task_payload["OwnerId"] = owner_id
     if account_id:
         task_payload["WhatId"] = account_id
     if contact_id:
         task_payload["WhoId"] = contact_id
 
-    result = sf.Task.create(task_payload)
+    owner_candidates = []
+    if account_owner_id:
+        owner_candidates.append(account_owner_id)
+    if OUTREACH_TASK_OWNER_ID and OUTREACH_TASK_OWNER_ID not in owner_candidates:
+        owner_candidates.append(OUTREACH_TASK_OWNER_ID)
+    # Final fallback: no explicit OwnerId (integration user/default owner).
+    owner_candidates.append("")
+
+    result = None
+    last_err = None
+    owner_used = ""
+    for candidate in owner_candidates:
+        payload = dict(task_payload)
+        if candidate:
+            payload["OwnerId"] = candidate
+        else:
+            payload.pop("OwnerId", None)
+        try:
+            result = sf.Task.create(payload)
+            owner_used = candidate
+            break
+        except SalesforceMalformedRequest as exc:
+            last_err = exc
+            if "INACTIVE_OWNER_OR_USER" in str(exc) and candidate:
+                print(f"[WARN] Inactive task owner {candidate}; trying next fallback owner")
+                continue
+            raise
+
+    if result is None and last_err is not None:
+        raise last_err
     if not result.get("success"):
         raise RuntimeError(f"Salesforce task create failed: {result}")
     task_id = result.get("id", "")
     extra = f"account={account_name}" if account_name else "account=(none)"
     if contact_name:
         extra += f", contact={contact_name}"
+    if owner_used:
+        extra += f", owner={owner_used}"
+    else:
+        extra += ", owner=(integration/default)"
     return task_id, extra
 
 
