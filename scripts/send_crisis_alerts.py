@@ -108,6 +108,24 @@ def normalize_name(name):
     return name
 
 
+def parse_force_brands(raw: str):
+    out = set()
+    if not raw:
+        return out
+    for part in str(raw).split(","):
+        item = part.strip()
+        if not item:
+            continue
+        norm = normalize_name(item).strip().lower()
+        if norm:
+            out.add(norm)
+    return out
+
+
+def is_truthy(value) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def get_db_conn():
     dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if not dsn:
@@ -668,7 +686,23 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bucket', default='risk-dashboard')
+    parser.add_argument(
+        '--force-brands',
+        default=os.getenv("FORCE_BRANDS", ""),
+        help="Comma-separated company names to restrict alert candidates (applies to both brand+CEO rows for matching company).",
+    )
+    parser.add_argument(
+        '--force-send',
+        default=os.getenv("FORCE_SEND", "0"),
+        help="Set to 1/true to bypass date window, Top Stories/SERP gates, cooldown, and daily budget checks.",
+    )
     args = parser.parse_args()
+    force_brands_raw = args.force_brands
+    forced_brand_norms = parse_force_brands(force_brands_raw)
+    force_send = is_truthy(args.force_send)
+    if force_send and not forced_brand_norms:
+        print("Refusing force-send without --force-brands to prevent accidental broad blast.")
+        return
 
     conn = get_db_conn()
     if conn is None:
@@ -686,6 +720,10 @@ def main():
             print("🧭 SERP gate: disabled")
         print(f"🌎 Alert timezone: {ALERT_TIMEZONE}")
         print(f"🗓️ Alert lookback: last {ALERT_LOOKBACK_DAYS} day(s)")
+        if forced_brand_norms:
+            print(f"🎯 Force brand filter enabled: {', '.join([p.strip() for p in str(force_brands_raw).split(',') if p.strip()])}")
+        if force_send:
+            print("🚨 Force-send override enabled: bypassing date window, gates, cooldown, and daily budget checks.")
 
         alert_today = get_alert_today_date()
 
@@ -695,6 +733,14 @@ def main():
             print("No DB Top Stories candidate data found. Exiting.")
             return
         print("🗄️ Using DB Top Stories candidates for alerts.")
+        if forced_brand_norms:
+            df["__company_norm"] = df["company"].apply(lambda v: normalize_name(v).strip().lower())
+            df = df[df["__company_norm"].isin(forced_brand_norms)].copy()
+            df.drop(columns=["__company_norm"], inplace=True, errors="ignore")
+            if df.empty:
+                print("No candidate rows matched forced brands filter. Exiting.")
+                return
+            print(f"🎯 Force brand filter matched {len(df)} candidate rows.")
 
         # 2. Load History
         history = load_alert_history_db(conn)
@@ -717,9 +763,11 @@ def main():
         print(f"🕒 Used today ({budget_date}): {recent_alerts_count}")
         print(f"✅ Remaining capacity: {alerts_remaining_today}")
 
-        if alerts_remaining_today <= 0:
+        if alerts_remaining_today <= 0 and not force_send:
             print("⛔ Daily alert limit reached. Exiting script to prevent flood.")
             return
+        if alerts_remaining_today <= 0 and force_send:
+            print("⚠️ Daily budget exhausted, but continuing due to force-send override.")
 
         # --- SORT BY PRIORITY ---
         if 'top_stories_neg' not in df.columns:
@@ -757,8 +805,17 @@ def main():
                 anchor_date=alert_today,
             )
 
-        print("📊 Sorting data by Top Stories negative, then risk signal...")
-        df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
+        if force_send:
+            print("📊 Force-send sorting by latest date then Top Stories negative...")
+            df["__row_date"] = pd.to_datetime(df.get("date"), errors="coerce")
+            before = len(df)
+            df.sort_values(by=['__row_date', 'top_stories_neg', 'risk_signal'], ascending=[False, False, False], inplace=True)
+            df = df.drop_duplicates(subset=['company', 'article_type', 'ceo'], keep='first').copy()
+            df.drop(columns=["__row_date"], inplace=True, errors="ignore")
+            print(f"📌 Force-send narrowed candidates from {before} to {len(df)} latest company/scope rows.")
+        else:
+            print("📊 Sorting data by Top Stories negative, then risk signal...")
+            df.sort_values(by=['top_stories_neg', 'risk_signal'], ascending=False, inplace=True)
 
         server_now = alert_today
         window_start = server_now - timedelta(days=ALERT_LOOKBACK_DAYS - 1)
@@ -778,7 +835,7 @@ def main():
                 preview = ", ".join(f"{idx}:{int(val)}" for idx, val in recent_dates.items())
                 print(f"📆 Latest summary date counts: {preview}")
 
-        if ALERT_FAIL_FAST_ON_EMPTY_WINDOW and in_window_rows == 0:
+        if (not force_send) and ALERT_FAIL_FAST_ON_EMPTY_WINDOW and in_window_rows == 0:
             print("❌ Fail-fast: no candidate rows in the alert date window.")
             print(f"   Expected window: {window_start} → {server_now}")
             print(f"   Latest date present in Top Stories candidates: {latest_data_date}")
@@ -804,7 +861,7 @@ def main():
         for _, row in df.iterrows():
             stats["rows_scanned"] += 1
             # FLOOD PROTECTION CHECK
-            if alerts_remaining_today <= 0:
+            if alerts_remaining_today <= 0 and not force_send:
                 print("🛑 Daily limit hit mid-run. Stopping alerts for today.")
                 stats["stopped_budget"] = 1
                 break
@@ -830,9 +887,10 @@ def main():
                 stats["skipped_bad_date"] += 1
                 continue
 
-            if row_date < window_start or row_date > server_now:
-                stats["skipped_date"] += 1
-                continue
+            if not force_send:
+                if row_date < window_start or row_date > server_now:
+                    stats["skipped_date"] += 1
+                    continue
             stats["rows_in_window"] += 1
 
             # B. DYNAMIC THRESHOLD CHECK (disabled)
@@ -852,38 +910,42 @@ def main():
             # if SERP_GATE_DEBUG:
             #     print(f"   [Gate] {brand} ({article_type}) neg_articles={count} baseline={threshold_msg}")
 
-            threshold_msg = "SERP + Top Stories" if SERP_GATE_ENABLED else "Top Stories"
-            baseline_val = SERP_TOP_STORIES_NEG_MIN
+            if force_send:
+                threshold_msg = "Force Send Override"
+                baseline_val = 0
+            else:
+                threshold_msg = "SERP + Top Stories" if SERP_GATE_ENABLED else "Top Stories"
+                baseline_val = SERP_TOP_STORIES_NEG_MIN
 
-            # B2. SERP CONFIRMATION GATE
-            serp_count = 0
-            top_total = int(row.get('top_stories_total', 0) or 0)
-            top_neg = int(row.get('top_stories_neg', row.get('negative_count', 0)) or 0)
-            if SERP_GATE_DEBUG:
-                print(f"   [Gate] {brand} ({article_type}) top_total={top_total} top_neg={top_neg}")
-            if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
+                # B2. SERP CONFIRMATION GATE
+                serp_count = 0
+                top_total = int(row.get('top_stories_total', 0) or 0)
+                top_neg = int(row.get('top_stories_neg', row.get('negative_count', 0)) or 0)
                 if SERP_GATE_DEBUG:
-                    print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
-                stats["skipped_gate_top"] += 1
-                continue
-            if top_neg < SERP_TOP_STORIES_NEG_MIN:
-                if SERP_GATE_DEBUG:
-                    print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
-                stats["skipped_gate_top_neg"] += 1
-                continue
-
-            if SERP_GATE_ENABLED:
-                if article_type == 'ceo':
-                    serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
-                else:
-                    serp_count = serp_brand_counts.get(brand, 0)
-                if SERP_GATE_DEBUG:
-                    print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count}")
-                if serp_count < SERP_GATE_MIN:
+                    print(f"   [Gate] {brand} ({article_type}) top_total={top_total} top_neg={top_neg}")
+                if SERP_TOP_STORIES_REQUIRED and top_total <= 0:
                     if SERP_GATE_DEBUG:
-                        print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
-                    stats["skipped_gate_serp"] += 1
+                        print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
+                    stats["skipped_gate_top"] += 1
                     continue
+                if top_neg < SERP_TOP_STORIES_NEG_MIN:
+                    if SERP_GATE_DEBUG:
+                        print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
+                    stats["skipped_gate_top_neg"] += 1
+                    continue
+
+                if SERP_GATE_ENABLED:
+                    if article_type == 'ceo':
+                        serp_count = serp_ceo_counts.get((brand, ceo_name), 0)
+                    else:
+                        serp_count = serp_brand_counts.get(brand, 0)
+                    if SERP_GATE_DEBUG:
+                        print(f"   [Gate] {brand} ({article_type}) serp_uncontrolled={serp_count}")
+                    if serp_count < SERP_GATE_MIN:
+                        if SERP_GATE_DEBUG:
+                            print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
+                        stats["skipped_gate_serp"] += 1
+                        continue
 
             # C. COOLDOWN CHECK
             history_key = f"{brand}_{article_type}"
@@ -892,7 +954,7 @@ def main():
             if not last_alert and article_type == 'brand':
                 last_alert = history.get(brand)
 
-            if last_alert:
+            if (not force_send) and last_alert:
                 last_date = datetime.fromisoformat(last_alert).replace(tzinfo=None)
                 if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
                     # Silent skip
@@ -961,7 +1023,8 @@ def main():
             stats["sent"] += 1
 
             # Decrement Budget
-            alerts_remaining_today -= 1
+            if not force_send:
+                alerts_remaining_today -= 1
 
             # --- DRY RUN SLEEP ---
             # Don't sleep for 2 seconds in testing, it's annoying.

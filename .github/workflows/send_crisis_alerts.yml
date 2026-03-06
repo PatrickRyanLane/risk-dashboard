@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: '0 13 * * *'  # 13:00 UTC daily (after aggregation)
   workflow_dispatch:
+    inputs:
+      force_brands:
+        description: "Optional comma-separated company names to restrict alerts."
+        required: false
+        default: ""
+      force_send:
+        description: "Set to 1 to bypass gates/cooldown/date window/budget (requires force_brands)."
+        required: false
+        default: "0"
 
 permissions:
   contents: read
@@ -54,6 +63,8 @@ jobs:
           ALERT_LOOKBACK_DAYS: ${{ vars.ALERT_LOOKBACK_DAYS || '1' }}
           TOP_STORIES_TODAY_ONLY: ${{ vars.TOP_STORIES_TODAY_ONLY || '1' }}
           ALERT_TIMEZONE: ${{ vars.ALERT_TIMEZONE || 'America/New_York' }}
+          FORCE_BRANDS: ${{ github.event.inputs.force_brands || '' }}
+          FORCE_SEND: ${{ github.event.inputs.force_send || '0' }}
         run: |
           echo "🚀 Checking for crises and sending alerts..."
-          python scripts/send_crisis_alerts.py
+          python scripts/send_crisis_alerts.py --force-brands "$FORCE_BRANDS" --force-send "$FORCE_SEND"
