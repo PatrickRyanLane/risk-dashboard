@@ -11,7 +11,9 @@ import urllib.parse
 import re
 import time
 import hashlib
+import hmac
 import random
+import json
 from difflib import get_close_matches
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -48,6 +50,8 @@ SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "4"))
 ALERT_LOOKBACK_DAYS = max(1, int(os.getenv("ALERT_LOOKBACK_DAYS", "1")))
 ALERT_FAIL_FAST_ON_EMPTY_WINDOW = os.getenv("ALERT_FAIL_FAST_ON_EMPTY_WINDOW", "1") == "1"
 ALERT_TIMEZONE = os.getenv("ALERT_TIMEZONE", "America/New_York")
+SLACK_ENABLE_ACTION_BUTTON = os.getenv("SLACK_ENABLE_ACTION_BUTTON", "1") == "1"
+SLACK_ACTION_VALUE_SIGNING_SECRET = os.getenv("SLACK_ACTION_VALUE_SIGNING_SECRET", "").strip()
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -449,7 +453,48 @@ def get_slack_user_id(email):
     except Exception: pass
     return None
 
-def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, top_stories, owner_slack_id, owner_name, summary_text="", risk_score=None, channel=None):
+def _build_outreach_action_value(brand, ceo_name, article_type, dashboard_url, count, alert_date):
+    ctx = {
+        "v": 1,
+        "brand": (brand or "").strip(),
+        "ceo": (ceo_name or "").strip(),
+        "article_type": (article_type or "brand").strip().lower(),
+        "dashboard_url": (dashboard_url or "").strip(),
+        "top_stories_neg": int(count or 0),
+        "alert_date": (alert_date or "").strip(),
+    }
+    envelope = {"ctx": ctx}
+    if SLACK_ACTION_VALUE_SIGNING_SECRET:
+        compact_ctx = json.dumps(ctx, separators=(",", ":"))
+        envelope["sig"] = hmac.new(
+            SLACK_ACTION_VALUE_SIGNING_SECRET.encode("utf-8"),
+            compact_ctx.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+    compact = json.dumps(envelope, separators=(",", ":"))
+    if len(compact) <= 1900:
+        return compact
+    # Fallback to a smaller payload while preserving signature validity.
+    slim_ctx = {
+        "v": 1,
+        "brand": ctx["brand"],
+        "ceo": ctx["ceo"],
+        "article_type": ctx["article_type"],
+        "top_stories_neg": ctx["top_stories_neg"],
+        "alert_date": ctx["alert_date"],
+    }
+    slim_envelope = {"ctx": slim_ctx}
+    if SLACK_ACTION_VALUE_SIGNING_SECRET:
+        compact_slim = json.dumps(slim_ctx, separators=(",", ":"))
+        slim_envelope["sig"] = hmac.new(
+            SLACK_ACTION_VALUE_SIGNING_SECRET.encode("utf-8"),
+            compact_slim.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+    return json.dumps(slim_envelope, separators=(",", ":"))
+
+
+def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, top_stories, owner_slack_id, owner_name, summary_text="", risk_score=None, channel=None, alert_date=None):
     """Sends a Block Kit alert."""
     
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
@@ -547,6 +592,46 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
         #     ]
         # }
     ]
+
+    if SLACK_ENABLE_ACTION_BUTTON:
+        action_value = _build_outreach_action_value(
+            brand=brand,
+            ceo_name=ceo_name,
+            article_type=article_type,
+            dashboard_url=dashboard_url,
+            count=count,
+            alert_date=alert_date,
+        )
+        blocks.append(
+            {
+                "type": "actions",
+                "block_id": "crisis_alert_actions_v1",
+                "elements": [
+                    {
+                        "type": "button",
+                        "action_id": "create_sf_outreach_draft",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Create SF Outreach Draft",
+                            "emoji": True,
+                        },
+                        "style": "primary",
+                        "value": action_value,
+                    }
+                ],
+            }
+        )
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": "Creates a Salesforce review task only (no auto-send).",
+                    }
+                ],
+            }
+        )
 
     alert_color = get_owner_color(owner_name)
     payload = {
@@ -858,7 +943,8 @@ def main():
 
             send_slack_alert(
                 brand, ceo_name, article_type, count, baseline_val,
-                headlines, top_items, slack_id, owner_name, summary_text, None
+                headlines, top_items, slack_id, owner_name, summary_text, None,
+                alert_date=date_str,
             )
 
             # --- JITTER IMPLEMENTATION ---

@@ -292,6 +292,7 @@ def main():
             summary_text,
             None,
             channel=channel,
+            alert_date=date_str,
         )
 
         jitter_seconds = 0 if sca.DRY_RUN else int(os.getenv("ALERT_JITTER_SECONDS", "0"))

@@ -37,6 +37,7 @@ jobs:
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
           SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_ACTION_VALUE_SIGNING_SECRET: ${{ secrets.SLACK_ACTION_VALUE_SIGNING_SECRET }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
