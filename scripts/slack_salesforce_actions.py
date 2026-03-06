@@ -15,10 +15,12 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
+import requests
 from flask import Flask, jsonify, request
 from simple_salesforce import Salesforce
 from simple_salesforce.exceptions import SalesforceMalformedRequest
@@ -249,6 +251,23 @@ def _set_action_result(conn, interaction_key: str, status: str, task_id: str = "
             )
 
 
+def _post_slack_followup(response_url: str, text: str):
+    if not response_url:
+        return
+    try:
+        requests.post(
+            response_url,
+            json={
+                "response_type": "ephemeral",
+                "replace_original": False,
+                "text": text,
+            },
+            timeout=5,
+        )
+    except Exception as exc:
+        print(f"[WARN] Failed posting Slack follow-up: {exc}")
+
+
 def _sf_client() -> Salesforce:
     if not SF_USERNAME or not SF_PASSWORD or not SF_SECURITY_TOKEN:
         raise RuntimeError("Salesforce credentials missing (SF_USERNAME/SF_PASSWORD/SF_SECURITY_TOKEN)")
@@ -422,6 +441,25 @@ def _interaction_key(payload: dict, action: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _process_action_background(interaction_key: str, ctx: dict, slack_user_name: str, response_url: str):
+    conn = _db_conn()
+    if conn is None:
+        _post_slack_followup(response_url, "Could not create Salesforce task: database connection unavailable.")
+        return
+    try:
+        try:
+            task_id, extra = _create_salesforce_task(ctx, slack_user_name)
+            _set_action_result(conn, interaction_key, "success", task_id=task_id)
+            _post_slack_followup(response_url, f"Created Salesforce review task `{task_id}` ({extra}).")
+        except Exception as exc:
+            error_ref = interaction_key[:12]
+            print(f"[ERROR] slack_interaction_failed ref={error_ref} error={exc}")
+            _set_action_result(conn, interaction_key, "failed", error=str(exc)[:1000])
+            _post_slack_followup(response_url, f"Could not create Salesforce task. Ref: `{error_ref}`")
+    finally:
+        conn.close()
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "service": "slack-salesforce-actions"})
@@ -467,6 +505,7 @@ def slack_interactions():
     slack_user_name = (user_obj.get("username") or user_obj.get("name") or slack_user_id).strip()
     channel_id = ((payload.get("channel") or {}).get("id") or "").strip()
     message_ts = ((payload.get("container") or {}).get("message_ts") or "").strip()
+    response_url = (payload.get("response_url") or "").strip()
     interaction_key = _interaction_key(payload, action)
 
     conn = _db_conn()
@@ -500,25 +539,18 @@ def slack_interactions():
                 msg = "This click is already being processed."
             return jsonify({"response_type": "ephemeral", "text": msg}), 200
 
-        try:
-            task_id, extra = _create_salesforce_task(ctx, slack_user_name)
-            _set_action_result(conn, interaction_key, "success", task_id=task_id)
-            return jsonify(
-                {
-                    "response_type": "ephemeral",
-                    "text": f"Created Salesforce review task `{task_id}` ({extra}).",
-                }
-            ), 200
-        except Exception as exc:
-            error_ref = interaction_key[:12]
-            print(f"[ERROR] slack_interaction_failed ref={error_ref} error={exc}")
-            _set_action_result(conn, interaction_key, "failed", error=str(exc)[:1000])
-            return jsonify(
-                {
-                    "response_type": "ephemeral",
-                    "text": f"Could not create Salesforce task. Ref: `{error_ref}`",
-                }
-            ), 200
+        worker = threading.Thread(
+            target=_process_action_background,
+            args=(interaction_key, ctx, slack_user_name, response_url),
+            daemon=True,
+        )
+        worker.start()
+        return jsonify(
+            {
+                "response_type": "ephemeral",
+                "text": "Processing request... I will post a follow-up here shortly.",
+            }
+        ), 200
     finally:
         conn.close()
 
