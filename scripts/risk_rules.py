@@ -292,7 +292,7 @@ NARRATIVE_CRISIS_TAGS = [
     "Data Breaches",
     "Activist Investor Interest",
     "Legal & Regulatory",
-    "Unforced Errors (marketing, executive actions/comments)",
+    "Unforced Errors",
     "Labor Disputes",
     "CEO Departures (firings, resignations)",
     "Fraud",
@@ -1074,7 +1074,7 @@ def classify_narrative_tags(
     if NARRATIVE_ACTIVIST_INVESTOR_RE.search(hay):
         crisis_tags.append("Activist Investor Interest")
     if NARRATIVE_UNFORCED_RE.search(hay):
-        crisis_tags.append("Unforced Errors (marketing, executive actions/comments)")
+        crisis_tags.append("Unforced Errors")
     if NARRATIVE_LEGAL_RE.search(hay):
         crisis_tags.append("Legal & Regulatory")
 
