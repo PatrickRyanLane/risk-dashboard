@@ -652,10 +652,18 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
     )
 
     fallback_text = f"{alert_title} | {sub_context} | Top Stories negative URLs: {int(count or 0)}"
+    owner_color = get_owner_color(owner_name)
     payload = {
         "channel": channel or SLACK_CHANNEL,
         "text": fallback_text,
-        "blocks": blocks
+        "attachments": [
+            {
+                "color": owner_color,
+                "blocks": blocks,
+            }
+        ],
+        "unfurl_links": False,
+        "unfurl_media": False,
     }
 
     # --- DRY RUN CHECK ---

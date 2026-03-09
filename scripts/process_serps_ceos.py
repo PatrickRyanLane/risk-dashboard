@@ -228,25 +228,28 @@ def fetch_parquet_with_metrics(path_or_url: str) -> Tuple[pd.DataFrame | None, D
 # ============================================================================
 # ROSTER LOADING WITH ALIAS MAPS
 # ============================================================================
-def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict, Dict, Dict]:
+def load_roster_data(
+    storage, roster_path: str = MAIN_ROSTER_PATH
+) -> Tuple[Dict, Dict, Dict[str, Set[str]], Dict[str, str]]:
     """
     Load roster data including alias maps for resolving CEO queries.
     """
     alias_map = {}
     ceo_to_company = {}
     company_domains: Dict[str, Set[str]] = {}
+    company_industries: Dict[str, str] = {}
 
     try:
         if storage:
             if not storage.file_exists(roster_path):
                 print(f"[WARN] Roster not found in Cloud Storage at {roster_path}")
-                return alias_map, ceo_to_company, company_domains
+                return alias_map, ceo_to_company, company_domains, company_industries
             df = storage.read_csv(roster_path)
         else:
             roster_file = Path(roster_path)
             if not roster_file.exists():
                 print(f"[WARN] Roster not found at {roster_file}")
-                return alias_map, ceo_to_company, company_domains
+                return alias_map, ceo_to_company, company_domains, company_industries
             df = pd.read_csv(roster_file, encoding="utf-8-sig")
         
         cols = {c.strip().lower(): c for c in df.columns}
@@ -263,10 +266,11 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
         alias_col = col("ceo alias", "alias")
         company_alias_col = col("company alias", "company_alias")
         website_col = col("website", "websites", "domain", "url")
+        industry_col = col("industry", "sector")
 
         if not (ceo_col and company_col):
             print("[WARN] Roster must have CEO and Company columns")
-            return alias_map, ceo_to_company, company_domains
+            return alias_map, ceo_to_company, company_domains, company_industries
 
         # Build ceo_to_company mapping
         for _, row in df.iterrows():
@@ -307,6 +311,16 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
 
         print(f"[OK] Loaded {len(ceo_to_company)} CEOs, {len(alias_map)} aliases")
 
+        if industry_col:
+            for _, row in df.iterrows():
+                company = str(row[company_col]).strip()
+                if not company or company.lower() == "nan":
+                    continue
+                industry = str(row[industry_col]).strip()
+                if not industry or industry.lower() == "nan":
+                    continue
+                company_industries[company] = industry
+
         # Build company_domains for control classification
         if website_col:
             print(f"[INFO] Loading controlled domains from roster...")
@@ -333,7 +347,7 @@ def load_roster_data(storage, roster_path: str = MAIN_ROSTER_PATH) -> Tuple[Dict
     except Exception as e:
         print(f"[WARN] Failed reading roster: {e}")
 
-    return alias_map, ceo_to_company, company_domains
+    return alias_map, ceo_to_company, company_domains, company_industries
 
 
 # ============================================================================
@@ -407,7 +421,7 @@ def process_for_date(
     print(f"[INFO] Processing CEO SERPs for {target_date} …")
 
     # Load roster with alias maps
-    alias_map, ceo_to_company, company_domains = load_roster_data(storage, roster_path)
+    alias_map, ceo_to_company, company_domains, company_industries = load_roster_data(storage, roster_path)
     expected_queries = len(ceo_to_company)
     print(
         f"[METRIC] roster_ceos={expected_queries} "
@@ -515,6 +529,7 @@ def process_for_date(
             snippet=snippet,
         )
         finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
+        industry = company_industries.get(company, "")
 
         # --- Sentiment rules (deterministic order) ---
         host = _hostname(url)
@@ -526,7 +541,7 @@ def process_for_date(
             label = "negative"
             forced_reason = "reddit"
         # 2) Force negative for CEO/legal terms
-        elif should_force_negative_ceo(title, snippet, url=url, source=source):
+        elif should_force_negative_ceo(title, snippet, url=url, source=source, industry=industry):
             label = "negative"
             forced_reason = "ceo_terms"
         # 3) Neutralize routine financial coverage

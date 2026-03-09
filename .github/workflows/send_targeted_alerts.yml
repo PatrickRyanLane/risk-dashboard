@@ -2,9 +2,9 @@ name: Send Targeted Crisis Alerts
 
 on:
   schedule:
-    # Run both UTC slots and gate to exactly 09:30 America/New_York in-step (handles DST)
+    # Single daily run (13:30 UTC).
+    # Note: GitHub cron is UTC-only; this is 09:30 ET during DST and 08:30 ET during standard time.
     - cron: '30 13 * * *'
-    - cron: '30 14 * * *'
   workflow_dispatch:
     inputs:
       brands:
@@ -28,23 +28,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
-      - name: Schedule Gate (09:30 ET)
-        id: schedule_gate
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          NOW_ET="$(TZ=America/New_York date +%H:%M)"
-          if [ "$NOW_ET" = "09:30" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping: current ET time is $NOW_ET (not 09:30)."
-          fi
-
       - name: Checkout repository
-        if: steps.schedule_gate.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -56,11 +40,9 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Python environment
-        if: steps.schedule_gate.outputs.run == 'true'
         uses: ./.github/actions/setup-python-env
 
       - name: Send Targeted Crisis Alerts
-        if: steps.schedule_gate.outputs.run == 'true'
         env:
           TARGET_BRANDS: ${{ github.event.inputs.brands || 'Fanatics' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}

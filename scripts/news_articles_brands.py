@@ -75,6 +75,36 @@ def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
     return company_domains
 
 
+def load_company_industries(storage, roster_path: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        if storage:
+            if not storage.file_exists(roster_path):
+                return out
+            df = storage.read_csv(roster_path)
+        else:
+            roster_file = Path(roster_path)
+            if not roster_file.exists():
+                return out
+            df = pd.read_csv(roster_file, encoding="utf-8-sig")
+        cols = {c.strip().lower(): c for c in df.columns}
+        company_col = cols.get("company")
+        industry_col = cols.get("industry") or cols.get("sector")
+        if not company_col or not industry_col:
+            return out
+        for _, row in df.iterrows():
+            company = str(row.get(company_col) or "").strip()
+            if not company or company.lower() == "nan":
+                continue
+            industry = str(row.get(industry_col) or "").strip()
+            if not industry or industry.lower() == "nan":
+                continue
+            out[company] = industry
+    except Exception as e:
+        print(f"[WARN] Failed reading company industries: {e}")
+    return out
+
+
 
 def _hostname(url: str) -> str:
     try:
@@ -128,7 +158,14 @@ def google_news_rss(q: str) -> str:
     return f"https://news.google.com/rss/search?q={qs}&hl=en-US&gl=US&ceid=US:en"
 
 
-def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = "", snippet: str = ""):
+def classify(
+    headline: str,
+    analyzer: SentimentIntensityAnalyzer,
+    source: str = "",
+    url: str = "",
+    snippet: str = "",
+    industry: str = "",
+):
     """
     Classify sentiment with multi-stage filtering.
     """
@@ -147,7 +184,7 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
         return "negative", flags
     
     # 2. Force NEGATIVE for legal trouble / crisis
-    if title_mentions_legal_trouble(headline, snippet, url=url, source=source):
+    if title_mentions_legal_trouble(headline, snippet, url=url, source=source, industry=industry):
         flags["is_legal"] = True
         flags["forced_reason"] = "legal"
         return "negative", flags
@@ -187,7 +224,14 @@ def classify(headline: str, analyzer: SentimentIntensityAnalyzer, source: str = 
     return "neutral", flags
 
 
-def fetch_one(session: requests.Session, brand: str, analyzer, date: str, company_domains: dict[str, set[str]]) -> list[dict]:
+def fetch_one(
+    session: requests.Session,
+    brand: str,
+    analyzer,
+    date: str,
+    company_domains: dict[str, set[str]],
+    company_industries: dict[str, str],
+) -> list[dict]:
     url = google_news_rss(brand)
     
     r = session.get(url, timeout=15)
@@ -214,7 +258,14 @@ def fetch_one(session: requests.Session, brand: str, analyzer, date: str, compan
         source = (item.source.text or "").strip() if item.source else ""
         raw_desc = (item.description.text or "").strip() if item.description else ""
         snippet = BeautifulSoup(raw_desc, "html.parser").get_text(" ", strip=True) if raw_desc else ""
-        sent, flags = classify(title, analyzer, source, link, snippet)
+        sent, flags = classify(
+            title,
+            analyzer,
+            source,
+            link,
+            snippet,
+            industry=company_industries.get(brand, ""),
+        )
         finance_routine = flags.get("is_finance", False)
         finance_routine = finance_routine or is_financial_routine(title, snippet=snippet, url=link, source=source)
         control_class = "controlled" if classify_control(
@@ -371,6 +422,7 @@ def main():
     try:
         brands = load_companies_from_roster(storage, args.roster)
         company_domains = load_roster_domains(storage, args.roster)
+        company_industries = load_company_industries(storage, args.roster)
     except Exception as e:
         print(f"❌ FATAL: {e}")
         sys.exit(1)
@@ -399,7 +451,7 @@ def main():
         brand = brands[i]
         print(f"[{i + 1}/{len(brands)}] {brand}")
         try:
-            rows = fetch_one(session, brand, analyzer, date, company_domains)
+            rows = fetch_one(session, brand, analyzer, date, company_domains, company_industries)
             all_rows.extend(rows)
         except Exception as e:
             print(f"  ⚠️ Error fetching {brand}: {e}")

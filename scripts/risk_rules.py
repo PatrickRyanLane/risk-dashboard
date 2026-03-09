@@ -37,7 +37,7 @@ FINANCE_SOURCES = {
     "seekingalpha.com", "thefly.com", "barrons.com", "wsj.com",
     "investorplace.com", "nasdaq.com", "foolcdn.com",
     "primaryignition.com", "tradingview.com", "marketscreener.com",
-    "gurufocus.com"
+    "gurufocus.com", "tradersunion.com", "marketbeat.com"
 }
 # Broad source-level override; remove if this forces too many unrelated negatives.
 FORCE_NEGATIVE_SOURCE_DOMAINS = {
@@ -74,12 +74,20 @@ SOCIAL_BYLINE_PLATFORM_PATTERNS = {
 }
 
 BRAND_NEUTRALIZE_TITLE_TERMS = [
+    # Broad finance phrasing; remove/narrow if this suppresses too many legit risk stories.
+    r"\breport\b",
+    r"\bsec\s+10[- ]k(?:\s+report)?\b",
+    r"\b10[- ]k\s+report\b",
+    r"\bq[1-4]\b",
+    r"\boverweight\b",
     r"\bgrand\b",
     r"\bdiamond\b",
+    r"\bhard\s+rock\b",
     r"\bsell\b",
     r"\bsells?\s+\d[\d,]*\s+shares?\b",
     r"\bsells?\s+shares?\b",
     r"\blow\b",
+    r"\blow(?:er|ered|est)\b",
     r"\bdream\b",
     r"\bdarling\b",
     r"\bwells\b",
@@ -90,17 +98,25 @@ BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\brate\s+cut\b",
     r"\brates?\s+(drop|drops|dropped|fall|falls|fell)\b",
     r"\b(drop|drops|dropped|fall|falls|fell)\s+in\s+rates?\b",
+    r"\b(?:fall|fell|falling)\b",
+    r"\bdrop(?:ped|ping|s)?\b",
     r"\bone\s+stop\s+shop\b",
+    r"\bstops\b",
     r"\bfuneral\b",
+    r"\bobituary\b",
     r"\bcremation\b",
     r"\bcemetery\b",
     r"\blimited\b",
     r"\bno\s+organic\b",
     r"\brob\b",
-    r"\blower\b",
     r"\benergy\b",
     r"\brebel\b",
     r"\bpay\b",
+    r"\bhow\s+much\b",
+    r"\bwar\b",
+    r"\btrials\b",
+    r"\bnames\b",
+    r"\bcancer\b",
     r"\bcompensation\b",
     r"\bpopular\s+comment(s)?\b",
     r"\bshare(s|d|ing)?\b",
@@ -113,30 +129,47 @@ BRAND_NEUTRALIZE_TITLE_RE = re.compile("|".join(BRAND_NEUTRALIZE_TITLE_TERMS), f
 
 BRAND_LEGAL_TROUBLE_TERMS = [
     r"\blawsuit(s)?\b", r"\bsued\b", r"\bsuing\b", r"\blegal\b",
+    r"\billegal(?:ly)?\b",
+    r"\bdefendant(?:s)?\b",
+    r"\bcourt(?:s)?\b",
+    r"\balleg(?:e|es|ed|edly|ing|ation|ations)\b",
+    r"\bsu(?:e|es|ed|ing)\b",
+    r"\bchapter\s+11\b",
+    r"\bdeposition(?:s)?\b",
+    r"\bsuit(?:s)?\b",
+    r"\bunder\s+fire\b",
     # Broad legal-context terms: keep for now; remove/narrow if false positives increase.
     r"\bsettlement(s)?\b", r"\bsettl(?:e|es|ed|ing)\b", r"\bfine(d)?\b", r"\bfine(?:d|s|ing)?\b", r"\bclass[- ]action\b",
     r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
     r"\battorney\s+general\b",
+    r"\bregulator(?:s|y)\b",
+    r"\bdeceptive(?:ly)?\b",
     r"\bantitrust\b", r"\bban(s|ned)?\b",
+    r"\bstrike(?:s|d|ing)?\b",
+    # Broad terms intentionally enabled for recall; remove/narrow if they over-force negatives.
+    r"\border(?:s|ed)?\b", r"\bclos(?:e|ed|ure|ures|ing)\b",
     r"\btone[- ]deaf\b",
     r"\binvestigat(?:e|es|ed|ing|ion|ions)\b",
     r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
     # Broad cyber terms: keep for recall; remove/narrow if they over-force negatives.
-    r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bexpos(?:e|es|ed|ing)\b",
+    r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bexpos(?:e|es|ed|ing)\b", r"\bransomware\b",
     r"\bleak(?:ed|s|ing)?\b",
-    r"\brecall(s|ed)?\b",
-    r"\blayoff(s)?\b",
+    r"\brecall(?:s|ed|ing)?\b",
+    r"\blayoff(s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
     r"\bboycott(?:ing|ed|s)?\b",
     r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
-    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b",
-    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\boust(er|ed|ing|s)?\b",
+    r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bstep(?:s|ped|ping)?\s+down\b",
+    r"\bstep(?:s|ped|ping)?\s+aside\b",
+    r"\bprob(?:e|ed|es|ing)\b", r"\binvestigation(s)?\b",
     r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
-    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
+    r"\btrial\b", r"\bguilty\b", r"\bconvicted\b",
+    r"\bindict(?:s|ed|ment|ments)?\b",
     r"\bsanction(s|ed)?\b", r"\bpenalt(y|ies)\b",
     r"\bfraud\b", r"\bembezzl(e|ement)\b", r"\baccused\b", r"\bcommitted\b",
     r"\bdivorce\b", r"\bbankrupt(cy|cies)\b", r"\bapologizes\b", r"\bapology\b",
     r"\bepstein\b", r"\bghislaine\b", r"\bmaxwell\b",
-    r"\bheadwinds\b", r"\bcontroversy\b", r"\bfallout\b",
+    r"\bheadwinds\b", r"\bcontroversy\b", r"\bfallout\b", r"\bbacklash\b",
     r"\bcancel(s|ed|ing|led|ling)?\b",
     r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
     r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
@@ -147,6 +180,13 @@ BRAND_LEGAL_TROUBLE_TERMS = [
 BRAND_LEGAL_TROUBLE_RE = re.compile("|".join(BRAND_LEGAL_TROUBLE_TERMS), flags=re.IGNORECASE)
 
 CEO_NEUTRALIZE_TITLE_TERMS = [
+    # Broad finance phrasing; remove/narrow if this suppresses too many legit risk stories.
+    r"\breport\b",
+    r"\bsec\s+10[- ]k(?:\s+report)?\b",
+    r"\b10[- ]k\s+report\b",
+    r"\bq[1-4]\b",
+    r"\boverweight\b",
+    r"\bhard\s+rock\b",
     r"\bflees\b",
     r"\bsavage\b",
     r"\brob\b",
@@ -156,12 +196,21 @@ CEO_NEUTRALIZE_TITLE_TERMS = [
     r"\bmad\s+money\b",
     r"\brates?\s+(drop|drops|dropped|fall|falls|fell)\b",
     r"\b(drop|drops|dropped|fall|falls|fell)\s+in\s+rates?\b",
+    r"\b(?:fall|fell|falling)\b",
+    r"\bdrop(?:ped|ping|s)?\b",
     r"\bno\s+organic\b",
     r"\brob\b",
-    r"\blower\b",
+    r"\blow(?:er|ered|est)\b",
     r"\benergy\b",
     r"\brebel\b",
     r"\bpay\b",
+    r"\bhow\s+much\b",
+    r"\bwar\b",
+    r"\btrials\b",
+    r"\bstops\b",
+    r"\bnames\b",
+    r"\bobituary\b",
+    r"\bcancer\b",
     r"\bcompensation\b",
     r"\bnet\s+worth\b",
     r"\bpopular\s+comment(s)?\b",
@@ -176,25 +225,64 @@ CEO_NEUTRALIZE_TITLE_RE = re.compile("|".join(CEO_NEUTRALIZE_TITLE_TERMS), flags
 CEO_ALWAYS_NEGATIVE_TERMS = [
     r"\bmandate\b",
     r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
-    r"\boust(er|ed|ing|s)?\b", r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bremoved\b",
+    r"\boust(er|ed|ing|s)?\b",
+    r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bstep(?:s|ped|ping)?\s+down\b",
+    r"\bstep(?:s|ped|ping)?\s+aside\b",
+    r"\bremoved\b",
     r"\bstill\b", r"\bturnaround\b",
     r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b",
     r"\bapologizes\b", r"\bapology\b", r"\baware\b", r"\bepstein\b",
+    r"\billegal(?:ly)?\b", r"\bdefendant(?:s)?\b", r"\bcourt(?:s)?\b",
+    r"\balleg(?:e|es|ed|edly|ing|ation|ations)\b", r"\bsu(?:e|es|ed|ing)\b",
+    r"\bchapter\s+11\b", r"\bdeposition(?:s)?\b", r"\bsuit(?:s)?\b",
+    r"\bunder\s+fire\b", r"\bregulator(?:s|y)\b", r"\bdeceptive(?:ly)?\b",
     r"\bloss\b", r"\bdivorce\b", r"\bbankrupt(cy|cies)\b",
     r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
+    r"\bransomware\b",
     r"\bunion\s+buster\b",
+    r"\bstrike(?:s|d|ing)?\b",
+    # Broad terms intentionally enabled for recall; remove/narrow if they over-force negatives.
+    r"\border(?:s|ed)?\b", r"\bclos(?:e|ed|ure|ures|ing)\b",
     r"\bfired\b", r"\bfiring\b", r"\bfires\b",
     r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
     r"\bplummeting\b",
-    r"\bprobe(s|d)?\b", r"\binvestigation(s)?\b",
+    r"\bprob(?:e|ed|es|ing)\b", r"\binvestigation(s)?\b",
     r"\bcomplaint(s)?\b", r"\bunlawfully\b", r"\bdisclos(ed|e|ing)?\b",
-    r"\btrial(s)?\b", r"\bguilty\b", r"\bconvicted\b",
+    r"\btrial\b", r"\bguilty\b", r"\bconvicted\b",
+    r"\bindict(?:s|ed|ment|ments)?\b",
     r"\bghislaine\b", r"\bmaxwell\b", r"\bfallout\b",
+    r"\bbacklash\b",
+    r"\blayoff(s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
+    r"\brecall(?:s|ed|ing)?\b",
     r"\bcancel(s|ed|ing|led|ling)?\b",
     r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
     r"\bpressure\b", r"\bblast\b", r"\bno[- ]confidence\b",
 ]
 CEO_ALWAYS_NEGATIVE_RE = re.compile("|".join(CEO_ALWAYS_NEGATIVE_TERMS), flags=re.IGNORECASE)
+
+# If a company is in legal services, avoid force-negativizing on generic legal
+# vocabulary (lawsuit, court, defendant, etc.). Keep clearly non-legal crisis
+# signals (breach, ransomware, layoffs, fraud, bankruptcy, etc.) enabled.
+LEGAL_INDUSTRY_RE = re.compile(r"\blegal\b", flags=re.IGNORECASE)
+LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_TERMS = [
+    r"\bdata leaks?\b", r"\bdata breach(?:es)?\b", r"\bsecurity breach(?:es)?\b", r"\bbreach(?:es)?\b",
+    r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bransomware\b",
+    r"\bleak(?:ed|s|ing)?\b",
+    r"\brecall(?:s|ed|ing)?\b",
+    r"\blayoff(?:s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
+    r"\bboycott(?:ing|ed|s)?\b",
+    r"\bfraud\b", r"\bembezzl(?:e|ement)\b",
+    r"\bchapter\s+11\b", r"\bbankrupt(?:cy|cies)?\b",
+    r"\bstrike(?:s|d|ing)?\b",
+    r"\bbacklash\b",
+    r"\bstep(?:s|ped|ping)?\s+down\b", r"\bstep(?:s|ped|ping)?\s+aside\b",
+    r"\bresign(?:s|ed|ing|ation)?\b", r"\bquit(?:s|ting|ted)?\b",
+    r"\bfired\b", r"\bfiring\b", r"\bfires\b", r"\bremoved\b",
+]
+LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE = re.compile(
+    "|".join(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_TERMS),
+    flags=re.IGNORECASE,
+)
 
 NARRATIVE_RULE_VERSION = "v2"
 NARRATIVE_MIN_NEG_TOP_STORIES = 2
@@ -343,11 +431,25 @@ def _is_force_negative_source(url: str = "", source: str = "") -> bool:
     return False
 
 
-def title_mentions_legal_trouble(title: str, snippet: str = "", url: str = "", source: str = "") -> bool:
+def _is_legal_industry(industry: str = "") -> bool:
+    return bool(LEGAL_INDUSTRY_RE.search(str(industry or "")))
+
+
+def title_mentions_legal_trouble(
+    title: str,
+    snippet: str = "",
+    url: str = "",
+    source: str = "",
+    industry: str = "",
+) -> bool:
     if _is_force_negative_source(url=url, source=source):
         return True
     hay = f"{title} {snippet}".strip()
-    return bool(BRAND_LEGAL_TROUBLE_RE.search(hay))
+    if not BRAND_LEGAL_TROUBLE_RE.search(hay):
+        return False
+    if _is_legal_industry(industry):
+        return bool(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE.search(hay))
+    return True
 
 
 def strip_neutral_terms_ceo(title: str) -> str:
@@ -361,11 +463,21 @@ def should_neutralize_ceo_title(title: str) -> bool:
     return bool(CEO_NEUTRALIZE_TITLE_RE.search(str(title or "")))
 
 
-def should_force_negative_ceo(title: str, snippet: str = "", url: str = "", source: str = "") -> bool:
-    if title_mentions_legal_trouble(title, snippet, url=url, source=source):
+def should_force_negative_ceo(
+    title: str,
+    snippet: str = "",
+    url: str = "",
+    source: str = "",
+    industry: str = "",
+) -> bool:
+    if title_mentions_legal_trouble(title, snippet, url=url, source=source, industry=industry):
         return True
     hay = f"{title} {snippet}".strip()
-    return bool(CEO_ALWAYS_NEGATIVE_RE.search(hay))
+    if not CEO_ALWAYS_NEGATIVE_RE.search(hay):
+        return False
+    if _is_legal_industry(industry):
+        return bool(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE.search(hay))
+    return True
 
 
 def hostname(url: str) -> str:
@@ -469,6 +581,54 @@ def _instagram_handle_from_path(path: str) -> str:
     if first in reserved:
         return ""
     return first
+
+
+def _facebook_handle_from_path(path: str) -> str:
+    if not path:
+        return ""
+    segments = [seg for seg in path.strip("/").split("/") if seg]
+    if not segments:
+        return ""
+    first = segments[0].lstrip("@").lower()
+    reserved = {
+        "pages", "watch", "share", "sharer", "photo", "photos", "video", "videos",
+        "events", "groups", "marketplace", "login", "help", "privacy", "policies",
+    }
+    if first in reserved:
+        return ""
+    return first
+
+
+def _is_facebook_company_handle(company: str, url: str) -> bool:
+    if not company or not url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if not _host_matches_social("facebook.com", host):
+        return False
+    handle_token = _norm_token(_facebook_handle_from_path(parsed.path or ""))
+    if not handle_token:
+        return False
+    for token in _company_handle_tokens(company):
+        if token and (token in handle_token or handle_token in token):
+            return True
+    return False
+
+
+def _is_facebook_person_handle(name: str, url: str) -> bool:
+    if not name or not url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().replace("www.", "")
+    if not _host_matches_social("facebook.com", host):
+        return False
+    handle_token = _norm_token(_facebook_handle_from_path(parsed.path or ""))
+    if not handle_token:
+        return False
+    for token in _person_handle_tokens(name):
+        if token and (token in handle_token or handle_token in token):
+            return True
+    return False
 
 
 def _is_instagram_company_handle(company: str, url: str) -> bool:
@@ -591,12 +751,20 @@ def _is_linkedin_company_post(company: str, url: str) -> bool:
     slug = slug.split("/", 1)[0] if slug else ""
     if not slug:
         return False
-    handle = slug.split("_", 1)[0] if "_" in slug else slug
-    brand_token = _norm_token(company)
+    # LinkedIn controlled post format is typically:
+    #   /posts/<brand-ish-handle>_<post-id...>
+    # Require the company token to be in the handle segment that immediately
+    # precedes the first underscore (strict post-handle gate).
+    if "_" not in slug:
+        return False
+    handle = slug.split("_", 1)[0]
     handle_token = _norm_token(handle)
-    if brand_token and brand_token in handle_token:
-        return True
-    return _linkedin_slug_matches_company(company, handle)
+    if not handle_token:
+        return False
+    for token in _company_handle_tokens(company):
+        if token and handle_token.endswith(token):
+            return True
+    return False
 
 def _linkedin_slug_matches_company(company: str, slug: str) -> bool:
     if not company or not slug:
@@ -731,18 +899,16 @@ def classify_control(
         if person_name and _is_x_person_handle(person_name, url):
             return True
     if is_facebook:
+        if _is_facebook_company_handle(company, url):
+            return True
+        if entity_type == "ceo" and person_name and _is_facebook_person_handle(person_name, url):
+            return True
         if any(seg in path for seg in ("/posts/", "/photos/", "/videos/")):
             return social_byline_controlled
-        return True
+        return False
     if is_instagram:
         if "/reels/" in path or "/reel/" in path:
-            # Reels are only controlled when snippet attribution matches the brand.
-            if social_byline_controlled:
-                return True
-            if _is_instagram_company_handle(company, url):
-                return True
-            if entity_type == "ceo" and person_name and _is_instagram_person_handle(person_name, url):
-                return True
+            # Always treat Instagram reels as uncontrolled.
             return False
         if "/p/" in path:
             return social_byline_controlled

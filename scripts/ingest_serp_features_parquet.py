@@ -159,11 +159,11 @@ def _cache_parquet(url: str, date_str: str, entity_type: str) -> str:
     print(f"Downloaded parquet bytes: {os.path.getsize(cache_path)}")
     return cache_path
 
-def load_company_map(cur) -> Dict[str, Tuple[str, str]]:
-    cur.execute("select id, name from companies")
+def load_company_map(cur) -> Dict[str, Tuple[str, str, str]]:
+    cur.execute("select id, name, coalesce(sector, '') as industry from companies")
     out = {}
-    for cid, name in cur.fetchall():
-        out[normalize_name(name)] = (str(cid), name)
+    for cid, name, industry in cur.fetchall():
+        out[normalize_name(name)] = (str(cid), name, str(industry or ""))
     return out
 
 
@@ -179,7 +179,7 @@ def load_ceo_map(cur) -> Dict[Tuple[str, str], str]:
     return out
 
 
-def match_company(query: str, company_map: Dict[str, Tuple[str, str]]):
+def match_company(query: str, company_map: Dict[str, Tuple[str, str, str]]):
     key = normalize_name(query)
     if not key:
         return None
@@ -195,18 +195,35 @@ def match_company(query: str, company_map: Dict[str, Tuple[str, str]]):
     return None
 
 
-def match_ceo(query: str, company_map: Dict[str, Tuple[str, str]], ceo_map: Dict[Tuple[str, str], str]):
+def match_ceo(
+    query: str,
+    company_map: Dict[str, Tuple[str, str, str]],
+    ceo_map: Dict[Tuple[str, str], str],
+):
     q = query.strip()
     q_lower = q.lower()
     # Match company by longest suffix
     candidates = sorted(company_map.items(), key=lambda kv: len(kv[0]), reverse=True)
-    for norm_name, (company_id, company_name) in candidates:
+    for norm_name, (company_id, company_name, _industry) in candidates:
         if q_lower.endswith(norm_name.lower()) or q_lower.endswith(company_name.lower()):
             ceo_part = q[: -len(company_name)].strip()
             ceo_key = normalize_name(ceo_part)
             ceo_id = ceo_map.get((ceo_key, company_id))
             return company_id, company_name, ceo_id, ceo_part
     return None, None, None, q
+
+
+def company_industry_from_name(
+    company_name: str,
+    company_map: Dict[str, Tuple[str, str, str]],
+) -> str:
+    key = normalize_name(company_name)
+    if not key:
+        return ""
+    match = company_map.get(key)
+    if not match:
+        return ""
+    return str(match[2] or "")
 
 
 def load_company_domains(cur) -> Dict[str, Set[str]]:
@@ -419,7 +436,7 @@ def load_perspectives_sentiment(path_or_url: str):
     return out
 
 
-def load_top_stories_sentiment(path_or_url: str):
+def load_top_stories_sentiment(path_or_url: str, entity_type: str, company_map, ceo_map):
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
     df = con.execute(f"select query, raw_json from read_parquet('{path_or_url}')").fetch_df()
@@ -429,6 +446,14 @@ def load_top_stories_sentiment(path_or_url: str):
         query = str(row.get("query") or "").strip()
         if not query:
             continue
+        industry = ""
+        if entity_type == "brand":
+            match = match_company(query, company_map)
+            if match:
+                industry = str(match[2] or "")
+        else:
+            _company_id, company_name, _ceo_id, _ceo_name = match_ceo(query, company_map, ceo_map)
+            industry = company_industry_from_name(company_name or "", company_map)
         raw = row.get("raw_json")
         if not raw:
             continue
@@ -445,7 +470,14 @@ def load_top_stories_sentiment(path_or_url: str):
             snippet = str(item.get("snippet") or "")
             link = str(item.get("link") or "")
             source = str(item.get("source") or "")
-            label, _ = _sentiment_for_item(analyzer, title, snippet, link, source)
+            label, _ = _sentiment_for_item(
+                analyzer,
+                title,
+                snippet,
+                link,
+                source,
+                industry=industry,
+            )
             if label == "positive":
                 pos += 1
             elif label == "negative":
@@ -462,8 +494,15 @@ def _item_hash(url: str, title: str, snippet: str, feature_type: str, position: 
     return hashlib.md5(base.encode("utf-8")).hexdigest()
 
 
-def _sentiment_for_item(analyzer: SentimentIntensityAnalyzer, title: str, snippet: str, url: str, source: str):
-    if title_mentions_legal_trouble(title, snippet, url=url, source=source):
+def _sentiment_for_item(
+    analyzer: SentimentIntensityAnalyzer,
+    title: str,
+    snippet: str,
+    url: str,
+    source: str,
+    industry: str = "",
+):
+    if title_mentions_legal_trouble(title, snippet, url=url, source=source, industry=industry):
         return "negative", False
     finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
     if finance_routine:
@@ -506,7 +545,7 @@ def load_feature_items(
             match = match_company(query, company_map)
             if not match:
                 continue
-            entity_id, entity_name = match
+            entity_id, entity_name, industry = match
             company_name = entity_name
         else:
             company_id, company_name, ceo_id, ceo_name = match_ceo(query, company_map, ceo_map)
@@ -514,6 +553,7 @@ def load_feature_items(
                 continue
             entity_id = ceo_id
             entity_name = ceo_name or query
+            industry = company_industry_from_name(company_name or "", company_map)
 
         data = obj.get("data", {}) or {}
 
@@ -601,7 +641,12 @@ def load_feature_items(
             domain = _hostname(url) if url else ""
 
             sentiment_label, finance_routine = _sentiment_for_item(
-                analyzer, title, snippet, url, source
+                analyzer,
+                title,
+                snippet,
+                url,
+                source,
+                industry=industry,
             )
             control_class = None
             if url and company_name:
@@ -768,7 +813,7 @@ def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map
         if entity_type == "brand":
             match = match_company(query, company_map)
             if match:
-                entity_id, entity_name = match
+                entity_id, entity_name, _industry = match
             else:
                 entity_id, entity_name = None, query
         else:
@@ -881,7 +926,10 @@ def main() -> int:
         paa_sentiment = _step("load_paa_sentiment", lambda: load_paa_sentiment(local_path))
         videos_sentiment = _step("load_videos_sentiment", lambda: load_videos_sentiment(local_path))
         perspectives_sentiment = _step("load_perspectives_sentiment", lambda: load_perspectives_sentiment(local_path))
-        top_stories_sentiment = _step("load_top_stories_sentiment", lambda: load_top_stories_sentiment(local_path))
+        top_stories_sentiment = _step(
+            "load_top_stories_sentiment",
+            lambda: load_top_stories_sentiment(local_path, args.entity_type, company_map, ceo_map),
+        )
         rows = _step(
             "build_feature_rows",
             lambda: build_feature_rows(

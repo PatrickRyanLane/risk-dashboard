@@ -305,6 +305,40 @@ def load_roster_companies(storage, path: str = MAIN_ROSTER_PATH) -> list[str]:
     return companies
 
 
+def load_company_industries(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    try:
+        if storage:
+            if not storage.file_exists(path):
+                print(f"[WARN] Roster not found in Cloud Storage at {path}")
+                return out
+            df = storage.read_csv(path)
+        else:
+            roster_file = Path(path)
+            if not roster_file.exists():
+                print(f"[WARN] Roster not found at {roster_file}")
+                return out
+            df = pd.read_csv(roster_file, encoding="utf-8-sig")
+
+        cols = {c.strip().lower(): c for c in df.columns}
+        company_col = cols.get("company")
+        industry_col = cols.get("industry") or cols.get("sector")
+        if not company_col or not industry_col:
+            return out
+
+        for _, row in df.iterrows():
+            company = str(row.get(company_col) or "").strip()
+            if not company or company.lower() == "nan":
+                continue
+            industry = str(row.get(industry_col) or "").strip()
+            if not industry or industry.lower() == "nan":
+                continue
+            out[company] = industry
+    except Exception as e:
+        print(f"[WARN] Failed reading company industries: {e}")
+    return out
+
+
 def load_company_aliases(storage, path: str = MAIN_ROSTER_PATH) -> Dict[str, str]:
     alias_map: Dict[str, str] = {}
     try:
@@ -373,6 +407,7 @@ def process_for_date(
 
     company_domains = load_roster_domains(storage, roster_path)
     roster_companies = load_roster_companies(storage, roster_path)
+    company_industries = load_company_industries(storage, roster_path)
     company_aliases = load_company_aliases(storage, roster_path)
     company_lookup = {normalize_name(name): name for name in roster_companies}
     company_lookup.update(company_aliases)
@@ -486,6 +521,7 @@ def process_for_date(
             snippet=snippet,
         )
         finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
+        industry = company_industries.get(company, "")
 
         # --- Sentiment rules (deterministic order) ---
         host = _hostname(url)
@@ -497,7 +533,7 @@ def process_for_date(
             label = "negative"
             forced_reason = "reddit"
         # 2) Force negative for Legal/Trouble terms
-        elif title_mentions_legal_trouble(title, snippet, url=url, source=source):
+        elif title_mentions_legal_trouble(title, snippet, url=url, source=source, industry=industry):
             label = "negative"
             forced_reason = "legal"
         # 3) Neutralize routine financial coverage

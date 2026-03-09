@@ -84,6 +84,38 @@ def load_roster_domains(storage, roster_path: str) -> dict[str, set[str]]:
     return company_domains
 
 
+def load_company_industries(storage, roster_path: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        if storage:
+            if not storage.file_exists(roster_path):
+                return out
+            df = storage.read_csv(roster_path)
+        else:
+            roster_file = Path(roster_path)
+            if not roster_file.exists():
+                return out
+            df = pd.read_csv(roster_file, encoding="utf-8-sig")
+
+        cols = {c.strip().lower(): c for c in df.columns}
+        company_col = cols.get("company")
+        industry_col = cols.get("industry") or cols.get("sector")
+        if not company_col or not industry_col:
+            return out
+
+        for _, row in df.iterrows():
+            company = str(row.get(company_col) or "").strip()
+            if not company or company.lower() == "nan":
+                continue
+            industry = str(row.get(industry_col) or "").strip()
+            if not industry or industry.lower() == "nan":
+                continue
+            out[company] = industry
+    except Exception as e:
+        print(f"[WARN] Failed reading company industries: {e}")
+    return out
+
+
 # Paths
 BASE = Path(__file__).parent.parent
 MAIN_ROSTER = "rosters/main-roster.csv"
@@ -123,7 +155,14 @@ def fetch_rss(session: requests.Session, query: str) -> feedparser.FeedParserDic
     return feedparser.parse(resp.content)
 
 
-def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "", url: str = "", snippet: str = ""):
+def classify(
+    title: str,
+    analyzer: SentimentIntensityAnalyzer,
+    source: str = "",
+    url: str = "",
+    snippet: str = "",
+    industry: str = "",
+):
     """
     Classify sentiment with multi-stage filtering.
     """
@@ -142,7 +181,7 @@ def classify(title: str, analyzer: SentimentIntensityAnalyzer, source: str = "",
         return "negative", flags
 
     # 2. Force NEGATIVE for CEO/legal trouble terms
-    if should_force_negative_ceo(title, snippet, url=url, source=source):
+    if should_force_negative_ceo(title, snippet, url=url, source=source, industry=industry):
         flags["is_forced"] = True
         flags["forced_reason"] = "ceo_terms"
         return "negative", flags
@@ -197,7 +236,15 @@ def extract_source(entry) -> str:
         return ""
 
 
-def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, company: str, analyzer, company_domains: dict[str, set[str]]) -> list[dict]:
+def build_articles_for_alias(
+    session: requests.Session,
+    alias: str,
+    ceo: str,
+    company: str,
+    analyzer,
+    company_domains: dict[str, set[str]],
+    company_industries: dict[str, str],
+) -> list[dict]:
     try:
         feed = fetch_rss(session, alias)
     except Exception as e:
@@ -214,7 +261,14 @@ def build_articles_for_alias(session: requests.Session, alias: str, ceo: str, co
         if not title:
             continue
             
-        sent, flags = classify(title, analyzer, source, link, snippet)
+        sent, flags = classify(
+            title,
+            analyzer,
+            source,
+            link,
+            snippet,
+            industry=company_industries.get(company, ""),
+        )
         finance_routine = flags.get("is_finance", False)
         finance_routine = finance_routine or is_financial_routine(title, snippet=snippet, url=link, source=source)
         control_class = "controlled" if classify_control(
@@ -389,6 +443,7 @@ def main() -> int:
     try:
         roster = read_roster(storage, args.roster)
         company_domains = load_roster_domains(storage, args.roster)
+        company_industries = load_company_industries(storage, args.roster)
     except Exception as e:
         print(f"❌ FATAL: {e}")
         return 1
@@ -419,7 +474,15 @@ def main() -> int:
         if not alias: continue
             
         print(f"[{i + 1}/{len(roster)}] {alias}")
-        rows = build_articles_for_alias(session, alias, row["ceo"], row["company"], analyzer, company_domains)
+        rows = build_articles_for_alias(
+            session,
+            alias,
+            row["ceo"],
+            row["company"],
+            analyzer,
+            company_domains,
+            company_industries,
+        )
         all_rows.extend(rows)
         
         if (i + 1) % args.checkpoint_interval == 0:
