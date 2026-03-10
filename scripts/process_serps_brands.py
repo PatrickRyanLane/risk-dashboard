@@ -27,6 +27,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
+from url_utils import resolve_url
 from risk_rules import (
     classify_control,
     is_financial_routine,
@@ -200,7 +201,7 @@ def fetch_parquet_with_metrics(path_or_url: str) -> Tuple[pd.DataFrame | None, D
 # Domain normalization
 def _hostname(url: str) -> str:
     try:
-        host = (urlparse(url).hostname or "").lower()
+        host = (urlparse(resolve_url(url or "")).hostname or "").lower()
         return host.replace("www.", "")
     except Exception:
         return ""

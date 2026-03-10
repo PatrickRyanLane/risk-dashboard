@@ -31,6 +31,7 @@ import requests
 from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from url_utils import resolve_url
 from risk_rules import (
     classify_control,
     classify_narrative_tags,
@@ -81,7 +82,7 @@ def normalize_name(name: str) -> str:
 def _hostname(url: str) -> str:
     try:
         from urllib.parse import urlparse
-        host = (urlparse(url).hostname or "").lower()
+        host = (urlparse(resolve_url(url or "")).hostname or "").lower()
         return host.replace("www.", "")
     except Exception:
         return ""

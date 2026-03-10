@@ -1,6 +1,8 @@
 import re
 from urllib.parse import urlparse
 
+from url_utils import resolve_url
+
 ALWAYS_CONTROLLED_DOMAINS = {
     "facebook.com",
     "instagram.com",
@@ -482,7 +484,7 @@ def should_force_negative_ceo(
 
 def hostname(url: str) -> str:
     try:
-        host = (urlparse(url or "").hostname or "").lower()
+        host = (urlparse(resolve_url(url or "")).hostname or "").lower()
         return host.replace("www.", "")
     except Exception:
         return ""
@@ -873,6 +875,7 @@ def classify_control(
     publisher: str | None = None,
     snippet: str | None = None,
 ) -> bool:
+    url = resolve_url(url or "")
     if _publisher_matches_company(company, publisher or ""):
         return True
     host = hostname(url)

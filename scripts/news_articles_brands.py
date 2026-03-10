@@ -22,6 +22,7 @@ from bs4 import BeautifulSoup
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from storage_utils import CloudStorageManager
+from url_utils import resolve_url
 from llm_utils import is_uncertain
 from db_writer import upsert_articles_mentions
 from risk_rules import (
@@ -108,7 +109,7 @@ def load_company_industries(storage, roster_path: str) -> dict[str, str]:
 
 def _hostname(url: str) -> str:
     try:
-        host = (urllib.parse.urlparse(url or "").hostname or "").lower()
+        host = (urllib.parse.urlparse(resolve_url(url or "")).hostname or "").lower()
         return host.replace("www.", "")
     except Exception:
         return ""

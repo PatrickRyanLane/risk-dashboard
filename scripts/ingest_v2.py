@@ -583,12 +583,6 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
             rank = None
 
         canonical = normalize_url(url)
-        domain = ''
-        try:
-            domain = (urlparse(url).hostname or '').replace('www.', '')
-        except Exception:
-            domain = ''
-
         sentiment = (row.get('sentiment') or '').strip().lower() or None
         finance_routine = parse_optional_bool(row.get('finance_routine'))
         if finance_routine is None:
@@ -606,6 +600,11 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
             llm_reason,
         ) = parse_llm_fields(row)
         control_class = parse_control_class(row.get('controlled'))
+        domain = ''
+        try:
+            domain = (urlparse(canonical).hostname or '').replace('www.', '')
+        except Exception:
+            domain = ''
 
         if entity_type == 'company':
             company_id = company_map.get(company)
