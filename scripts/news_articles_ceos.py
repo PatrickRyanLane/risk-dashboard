@@ -13,6 +13,7 @@ from __future__ import annotations
 import os, time, html, sys, argparse, json
 from pathlib import Path
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus, urlparse
 
 import pandas as pd
@@ -129,6 +130,33 @@ RSS_TMPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:
 MAX_PER_ALIAS = int(os.getenv("ARTICLES_MAX_PER_ALIAS", "25"))
 SLEEP_SEC = float(os.getenv("ARTICLES_SLEEP_SEC", "0.25"))
 DEFAULT_BATCH_SIZE = int(os.getenv("ARTICLES_BATCH_SIZE", "100"))
+
+
+def validate_live_rss_target_date(date_str: str, allow_historical_rss: bool = False) -> None:
+    target = datetime.strptime(date_str, "%Y-%m-%d").date()
+    today_utc = datetime.now(timezone.utc).date()
+    if target > today_utc:
+        raise SystemExit(f"Refusing to fetch future article date {date_str}.")
+    if target < today_utc and not allow_historical_rss:
+        raise SystemExit(
+            "Refusing live RSS fetch for a historical article date. "
+            "Use historical CSV backfill instead."
+        )
+
+
+def parse_rss_datetime(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        dt = parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat()
 
 def create_session() -> requests.Session:
     session = requests.Session()
@@ -301,6 +329,7 @@ def build_articles_for_alias(
             "title": title,
             "url": link,
             "source": source,
+            "published_at": parse_rss_datetime(entry.get("published") or entry.get("updated") or ""),
             "sentiment": sent,
             "controlled": control_class,
             "finance_routine": finance_routine,
@@ -425,9 +454,15 @@ def main() -> int:
     parser.add_argument("--checkpoint-interval", type=int, default=25, help="Checkpoint interval")
     parser.add_argument("--no-resume", action="store_true", help="Ignore checkpoint")
     parser.add_argument("--local", action="store_true", help="Use local storage")
+    parser.add_argument(
+        "--allow-historical-rss",
+        action="store_true",
+        help="Bypass the historical-date guard and fetch live RSS for an older date.",
+    )
     args = parser.parse_args()
     
     out_date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    validate_live_rss_target_date(out_date, allow_historical_rss=args.allow_historical_rss)
     output_path = f"{args.output_dir}/{out_date}-ceo-articles-modal.csv"
     checkpoint_path = f"{CHECKPOINT_DIR}/{out_date}-ceo-checkpoint.json"
     
@@ -497,7 +532,7 @@ def main() -> int:
     if end_index >= len(roster):
         print(f"✅ All {len(roster)} CEOs processed!")
         df = pd.DataFrame(all_rows) if all_rows else pd.DataFrame(
-            columns=["ceo", "company", "title", "url", "source", "sentiment", "controlled"]
+            columns=["ceo", "company", "title", "url", "source", "published_at", "sentiment", "controlled"]
         )
         # Dedupe
         df = df.drop_duplicates(subset=["ceo", "title", "url"]).reset_index(drop=True)

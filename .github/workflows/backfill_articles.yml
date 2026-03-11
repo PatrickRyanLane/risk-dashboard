@@ -10,6 +10,10 @@ on:
       end:
         description: "End date (YYYY-MM-DD, defaults to today)"
         required: false
+      data_dir:
+        description: "Historical article CSV location (local path or gs:// prefix)"
+        required: false
+        default: "gs://risk-dashboard/data"
 
 permissions:
   contents: read
@@ -45,87 +49,20 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Backfill brand articles (→ GCS + DB)
+      - name: Backfill articles from processed CSVs (→ DB)
         env:
           START: ${{ github.event.inputs.start }}
           ENDIN: ${{ github.event.inputs.end }}
+          DATA_DIR: ${{ github.event.inputs.data_dir }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import os, sys, subprocess, datetime as dt
-          start = os.environ["START"]
-          end = os.environ.get("ENDIN") or dt.date.today().isoformat()
-          bucket = os.environ.get("GCS_BUCKET", "risk-dashboard")
-          d = dt.date.fromisoformat(start)
-          end_d = dt.date.fromisoformat(end)
-          while d <= end_d:
-            s = d.isoformat()
-            print(f"[brand] {s}")
-            rc = subprocess.call([
-              sys.executable, "scripts/news_articles_brands.py",
-              "--date", s,
-              "--bucket", bucket,
-              "--batch-size", "1500"
-            ])
-            if rc != 0:
-              print(f"[brand][skip] {s} (non-fatal error)")
-            d += dt.timedelta(days=1)
-          PY
-
-      - name: Backfill CEO articles (→ GCS + DB)
-        env:
-          START: ${{ github.event.inputs.start }}
-          ENDIN: ${{ github.event.inputs.end }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import os, sys, subprocess, datetime as dt
-          start = os.environ["START"]
-          end = os.environ.get("ENDIN") or dt.date.today().isoformat()
-          bucket = os.environ.get("GCS_BUCKET", "risk-dashboard")
-          d = dt.date.fromisoformat(start)
-          end_d = dt.date.fromisoformat(end)
-          while d <= end_d:
-            s = d.isoformat()
-            print(f"[ceo] {s}")
-            rc = subprocess.call([
-              sys.executable, "scripts/news_articles_ceos.py",
-              "--date", s,
-              "--bucket", bucket,
-              "--batch-size", "1500"
-            ])
-            if rc != 0:
-              print(f"[ceo][skip] {s} (non-fatal error)")
-            d += dt.timedelta(days=1)
-          PY
-
-      - name: Backfill daily mentions (safety)
-        env:
-          START: ${{ github.event.inputs.start }}
-          ENDIN: ${{ github.event.inputs.end }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import os, sys, subprocess, datetime as dt
-          start = os.environ["START"]
-          end = os.environ.get("ENDIN") or dt.date.today().isoformat()
-          d = dt.date.fromisoformat(start)
-          end_d = dt.date.fromisoformat(end)
-          while d <= end_d:
-            s = d.isoformat()
-            print(f"[daily] {s}")
-            rc = subprocess.call([
-              sys.executable, "scripts/backfill_article_mentions_daily.py",
-              "--date", s,
-              "--entity-type", "both"
-            ])
-            if rc != 0:
-              print(f"[daily][skip] {s} (non-fatal error)")
-            d += dt.timedelta(days=1)
-          PY
+          END_DATE="${ENDIN:-$(date -u +%F)}"
+          python scripts/backfill_articles_from_processed_csv.py \
+            --data-dir "${DATA_DIR:-gs://$GCS_BUCKET/data}" \
+            --from "$START" \
+            --to "$END_DATE" \
+            --entity-type both
 
       - name: Refresh article daily counts MV
         env:
@@ -140,10 +77,11 @@ jobs:
         env:
           START_IN: ${{ github.event.inputs.start }}
           END_IN: ${{ github.event.inputs.end }}
+          DATA_DIR_IN: ${{ github.event.inputs.data_dir }}
         run: |
           START_DATE="${START_IN:-manual}"
           END_DATE="${END_IN:-$(date -u +%F)}"
           echo "### Backfill Articles Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "📅 **Range:** ${START_DATE} to ${END_DATE}" >> $GITHUB_STEP_SUMMARY
-          echo "☁️ **Bucket:** gs://$GCS_BUCKET" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Source:** ${DATA_DIR_IN:-gs://$GCS_BUCKET/data}" >> $GITHUB_STEP_SUMMARY

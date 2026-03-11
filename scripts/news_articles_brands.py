@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json, os, sys, time, urllib.parse
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -136,6 +137,33 @@ MAX_PER_ALIAS = int(os.getenv("ARTICLES_MAX_PER_ALIAS", "50"))
 SLEEP_SEC = float(os.getenv("ARTICLES_SLEEP_SEC", "0.25"))
 DEFAULT_BATCH_SIZE = int(os.getenv("ARTICLES_BATCH_SIZE", "100"))
 
+
+def validate_live_rss_target_date(date_str: str, allow_historical_rss: bool = False) -> None:
+    target = datetime.strptime(date_str, "%Y-%m-%d").date()
+    today_utc = datetime.now(timezone.utc).date()
+    if target > today_utc:
+        raise SystemExit(f"Refusing to fetch future article date {date_str}.")
+    if target < today_utc and not allow_historical_rss:
+        raise SystemExit(
+            "Refusing live RSS fetch for a historical article date. "
+            "Use historical CSV backfill instead."
+        )
+
+
+def parse_rss_datetime(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        dt = parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat()
+
 def create_session() -> requests.Session:
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
@@ -258,6 +286,8 @@ def fetch_one(
             
         source = (item.source.text or "").strip() if item.source else ""
         raw_desc = (item.description.text or "").strip() if item.description else ""
+        pub_date_tag = item.find("pubDate")
+        raw_pub_date = (pub_date_tag.text or "").strip() if pub_date_tag else ""
         snippet = BeautifulSoup(raw_desc, "html.parser").get_text(" ", strip=True) if raw_desc else ""
         sent, flags = classify(
             title,
@@ -297,6 +327,7 @@ def fetch_one(
             "url": link,
             "source": source,
             "date": date,
+            "published_at": parse_rss_datetime(raw_pub_date),
             "sentiment": sent,
             "controlled": control_class,
             "finance_routine": finance_routine,
@@ -405,9 +436,15 @@ def main():
     parser.add_argument("--checkpoint-interval", type=int, default=25, help="Checkpoint interval")
     parser.add_argument("--no-resume", action="store_true", help="Ignore checkpoint")
     parser.add_argument("--local", action="store_true", help="Use local file storage")
+    parser.add_argument(
+        "--allow-historical-rss",
+        action="store_true",
+        help="Bypass the historical-date guard and fetch live RSS for an older date.",
+    )
     args = parser.parse_args()
     
     date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    validate_live_rss_target_date(date, allow_historical_rss=args.allow_historical_rss)
     output_path = f"{args.output_dir}/{date}-brand-articles-modal.csv"
     checkpoint_path = f"{CHECKPOINT_DIR}/{date}-brand-checkpoint.json"
     
@@ -471,7 +508,7 @@ def main():
     if end_index >= len(brands):
         print(f"✅ All {len(brands)} brands processed!")
         df = pd.DataFrame(all_rows) if all_rows else pd.DataFrame(
-            columns=["company", "title", "url", "source", "date", "sentiment", "controlled"]
+            columns=["company", "title", "url", "source", "date", "published_at", "sentiment", "controlled"]
         )
         try:
             if storage:
