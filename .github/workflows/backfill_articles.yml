@@ -11,7 +11,7 @@ on:
         description: "End date (YYYY-MM-DD, defaults to today)"
         required: false
       data_dir:
-        description: "Historical article CSV location (local path or gs:// prefix)"
+        description: "Historical article CSV root or processed_articles folder (local path or gs:// prefix)"
         required: false
         default: "gs://risk-dashboard/data"
 

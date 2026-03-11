@@ -64,7 +64,18 @@ def open_text(path):
     return open(path, "r", encoding="utf-8", newline="")
 
 
+def normalize_data_dir(data_dir: str) -> str:
+    path = (data_dir or "").strip().rstrip("/")
+    if not path:
+        return path
+    suffix = "/processed_articles"
+    if path.endswith(suffix):
+        return path[: -len(suffix)]
+    return path
+
+
 def default_roster_path(data_dir):
+    data_dir = normalize_data_dir(data_dir)
     if data_dir.startswith("gs://"):
         bucket, _ = parse_gcs_path(data_dir)
         if not bucket:
@@ -75,6 +86,7 @@ def default_roster_path(data_dir):
 
 
 def build_expected_paths(data_dir, dstr, entity_type):
+    data_dir = normalize_data_dir(data_dir)
     items = []
     if entity_type in {"brand", "both"}:
         items.append((
@@ -95,6 +107,7 @@ def build_expected_paths(data_dir, dstr, entity_type):
 
 def main():
     args = parse_args()
+    args.data_dir = normalize_data_dir(args.data_dir)
     dates = resolve_dates(args)
     roster_path = args.roster_path or default_roster_path(args.data_dir)
 
