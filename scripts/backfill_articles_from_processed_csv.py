@@ -132,14 +132,29 @@ def main():
             print(f"[WARN] Roster not found: {roster_path}")
 
         total_rows = 0
-        for path, dstr, label, ingest_entity in expected:
-            if not maybe_exists(path):
-                print(f"[WARN] Missing {label} article file, skipping: {path}")
-                continue
-            with open_text(path) as f:
-                count = ingest_article_mentions(conn, f, ingest_entity, dstr)
-            total_rows += count
-            print(f"[OK] {label} {dstr}: DB upserted {count} article rows from {path}")
+        for dstr in dates:
+            daily_rows = 0
+            processed_files = 0
+            skipped_files = 0
+            day_items = build_expected_paths(args.data_dir, dstr, args.entity_type)
+
+            for path, _, label, ingest_entity in day_items:
+                if not maybe_exists(path):
+                    skipped_files += 1
+                    print(f"[WARN] Missing {label} article file, skipping: {path}")
+                    continue
+                with open_text(path) as f:
+                    count = ingest_article_mentions(conn, f, ingest_entity, dstr)
+                daily_rows += count
+                total_rows += count
+                processed_files += 1
+                print(f"[OK] {label} {dstr}: DB upserted {count} article rows from {path}")
+
+            print(
+                f"[DONE] {dstr}: processed {processed_files} file(s), "
+                f"skipped {skipped_files}, upserted {daily_rows} article rows "
+                f"(running total: {total_rows})"
+            )
 
         print(f"✅ Historical article CSV backfill complete: {total_rows} rows")
         return 0
