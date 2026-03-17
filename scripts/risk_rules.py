@@ -57,6 +57,106 @@ MATERIAL_RISK_TERMS = [
 ]
 MATERIAL_RISK_TERMS_RE = re.compile("|".join(MATERIAL_RISK_TERMS), flags=re.IGNORECASE)
 
+LAYOFF_TERMS = [
+    r"\blayoff(s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
+]
+WORKFORCE_REDUCTION_TERMS = [
+    *LAYOFF_TERMS,
+    r"\bjob cuts?\b", r"\bworkforce reduction(?:s)?\b",
+    r"\bworkforce cuts?\b", r"\bheadcount reduction(?:s)?\b",
+    r"\bstaff reduction(?:s)?\b", r"\brestructuring plan\b",
+    r"\bdownsiz(?:e|ing)\b", r"\bright[- ]siz(?:e|ing)\b",
+    r"\bredundanc(?:y|ies)\b", r"\bfurlough(?:s|ed|ing)?\b",
+    r"\bposition eliminations?\b",
+]
+WORKFORCE_REDUCTION_RE = re.compile("|".join(WORKFORCE_REDUCTION_TERMS), flags=re.IGNORECASE)
+
+LOW_PRIORITY_CRISIS_BLOCKER_RE = re.compile(
+    r"\b(data breach(?:es)?|cyber(?:attack|attacks|breach|breaches)|ransomware|"
+    r"hack(?:ed|s|ing)?|fraud|embezzl(?:e|ement)|briber(?:y|ies)|corruption|"
+    r"indict(?:ed|ment|ments)?|guilty|convicted|subpoena(?:s)?|charge(?:d|s)?|"
+    r"chapter\s+11|bankrupt(?:cy|cies)|default(?:s|ed|ing)?|insolven(?:t|cy)|"
+    r"delinquen(?:t|cy)|miss(?:es|ed|ing)\s+payments?|fatal(?:ity|ities)|"
+    r"death(?:s)?|killed|injur(?:y|ies)|explosion(?:s)?|fire(?:s)?|crash(?:es|ed)?|"
+    r"collapse(?:d|s)?|contamination|chemical spill|oil spill|gas leak|"
+    r"toxic release|hazmat|recall(?:s|ed|ing)?)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_LEGAL_ENFORCEMENT_RE = re.compile(
+    r"\b(class[- ]action|lawsuit(?:s)?|legal action|attorney general|sec\b|doj\b|"
+    r"ftc\b|cfpb\b|eeoc\b|nlrb\b|investigat(?:e|es|ed|ing|ion)|probe(?:s|d)?|"
+    r"unlawful(?:ly)?|illegal(?:ly)?|discrimination|retaliation)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_TARIFF_CONTEXT_RE = re.compile(
+    r"\b(tariff(?:s)?|trade dispute(?:s)?|trade war|trade polic(?:y|ies)|"
+    r"import dut(?:y|ies)|customs dut(?:y|ies)|trade barrier(?:s)?|"
+    r"import lev(?:y|ies))\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_TARIFF_LEGAL_RE = re.compile(
+    r"\b(lawsuit(?:s)?|legal action|sue(?:s|d|ing)?|court challenge|"
+    r"complaint(?:s)?|petition(?:s|ed|ing)?|appeal(?:s|ed|ing)?)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_TARIFF_BLOCKER_RE = re.compile(
+    r"\b(class[- ]action|attorney general|sec\b|doj\b|ftc\b|cfpb\b|epa\b|fda\b|"
+    r"osha\b|eeoc\b|nlrb\b|investigat(?:e|es|ed|ing|ion)|probe(?:s|d)?|"
+    r"misconduct|antitrust|sanction(?:s|ed)?|penalt(?:y|ies))\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_DELAY_ACTION_RE = re.compile(
+    r"\b(delay(?:s|ed|ing)?|postpon(?:e|es|ed|ing|ement)|"
+    r"push(?:es|ed|ing)?\s+back|slipp(?:ed|ing|age))\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_DELAY_CONTEXT_RE = re.compile(
+    r"\b(ai chip(?:s)?|chip(?:s)?|semiconductor(?:s)?|robotaxi|launch|rollout|"
+    r"release|production|product roadmap|timeline|platform|model(?:s)?|program)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_DELAY_BLOCKER_RE = re.compile(
+    r"\b(recall(?:s|ed|ing)?|safety|fatal(?:ity|ities)|death(?:s)?|injur(?:y|ies)|"
+    r"fda\b|osha\b)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_FEE_CONTEXT_RE = re.compile(
+    r"\b(commission(?: fee)?s?|app store (?:fee|fees|commission)|take rate|"
+    r"developer fee(?:s)?|marketplace fee(?:s)?|platform fee(?:s)?)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_FEE_ACTION_RE = re.compile(
+    r"\b(reduc(?:e|es|ed|ing)|cut(?:s|ting)?|lower(?:s|ed|ing)|"
+    r"slash(?:es|ed|ing)?|trim(?:s|med|ming))\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_DEBT_CONTEXT_RE = re.compile(
+    r"\b(debt|notes?|bonds?|maturit(?:y|ies)|credit facility|term loan|"
+    r"capital structure|liabilit(?:y|ies) management|debt exchange|exchange offer)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_DEBT_ACTION_RE = re.compile(
+    r"\b(refinanc(?:e|es|ed|ing)|exchange(?:s|d|ing)?|extend(?:s|ed|ing)?|"
+    r"reduce(?:s|d|ing)?|repay(?:s|ment|ing)?|retir(?:e|es|ed|ing)|"
+    r"issu(?:e|es|ed|ing)|offer(?:s|ed|ing)?|amend(?:s|ed|ing)?|swap(?:s|ped|ping)?)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_DEBT_BLOCKER_RE = re.compile(
+    r"\b(default(?:s|ed|ing)?|distress(?:ed)?|delinquen(?:t|cy)|insolven(?:t|cy)|"
+    r"bankrupt(?:cy|cies)|chapter\s+11|miss(?:es|ed|ing)\s+payments?|"
+    r"restructuring support agreement)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_STORE_CONTEXT_RE = re.compile(
+    r"\b(store(?:s)?|location(?:s)?|restaurant(?:s)?|branch(?:es)?|outlet(?:s)?|"
+    r"shop(?:s)?|office(?:s)?|club(?:s)?|pharmacies|pharmacy|retail locations?)\b",
+    flags=re.IGNORECASE,
+)
+LOW_PRIORITY_STORE_ACTION_RE = re.compile(
+    r"\bclos(?:e|es|ed|ing|ure|ures)\b",
+    flags=re.IGNORECASE,
+)
+
 NAME_IGNORE_TOKENS = {
     "inc", "incorporated", "corporation", "corp", "company", "co",
     "llc", "ltd", "limited", "plc", "group", "holdings", "holding",
@@ -157,7 +257,7 @@ BRAND_LEGAL_TROUBLE_TERMS = [
     r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bexpos(?:e|es|ed|ing)\b", r"\bransomware\b",
     r"\bleak(?:ed|s|ing)?\b",
     r"\brecall(?:s|ed|ing)?\b",
-    r"\blayoff(s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
+    *LAYOFF_TERMS,
     r"\bboycott(?:ing|ed|s)?\b",
     r"\bexit(s|ed|ing)?\b", r"\bleav(e|es|ing|ers|ed)\b", r"\bdepart(s|ed|ing)?\b",
     r"\boust(er|ed|ing|s)?\b",
@@ -254,7 +354,7 @@ CEO_ALWAYS_NEGATIVE_TERMS = [
     r"\bindict(?:s|ed|ment|ments)?\b",
     r"\bghislaine\b", r"\bmaxwell\b", r"\bfallout\b",
     r"\bbacklash\b",
-    r"\blayoff(s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
+    *LAYOFF_TERMS,
     r"\brecall(?:s|ed|ing)?\b",
     r"\bcancel(s|ed|ing|led|ling)?\b",
     r"\bresign(s|ed|ing|ation)?\b", r"\bquit(s|ting|ted)?\b",
@@ -264,14 +364,14 @@ CEO_ALWAYS_NEGATIVE_RE = re.compile("|".join(CEO_ALWAYS_NEGATIVE_TERMS), flags=r
 
 # If a company is in legal services, avoid force-negativizing on generic legal
 # vocabulary (lawsuit, court, defendant, etc.). Keep clearly non-legal crisis
-# signals (breach, ransomware, layoffs, fraud, bankruptcy, etc.) enabled.
+# signals (breach, ransomware, fraud, bankruptcy, etc.) enabled.
 LEGAL_INDUSTRY_RE = re.compile(r"\blegal\b", flags=re.IGNORECASE)
 LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_TERMS = [
     r"\bdata leaks?\b", r"\bdata breach(?:es)?\b", r"\bsecurity breach(?:es)?\b", r"\bbreach(?:es)?\b",
     r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bransomware\b",
     r"\bleak(?:ed|s|ing)?\b",
     r"\brecall(?:s|ed|ing)?\b",
-    r"\blayoff(?:s)?\b", r"\blays?\s+off\b", r"\blaid\s+off\b",
+    *LAYOFF_TERMS,
     r"\bboycott(?:ing|ed|s)?\b",
     r"\bfraud\b", r"\bembezzl(?:e|ement)\b",
     r"\bchapter\s+11\b", r"\bbankrupt(?:cy|cies)?\b",
@@ -286,7 +386,7 @@ LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
-NARRATIVE_RULE_VERSION = "v2"
+NARRATIVE_RULE_VERSION = "v3"
 NARRATIVE_MIN_NEG_TOP_STORIES = 2
 NARRATIVE_CRISIS_TAGS = [
     "Workforce Reductions",
@@ -325,9 +425,7 @@ NARRATIVE_PLANNED_EXEC_EXCLUDE_RE = re.compile(
     flags=re.IGNORECASE,
 )
 NARRATIVE_WORKFORCE_RE = re.compile(
-    r"\b(layoffs?|job cuts?|workforce reduction(?:s)?|workforce cuts?|headcount reduction(?:s)?|"
-    r"staff reduction(?:s)?|restructuring plan|downsiz(?:e|ing)|right[- ]siz(?:e|ing)|"
-    r"redundanc(?:y|ies)|furlough(?:s|ed|ing)?|position eliminations?)\b",
+    "|".join(WORKFORCE_REDUCTION_TERMS),
     flags=re.IGNORECASE,
 )
 NARRATIVE_ACCIDENT_RE = re.compile(
@@ -437,6 +535,86 @@ def _is_legal_industry(industry: str = "") -> bool:
     return bool(LEGAL_INDUSTRY_RE.search(str(industry or "")))
 
 
+def _low_priority_haystack(
+    title: str = "",
+    snippet: str = "",
+    url: str = "",
+    source: str = "",
+) -> str:
+    return " ".join(part for part in [title or "", snippet or "", source or "", url or ""] if part).strip()
+
+
+def _matches_low_priority_tariff_story(hay: str) -> bool:
+    return bool(
+        LOW_PRIORITY_TARIFF_CONTEXT_RE.search(hay)
+        and LOW_PRIORITY_TARIFF_LEGAL_RE.search(hay)
+        and not LOW_PRIORITY_TARIFF_BLOCKER_RE.search(hay)
+        and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+    )
+
+
+def _matches_low_priority_workforce_story(hay: str) -> bool:
+    return bool(
+        WORKFORCE_REDUCTION_RE.search(hay)
+        and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+        and not LOW_PRIORITY_LEGAL_ENFORCEMENT_RE.search(hay)
+    )
+
+
+def _matches_low_priority_delay_story(hay: str) -> bool:
+    return bool(
+        LOW_PRIORITY_DELAY_ACTION_RE.search(hay)
+        and LOW_PRIORITY_DELAY_CONTEXT_RE.search(hay)
+        and not LOW_PRIORITY_DELAY_BLOCKER_RE.search(hay)
+        and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+    )
+
+
+def _matches_low_priority_fee_story(hay: str) -> bool:
+    return bool(
+        LOW_PRIORITY_FEE_ACTION_RE.search(hay)
+        and LOW_PRIORITY_FEE_CONTEXT_RE.search(hay)
+        and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+    )
+
+
+def _matches_low_priority_debt_story(hay: str) -> bool:
+    return bool(
+        LOW_PRIORITY_DEBT_ACTION_RE.search(hay)
+        and LOW_PRIORITY_DEBT_CONTEXT_RE.search(hay)
+        and not LOW_PRIORITY_DEBT_BLOCKER_RE.search(hay)
+        and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+    )
+
+
+def _matches_low_priority_store_closure_story(hay: str) -> bool:
+    return bool(
+        LOW_PRIORITY_STORE_ACTION_RE.search(hay)
+        and LOW_PRIORITY_STORE_CONTEXT_RE.search(hay)
+        and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+        and not LOW_PRIORITY_LEGAL_ENFORCEMENT_RE.search(hay)
+    )
+
+
+def is_low_priority_business_story(
+    title: str,
+    snippet: str = "",
+    url: str = "",
+    source: str = "",
+) -> bool:
+    hay = _low_priority_haystack(title, snippet, url, source)
+    if not hay:
+        return False
+    return any((
+        _matches_low_priority_tariff_story(hay),
+        _matches_low_priority_workforce_story(hay),
+        _matches_low_priority_delay_story(hay),
+        _matches_low_priority_fee_story(hay),
+        _matches_low_priority_debt_story(hay),
+        _matches_low_priority_store_closure_story(hay),
+    ))
+
+
 def title_mentions_legal_trouble(
     title: str,
     snippet: str = "",
@@ -446,7 +624,9 @@ def title_mentions_legal_trouble(
 ) -> bool:
     if _is_force_negative_source(url=url, source=source):
         return True
-    hay = f"{title} {snippet}".strip()
+    hay = _low_priority_haystack(title, snippet, url, source)
+    if is_low_priority_business_story(title, snippet, url=url, source=source):
+        return False
     if not BRAND_LEGAL_TROUBLE_RE.search(hay):
         return False
     if _is_legal_industry(industry):
@@ -474,7 +654,9 @@ def should_force_negative_ceo(
 ) -> bool:
     if title_mentions_legal_trouble(title, snippet, url=url, source=source, industry=industry):
         return True
-    hay = f"{title} {snippet}".strip()
+    hay = _low_priority_haystack(title, snippet, url, source)
+    if is_low_priority_business_story(title, snippet, url=url, source=source):
+        return False
     if not CEO_ALWAYS_NEGATIVE_RE.search(hay):
         return False
     if _is_legal_industry(industry):
@@ -984,6 +1166,8 @@ def should_neutralize_finance_routine(
 ) -> bool:
     if sentiment not in {"positive", "negative"}:
         return False
+    if is_low_priority_business_story(title, snippet, url=url, source=source):
+        return True
     is_routine = finance_routine if finance_routine is not None else is_financial_routine(title, snippet, url, source)
     if not is_routine:
         return False
@@ -1043,6 +1227,14 @@ def classify_narrative_tags(
 
     hay = " ".join([title or "", snippet or "", source or "", url or ""]).strip()
     if not hay:
+        return {
+            "primary_tag": None,
+            "primary_group": None,
+            "tags": [],
+            "is_crisis": None,
+            "rule_version": NARRATIVE_RULE_VERSION,
+        }
+    if is_low_priority_business_story(title, snippet, url=url, source=source):
         return {
             "primary_tag": None,
             "primary_group": None,

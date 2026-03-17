@@ -39,6 +39,7 @@ from risk_rules import (
     NARRATIVE_MIN_NEG_TOP_STORIES,
     narrative_tag_gate_met,
     parse_company_domains,
+    should_neutralize_finance_routine,
     title_mentions_legal_trouble,
 )
 
@@ -303,7 +304,15 @@ def load_aio_citation_sentiment(path_or_url: str):
             snippet = str(ref.get("snippet") or "")
             link = str(ref.get("link") or "")
             source = str(ref.get("source") or "")
-            if is_financial_routine(title, snippet=snippet, url=link, source=source):
+            finance_routine = is_financial_routine(title, snippet=snippet, url=link, source=source)
+            if should_neutralize_finance_routine(
+                "negative",
+                title,
+                snippet=snippet,
+                url=link,
+                source=source,
+                finance_routine=finance_routine,
+            ):
                 label = "neutral"
             else:
                 label, _ = _vader_label(analyzer, f"{title} {snippet}".strip())
@@ -506,8 +515,15 @@ def _sentiment_for_item(
     if title_mentions_legal_trouble(title, snippet, url=url, source=source, industry=industry):
         return "negative", False
     finance_routine = is_financial_routine(title, snippet=snippet, url=url, source=source)
-    if finance_routine:
-        return "neutral", True
+    if should_neutralize_finance_routine(
+        "negative",
+        title,
+        snippet=snippet,
+        url=url,
+        source=source,
+        finance_routine=finance_routine,
+    ):
+        return "neutral", finance_routine
     label, _ = _vader_label(analyzer, f"{title} {snippet}".strip())
     return label, False
 
