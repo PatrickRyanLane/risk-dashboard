@@ -9,6 +9,10 @@ from urllib.parse import urlparse
 import psycopg2
 from psycopg2.extras import execute_values
 
+from crisis_event_rollups import (
+    ensure_entity_crisis_event_daily_table,
+    recompute_entity_crisis_event_window,
+)
 from url_utils import normalize_url, url_hash
 from risk_rules import (
     classify_control,
@@ -551,6 +555,16 @@ def ingest_article_mentions_rows(conn, rows, entity_type, date_str):
                 with conn.cursor() as cur:
                     ensure_daily_partitions(cur, scored_at)
                     execute_values(cur, sql, daily_rows, page_size=1000)
+
+    with conn:
+        with conn.cursor() as cur:
+            ensure_entity_crisis_event_daily_table(cur)
+            recompute_entity_crisis_event_window(
+                cur,
+                scored_at.date(),
+                scored_at.date(),
+                ["brand"] if entity_type == "company" else ["ceo"],
+            )
 
     return len(insert_rows)
 

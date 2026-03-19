@@ -17,10 +17,14 @@ from datetime import date, datetime, timedelta
 import psycopg2
 from psycopg2.extras import execute_batch
 
+from narrative_rollups import (
+    delete_entity_crisis_tag_daily_window,
+    ensure_entity_crisis_tag_daily_table,
+    upsert_entity_crisis_tag_daily,
+)
 from risk_rules import (
-    classify_narrative_tags,
     NARRATIVE_MIN_NEG_TOP_STORIES,
-    narrative_tag_gate_met,
+    rollup_entity_day_narrative,
 )
 
 
@@ -70,6 +74,14 @@ def entity_type_clause(entity_type: str):
     return "", tuple()
 
 
+def entity_types_for_window(entity_type: str) -> list[str]:
+    if entity_type == "brand":
+        return ["brand", "company"]
+    if entity_type == "ceo":
+        return ["ceo"]
+    return ["brand", "company", "ceo"]
+
+
 def main() -> int:
     args = parse_args()
     days = max(1, int(args.days or 90))
@@ -84,6 +96,7 @@ def main() -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
             ensure_narrative_columns(cur)
+            ensure_entity_crisis_tag_daily_table(cur)
             clause, clause_params = entity_type_clause(args.entity_type)
             sql = f"""
                 select sfi.id,
@@ -108,89 +121,91 @@ def main() -> int:
             rows = cur.fetchall()
             print(f"[INFO] Loaded {len(rows)} rows to classify from {start_date.isoformat()} onward")
 
-        neg_top_stories_by_entity_day = {}
-        for _, row_date, row_entity_type, row_entity_id, row_entity_name, _, _, _, _, sentiment, finance_routine in rows:
-            if str(sentiment or "").strip().lower() != "negative":
-                continue
-            if bool(finance_routine):
-                continue
-            key = (
-                str(row_date),
-                str(row_entity_type or ""),
-                str(row_entity_id or ""),
-                str(row_entity_name or ""),
-            )
-            neg_top_stories_by_entity_day[key] = neg_top_stories_by_entity_day.get(key, 0) + 1
-
         updates = []
+        rollup_rows = []
         candidates = 0
         tagged = 0
         suppressed = 0
+        tagged_entity_days = 0
         now = datetime.utcnow()
+        grouped_rows = {}
         for item_id, row_date, row_entity_type, row_entity_id, row_entity_name, title, snippet, url, source, sentiment, finance_routine in rows:
-            primary_tag = None
-            primary_group = None
-            tags = None
-            is_crisis = None
-            rule_version = None
-            tagged_at = None
-            sentiment_l = str(sentiment or "").strip().lower()
-            is_candidate = sentiment_l == "negative" and not bool(finance_routine)
-            if is_candidate:
-                candidates += 1
-                key = (
-                    str(row_date),
-                    str(row_entity_type or ""),
-                    str(row_entity_id or ""),
-                    str(row_entity_name or ""),
-                )
-                entity_day_neg = neg_top_stories_by_entity_day.get(key, 0)
-                gate_ok = narrative_tag_gate_met(
-                    entity_day_neg,
-                    min_negative_top_stories=narrative_min_negative_top_stories,
-                )
-                if gate_ok:
-                    tag = classify_narrative_tags(
-                        title or "",
-                        snippet or "",
-                        url=url or "",
-                        source=source or "",
-                        sentiment=sentiment,
-                        finance_routine=bool(finance_routine),
-                    )
-                    primary_tag = tag.get("primary_tag") or None
-                    primary_group = tag.get("primary_group") or None
-                    tags = tag.get("tags") or None
-                    is_crisis = tag.get("is_crisis")
-                    rule_version = tag.get("rule_version") or None
-                    tagged_at = now if primary_tag else None
-                    if primary_tag:
-                        tagged += 1
-                else:
-                    suppressed += 1
+            key = (
+                row_date,
+                str(row_entity_type or ""),
+                row_entity_id,
+                str(row_entity_name or ""),
+            )
+            grouped_rows.setdefault(key, []).append(
+                {
+                    "item_id": item_id,
+                    "title": title or "",
+                    "snippet": snippet or "",
+                    "url": url or "",
+                    "source": source or "",
+                    "sentiment_label": sentiment,
+                    "finance_routine": bool(finance_routine),
+                }
+            )
 
-            updates.append(
+        for (row_date, row_entity_type, row_entity_id, row_entity_name), items in grouped_rows.items():
+            rollup = rollup_entity_day_narrative(
+                items,
+                min_negative_top_stories=narrative_min_negative_top_stories,
+            )
+            candidates += int(rollup.get("negative_item_count") or 0)
+            tagged += int(rollup.get("tagged_item_count") or 0)
+            if not rollup.get("gate_met"):
+                suppressed += int(rollup.get("negative_item_count") or 0)
+            if rollup.get("primary_tag"):
+                tagged_entity_days += 1
+            rollup_rows.append(
                 (
-                    primary_tag,
-                    primary_group,
-                    tags,
-                    is_crisis,
-                    rule_version,
-                    tagged_at,
-                    item_id,
+                    row_date,
+                    row_entity_type,
+                    row_entity_id,
+                    row_entity_name,
+                    rollup.get("primary_tag") or None,
+                    rollup.get("primary_group") or None,
+                    rollup.get("tags") or None,
+                    rollup.get("is_crisis"),
+                    int(rollup.get("negative_item_count") or 0),
+                    int(rollup.get("tagged_item_count") or 0),
+                    int(rollup.get("unmatched_negative_items") or 0),
+                    int(rollup.get("supporting_negative_items") or 0),
+                    rollup.get("tag_counts") or {},
+                    rollup.get("rule_version") or None,
+                    now if rollup.get("primary_tag") else None,
                 )
             )
+            for item, tag in zip(items, rollup.get("item_results") or []):
+                updates.append(
+                    (
+                        tag.get("primary_tag") or None,
+                        tag.get("primary_group") or None,
+                        tag.get("tags") or None,
+                        tag.get("is_crisis"),
+                        tag.get("rule_version") or None,
+                        now if tag.get("primary_tag") else None,
+                        item["item_id"],
+                    )
+                )
 
         print(
             "[INFO] Narrative tagging summary: "
-            f"candidates={candidates} tagged={tagged} suppressed_by_gate={suppressed}"
+            f"candidates={candidates} tagged_items={tagged} "
+            f"tagged_entity_days={tagged_entity_days} suppressed_by_gate={suppressed}"
         )
 
-        if not updates:
-            print("[INFO] Nothing to update")
-            return 0
-
         with conn.cursor() as cur:
+            delete_entity_crisis_tag_daily_window(
+                cur,
+                start_date,
+                date.today(),
+                entity_types_for_window(args.entity_type),
+            )
+            if rollup_rows:
+                upsert_entity_crisis_tag_daily(cur, rollup_rows)
             update_sql = """
                 update serp_feature_items
                    set narrative_primary_tag = %s,

@@ -405,6 +405,15 @@ NARRATIVE_NON_CRISIS_TAGS = [
     "Mergers and acquisitions",
     "Planned Executive Turnover",
 ]
+NARRATIVE_OTHER_MIN_SUPPORT = 2
+NARRATIVE_TAG_GROUPS = {
+    **{tag: "crisis" for tag in NARRATIVE_CRISIS_TAGS},
+    **{tag: "non_crisis" for tag in NARRATIVE_NON_CRISIS_TAGS},
+}
+NARRATIVE_TAG_ORDER = {
+    tag: idx
+    for idx, tag in enumerate(NARRATIVE_CRISIS_TAGS + NARRATIVE_NON_CRISIS_TAGS)
+}
 
 NARRATIVE_REBRANDING_RE = re.compile(
     r"\b(rebrand(?:ing|ed|s)?|brand refresh|new logo|renam(?:e|ed|ing)|new brand identity|brand overhaul)\b",
@@ -1187,6 +1196,37 @@ def _dedupe_preserve(items: list[str]) -> list[str]:
     return out
 
 
+def _empty_narrative_result() -> dict:
+    return {
+        "primary_tag": None,
+        "primary_group": None,
+        "tags": [],
+        "is_crisis": None,
+        "rule_version": NARRATIVE_RULE_VERSION,
+    }
+
+
+def narrative_tag_group(tag: str | None) -> str | None:
+    if not tag:
+        return None
+    return NARRATIVE_TAG_GROUPS.get(tag)
+
+
+def _narrative_tag_sort_key(tag: str | None) -> tuple[int, int, str]:
+    group = narrative_tag_group(tag)
+    if group == "crisis":
+        group_rank = 0
+    elif group == "non_crisis":
+        group_rank = 1
+    else:
+        group_rank = 2
+    return (
+        group_rank,
+        NARRATIVE_TAG_ORDER.get(tag or "", 999),
+        str(tag or "").casefold(),
+    )
+
+
 def classify_narrative_tags(
     title: str,
     snippet: str = "",
@@ -1195,6 +1235,7 @@ def classify_narrative_tags(
     source: str = "",
     sentiment: str | None = None,
     finance_routine: bool | None = None,
+    allow_other_fallback: bool = True,
 ) -> dict:
     """
     Rule-based narrative taxonomy for negative Top Stories items.
@@ -1209,39 +1250,15 @@ def classify_narrative_tags(
     """
     sentiment_l = (sentiment or "").strip().lower()
     if sentiment_l and sentiment_l != "negative":
-        return {
-            "primary_tag": None,
-            "primary_group": None,
-            "tags": [],
-            "is_crisis": None,
-            "rule_version": NARRATIVE_RULE_VERSION,
-        }
+        return _empty_narrative_result()
     if finance_routine is True:
-        return {
-            "primary_tag": None,
-            "primary_group": None,
-            "tags": [],
-            "is_crisis": None,
-            "rule_version": NARRATIVE_RULE_VERSION,
-        }
+        return _empty_narrative_result()
 
     hay = " ".join([title or "", snippet or "", source or "", url or ""]).strip()
     if not hay:
-        return {
-            "primary_tag": None,
-            "primary_group": None,
-            "tags": [],
-            "is_crisis": None,
-            "rule_version": NARRATIVE_RULE_VERSION,
-        }
+        return _empty_narrative_result()
     if is_low_priority_business_story(title, snippet, url=url, source=source):
-        return {
-            "primary_tag": None,
-            "primary_group": None,
-            "tags": [],
-            "is_crisis": None,
-            "rule_version": NARRATIVE_RULE_VERSION,
-        }
+        return _empty_narrative_result()
 
     crisis_tags: list[str] = []
     non_crisis_tags: list[str] = []
@@ -1295,6 +1312,9 @@ def classify_narrative_tags(
             "rule_version": NARRATIVE_RULE_VERSION,
         }
 
+    if not allow_other_fallback:
+        return _empty_narrative_result()
+
     # Fallback category for negative, non-financial items with no specific match.
     return {
         "primary_tag": "Other",
@@ -1302,4 +1322,205 @@ def classify_narrative_tags(
         "tags": ["Other"],
         "is_crisis": True,
         "rule_version": NARRATIVE_RULE_VERSION,
+    }
+
+
+def rollup_entity_day_narrative(
+    items: list[dict],
+    *,
+    min_negative_top_stories: int = NARRATIVE_MIN_NEG_TOP_STORIES,
+    other_min_support: int = NARRATIVE_OTHER_MIN_SUPPORT,
+) -> dict:
+    """
+    Choose one entity-day narrative tag from negative, non-financial Top Stories items.
+
+    Returns a dict with both the chosen entity-day tag and per-item classifications.
+    Unmatched items are only promoted to ``Other`` when enough supporting headlines exist.
+    """
+    candidate_indexes: list[int] = []
+    item_results: list[dict] = []
+    tag_counts: dict[str, int] = {}
+    unmatched_indexes: list[int] = []
+
+    for item in items:
+        sentiment_l = str(item.get("sentiment") or item.get("sentiment_label") or "").strip().lower()
+        finance_routine = bool(item.get("finance_routine"))
+        is_candidate = sentiment_l == "negative" and not finance_routine
+        if not is_candidate:
+            item_results.append(_empty_narrative_result())
+            continue
+
+        candidate_indexes.append(len(item_results))
+        result = classify_narrative_tags(
+            item.get("title", "") or "",
+            item.get("snippet", "") or "",
+            url=item.get("url", "") or "",
+            source=item.get("source", "") or "",
+            sentiment=sentiment_l,
+            finance_routine=finance_routine,
+            allow_other_fallback=False,
+        )
+        primary_tag = result.get("primary_tag")
+        if primary_tag:
+            tag_counts[primary_tag] = tag_counts.get(primary_tag, 0) + 1
+        else:
+            unmatched_indexes.append(len(item_results))
+        item_results.append(result)
+
+    gate_ok = narrative_tag_gate_met(
+        len(candidate_indexes),
+        min_negative_top_stories=min_negative_top_stories,
+    )
+    if not gate_ok:
+        for idx in candidate_indexes:
+            item_results[idx] = _empty_narrative_result()
+        return {
+            "gate_met": False,
+            "negative_item_count": len(candidate_indexes),
+            "primary_tag": None,
+            "primary_group": None,
+            "tags": [],
+            "is_crisis": None,
+            "rule_version": NARRATIVE_RULE_VERSION,
+            "supporting_negative_items": 0,
+            "tagged_item_count": 0,
+            "unmatched_negative_items": len(candidate_indexes),
+            "tag_counts": {},
+            "item_results": item_results,
+        }
+
+    primary_tag = None
+    primary_group = None
+    is_crisis = None
+    rollup_tags: list[str] = []
+    supporting_negative_items = 0
+
+    if tag_counts:
+        sorted_tags = sorted(
+            tag_counts.items(),
+            key=lambda item: (-item[1],) + _narrative_tag_sort_key(item[0]),
+        )
+        primary_tag = sorted_tags[0][0]
+        primary_group = narrative_tag_group(primary_tag)
+        is_crisis = primary_group == "crisis"
+        rollup_tags = [tag for tag, _ in sorted_tags]
+        supporting_negative_items = int(sorted_tags[0][1] or 0)
+    elif len(unmatched_indexes) >= max(1, int(other_min_support or NARRATIVE_OTHER_MIN_SUPPORT)):
+        primary_tag = "Other"
+        primary_group = "crisis"
+        is_crisis = True
+        rollup_tags = ["Other"]
+        supporting_negative_items = len(unmatched_indexes)
+        for idx in unmatched_indexes:
+            item_results[idx] = {
+                "primary_tag": "Other",
+                "primary_group": "crisis",
+                "tags": ["Other"],
+                "is_crisis": True,
+                "rule_version": NARRATIVE_RULE_VERSION,
+            }
+
+    tagged_item_count = sum(1 for result in item_results if result.get("primary_tag"))
+    return {
+        "gate_met": True,
+        "negative_item_count": len(candidate_indexes),
+        "primary_tag": primary_tag,
+        "primary_group": primary_group,
+        "tags": rollup_tags,
+        "is_crisis": is_crisis,
+        "rule_version": NARRATIVE_RULE_VERSION,
+        "supporting_negative_items": supporting_negative_items,
+        "tagged_item_count": tagged_item_count,
+        "unmatched_negative_items": len(unmatched_indexes),
+        "tag_counts": dict(sorted(tag_counts.items(), key=lambda item: (-item[1],) + _narrative_tag_sort_key(item[0]))),
+        "item_results": item_results,
+    }
+
+
+def rollup_crisis_event_items(
+    items: list[dict],
+    *,
+    other_min_support: int = NARRATIVE_OTHER_MIN_SUPPORT,
+) -> dict:
+    """
+    Roll up a mixed evidence bundle into one entity-day crisis narrative.
+
+    Unlike ``rollup_entity_day_narrative()``, this function does not impose a
+    Top Stories gate. It is intended for higher-level crisis detection that may
+    be triggered by either Top Stories or recent negative news coverage.
+    """
+    candidate_indexes: list[int] = []
+    item_results: list[dict] = []
+    tag_counts: dict[str, int] = {}
+    unmatched_indexes: list[int] = []
+
+    for item in items:
+        sentiment_l = str(item.get("sentiment") or item.get("sentiment_label") or "").strip().lower()
+        finance_routine = bool(item.get("finance_routine"))
+        is_candidate = sentiment_l == "negative" and not finance_routine
+        if not is_candidate:
+            item_results.append(_empty_narrative_result())
+            continue
+
+        candidate_indexes.append(len(item_results))
+        result = classify_narrative_tags(
+            item.get("title", "") or "",
+            item.get("snippet", "") or "",
+            url=item.get("url", "") or "",
+            source=item.get("source", "") or "",
+            sentiment=sentiment_l,
+            finance_routine=finance_routine,
+            allow_other_fallback=False,
+        )
+        primary_tag = result.get("primary_tag")
+        if primary_tag:
+            tag_counts[primary_tag] = tag_counts.get(primary_tag, 0) + 1
+        else:
+            unmatched_indexes.append(len(item_results))
+        item_results.append(result)
+
+    primary_tag = None
+    primary_group = None
+    is_crisis = None
+    rollup_tags: list[str] = []
+    supporting_negative_items = 0
+
+    if tag_counts:
+        sorted_tags = sorted(
+            tag_counts.items(),
+            key=lambda item: (-item[1],) + _narrative_tag_sort_key(item[0]),
+        )
+        primary_tag = sorted_tags[0][0]
+        primary_group = narrative_tag_group(primary_tag)
+        is_crisis = primary_group == "crisis"
+        rollup_tags = [tag for tag, _ in sorted_tags]
+        supporting_negative_items = int(sorted_tags[0][1] or 0)
+    elif len(unmatched_indexes) >= max(1, int(other_min_support or NARRATIVE_OTHER_MIN_SUPPORT)):
+        primary_tag = "Other"
+        primary_group = "crisis"
+        is_crisis = True
+        rollup_tags = ["Other"]
+        supporting_negative_items = len(unmatched_indexes)
+        for idx in unmatched_indexes:
+            item_results[idx] = {
+                "primary_tag": "Other",
+                "primary_group": "crisis",
+                "tags": ["Other"],
+                "is_crisis": True,
+                "rule_version": NARRATIVE_RULE_VERSION,
+            }
+
+    tagged_item_count = sum(1 for result in item_results if result.get("primary_tag"))
+    return {
+        "negative_item_count": len(candidate_indexes),
+        "primary_tag": primary_tag,
+        "primary_group": primary_group,
+        "tags": rollup_tags,
+        "is_crisis": is_crisis,
+        "rule_version": NARRATIVE_RULE_VERSION,
+        "supporting_negative_items": supporting_negative_items,
+        "tagged_item_count": tagged_item_count,
+        "unmatched_negative_items": len(unmatched_indexes),
+        "tag_counts": dict(sorted(tag_counts.items(), key=lambda item: (-item[1],) + _narrative_tag_sort_key(item[0]))),
+        "item_results": item_results,
     }

@@ -31,14 +31,22 @@ import requests
 from psycopg2.extras import execute_values
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from narrative_rollups import (
+    delete_entity_crisis_tag_daily_window,
+    ensure_entity_crisis_tag_daily_table,
+    upsert_entity_crisis_tag_daily,
+)
+from crisis_event_rollups import (
+    ensure_entity_crisis_event_daily_table,
+    recompute_entity_crisis_event_window,
+)
 from url_utils import resolve_url
 from risk_rules import (
     classify_control,
-    classify_narrative_tags,
     is_financial_routine,
     NARRATIVE_MIN_NEG_TOP_STORIES,
-    narrative_tag_gate_met,
     parse_company_domains,
+    rollup_entity_day_narrative,
     should_neutralize_finance_routine,
     title_mentions_legal_trouble,
 )
@@ -543,8 +551,9 @@ def load_feature_items(
     df = con.execute(f"select query, raw_json from read_parquet('{path_or_url}')").fetch_df()
     analyzer = SentimentIntensityAnalyzer()
     staged_rows = []
-    neg_top_stories_by_entity: Dict[Tuple[str, str, str], int] = {}
+    staged_rows_by_entity: Dict[Tuple[str, str, str], list[dict]] = {}
     rows = []
+    rollup_rows = []
 
     for _, row in df.iterrows():
         query = str(row.get("query") or "").strip()
@@ -684,8 +693,6 @@ def load_feature_items(
                 and sentiment_label == "negative"
                 and not finance_routine
             )
-            if is_neg_top_story:
-                neg_top_stories_by_entity[entity_key] = neg_top_stories_by_entity.get(entity_key, 0) + 1
 
             staged_rows.append({
                 "entity_key": entity_key,
@@ -705,45 +712,67 @@ def load_feature_items(
                 "source": source,
                 "is_neg_top_story": is_neg_top_story,
             })
+            if feature == "top_stories_items":
+                staged_rows_by_entity.setdefault(entity_key, []).append(staged_rows[-1])
 
     narrative_candidates = 0
     narrative_tagged = 0
     narrative_suppressed_by_gate = 0
+    tagged_entity_days = 0
+    narrative_tagged_at = datetime.utcnow()
+    top_story_results: Dict[Tuple[str, str, str], list[dict]] = {}
+    for entity_key, items in staged_rows_by_entity.items():
+        rollup = rollup_entity_day_narrative(
+            items,
+            min_negative_top_stories=narrative_min_negative_top_stories,
+        )
+        narrative_candidates += int(rollup.get("negative_item_count") or 0)
+        narrative_tagged += int(rollup.get("tagged_item_count") or 0)
+        if not rollup.get("gate_met"):
+            narrative_suppressed_by_gate += int(rollup.get("negative_item_count") or 0)
+        if rollup.get("primary_tag"):
+            tagged_entity_days += 1
+        top_story_results[entity_key] = list(rollup.get("item_results") or [])
+        rollup_rows.append((
+            date_str,
+            entity_type,
+            items[0].get("entity_id"),
+            items[0].get("entity_name"),
+            rollup.get("primary_tag") or None,
+            rollup.get("primary_group") or None,
+            rollup.get("tags") or None,
+            rollup.get("is_crisis"),
+            int(rollup.get("negative_item_count") or 0),
+            int(rollup.get("tagged_item_count") or 0),
+            int(rollup.get("unmatched_negative_items") or 0),
+            int(rollup.get("supporting_negative_items") or 0),
+            rollup.get("tag_counts") or {},
+            rollup.get("rule_version") or None,
+            narrative_tagged_at if rollup.get("primary_tag") else None,
+        ))
+
+    top_story_positions: Dict[Tuple[str, str, str], int] = {}
     for item in staged_rows:
         narrative_primary_tag = None
         narrative_primary_group = None
         narrative_tags = None
         narrative_is_crisis = None
         narrative_rule_version = None
-        narrative_tagged_at = None
+        item_tagged_at = None
 
-        if item["is_neg_top_story"]:
-            narrative_candidates += 1
-            entity_neg_count = neg_top_stories_by_entity.get(item["entity_key"], 0)
-            gate_ok = narrative_tag_gate_met(
-                entity_neg_count,
-                min_negative_top_stories=narrative_min_negative_top_stories,
-            )
-            if gate_ok:
-                narrative = classify_narrative_tags(
-                    item["title"],
-                    item["snippet"],
-                    url=item["url"],
-                    source=item["source"],
-                    sentiment=item["sentiment_label"],
-                    finance_routine=item["finance_routine"],
-                )
+        if item["feature"] == "top_stories_items":
+            position = top_story_positions.get(item["entity_key"], 0)
+            top_story_positions[item["entity_key"]] = position + 1
+            item_results = top_story_results.get(item["entity_key"], [])
+            if position < len(item_results):
+                narrative = item_results[position]
                 narrative_primary_tag = narrative.get("primary_tag") or None
                 narrative_primary_group = narrative.get("primary_group") or None
                 tags = narrative.get("tags") or []
                 narrative_tags = list(tags) if tags else None
                 narrative_is_crisis = narrative.get("is_crisis")
                 narrative_rule_version = narrative.get("rule_version") or None
-                if narrative_primary_tag:
-                    narrative_tagged += 1
-                    narrative_tagged_at = datetime.utcnow()
-            else:
-                narrative_suppressed_by_gate += 1
+                item_tagged_at = narrative_tagged_at if narrative_primary_tag else None
 
         rows.append((
             date_str,
@@ -767,16 +796,17 @@ def load_feature_items(
             narrative_tags,
             narrative_is_crisis,
             narrative_rule_version,
-            narrative_tagged_at,
+            item_tagged_at,
         ))
 
     print(
         "[METRIC] narrative_tags "
         f"min_neg_top_stories={max(1, int(narrative_min_negative_top_stories or 1))} "
-        f"candidates={narrative_candidates} tagged={narrative_tagged} "
+        f"candidates={narrative_candidates} tagged_items={narrative_tagged} "
+        f"tagged_entity_days={tagged_entity_days} "
         f"suppressed_by_gate={narrative_suppressed_by_gate}"
     )
-    return rows
+    return rows, rollup_rows
 
 
 def upsert_feature_items(cur, rows, source: str):
@@ -934,6 +964,8 @@ def main() -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
             ensure_narrative_columns(cur)
+            ensure_entity_crisis_tag_daily_table(cur)
+            ensure_entity_crisis_event_daily_table(cur)
             company_map = load_company_map(cur)
             ceo_map = load_ceo_map(cur)
             company_domains = load_company_domains(cur)
@@ -954,7 +986,7 @@ def main() -> int:
                 aio_sentiment, paa_sentiment, videos_sentiment, perspectives_sentiment, top_stories_sentiment
             )
         )
-        item_rows = _step(
+        item_rows, rollup_rows = _step(
             "load_feature_items",
             lambda: load_feature_items(
                 local_path,
@@ -971,6 +1003,28 @@ def main() -> int:
             _step("lock_check", lambda: _log_db_locks(cur))
             inserted = _step("upsert_feature_rows", lambda: upsert_feature_rows(cur, rows, "aio_parquet"))
             inserted_items = _step("upsert_feature_items", lambda: upsert_feature_items(cur, item_rows, "aio_parquet"))
+            _step(
+                "replace_entity_crisis_tag_daily",
+                lambda: (
+                    delete_entity_crisis_tag_daily_window(
+                        cur,
+                        args.date,
+                        args.date,
+                        ["brand", "company"] if args.entity_type == "brand" else ["ceo"],
+                    ),
+                    upsert_entity_crisis_tag_daily(cur, rollup_rows),
+                )[1],
+            )
+            _step(
+                "recompute_entity_crisis_event_daily",
+                lambda: recompute_entity_crisis_event_window(
+                    cur,
+                    args.date,
+                    args.date,
+                    ["brand"] if args.entity_type == "brand" else ["ceo"],
+                    narrative_min_negative_top_stories=narrative_min_negative_top_stories,
+                ),
+            )
         conn.commit()
 
     print(f"Rows upserted: {inserted}")
