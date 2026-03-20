@@ -47,6 +47,19 @@ def normalize_entity_types(entity_types: Iterable[str]) -> list[str]:
     return normalized
 
 
+def _coerce_event_date(value, *, field_name: str) -> date_cls:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date_cls):
+        return value
+    if isinstance(value, str):
+        try:
+            return date_cls.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be an ISO date string, got {value!r}") from exc
+    raise TypeError(f"{field_name} must be a date, datetime, or ISO date string, got {type(value).__name__}")
+
+
 def ensure_entity_crisis_event_daily_table(cur) -> None:
     cur.execute(
         """
@@ -573,6 +586,8 @@ def build_entity_crisis_event_rows(
     continuation_min_recent_negative_articles: int = CRISIS_EVENT_CONTINUATION_MIN_RECENT_NEGATIVE_ARTICLES,
     continuation_min_negative_pct: Decimal = CRISIS_EVENT_CONTINUATION_MIN_NEGATIVE_PCT,
 ) -> list[tuple]:
+    start_date = _coerce_event_date(start_date, field_name="start_date")
+    end_date = _coerce_event_date(end_date, field_name="end_date")
     canonical_types = normalize_entity_types(entity_types)
     if not canonical_types:
         return []
@@ -727,6 +742,8 @@ def recompute_entity_crisis_event_window(
     entity_id=None,
     narrative_min_negative_top_stories: int = NARRATIVE_MIN_NEG_TOP_STORIES,
 ) -> list[tuple]:
+    start_date = _coerce_event_date(start_date, field_name="start_date")
+    end_date = _coerce_event_date(end_date, field_name="end_date")
     ensure_entity_crisis_event_daily_table(cur)
     delete_entity_crisis_event_daily_window(
         cur,
