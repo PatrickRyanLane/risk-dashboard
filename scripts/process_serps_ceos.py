@@ -30,6 +30,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
+from serp_date_utils import extract_serp_date_text
 from url_utils import resolve_url
 from risk_rules import (
     classify_control,
@@ -216,6 +217,7 @@ def fetch_parquet_with_metrics(path_or_url: str) -> Tuple[pd.DataFrame | None, D
                 "title": item.get("title") or "",
                 "url": item.get("link") or "",
                 "snippet": item.get("snippet") or "",
+                "published_date": extract_serp_date_text(item),
             })
     metrics["raw_queries"] = len(all_queries)
     metrics["raw_queries_with_payload"] = len(payload_queries)
@@ -367,6 +369,7 @@ def normalize_raw_columns(df: pd.DataFrame) -> pd.DataFrame:
     u_c = cols.get("url") or cols.get("link")
     p_c = cols.get("position") or cols.get("rank") or cols.get("pos")
     sn_c = cols.get("snippet") or cols.get("description")
+    pd_c = cols.get("published_date") or cols.get("date")
 
     out = pd.DataFrame()
     out["query_alias"] = df[q_c].astype(str).str.strip() if q_c else ""
@@ -374,6 +377,7 @@ def normalize_raw_columns(df: pd.DataFrame) -> pd.DataFrame:
     out["url"] = df[u_c].astype(str).str.strip() if u_c else ""
     out["position"] = pd.to_numeric(df[p_c], errors="coerce") if p_c else pd.Series([None]*len(df))
     out["snippet"] = df[sn_c].astype(str).str.strip() if sn_c else ""
+    out["published_date"] = df[pd_c].astype(str).str.strip() if pd_c else ""
     return out
 
 
@@ -513,6 +517,7 @@ def process_for_date(
         url = str(row.get("url", "") or "").strip()
         snippet = str(row.get("snippet", "") or "").strip()
         source = str(row.get("source", "") or "").strip()
+        published_date = str(row.get("published_date", "") or "").strip()
 
         pos_val = row.get("position", 0)
         try:
@@ -591,6 +596,7 @@ def process_for_date(
             "url": url,
             "position": position,
             "snippet": snippet,
+            "published_date": published_date,
             "sentiment": label,
             "controlled": controlled,
             "finance_routine": finance_routine,

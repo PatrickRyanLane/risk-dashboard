@@ -40,6 +40,7 @@ from crisis_event_rollups import (
     ensure_entity_crisis_event_daily_table,
     recompute_entity_crisis_event_window,
 )
+from serp_date_utils import extract_serp_date_text
 from url_utils import resolve_url
 from risk_rules import (
     classify_control,
@@ -252,6 +253,7 @@ def load_company_domains(cur) -> Dict[str, Set[str]]:
 
 
 def ensure_narrative_columns(cur) -> None:
+    cur.execute("alter table if exists serp_feature_items add column if not exists published_date text")
     cur.execute("alter table if exists serp_feature_items add column if not exists narrative_primary_tag text")
     cur.execute("alter table if exists serp_feature_items add column if not exists narrative_primary_group text")
     cur.execute("alter table if exists serp_feature_items add column if not exists narrative_tags text[]")
@@ -596,6 +598,7 @@ def load_feature_items(
                 "snippet": str(ref.get("snippet") or ""),
                 "url": str(ref.get("link") or ""),
                 "source": str(ref.get("source") or ""),
+                "published_date": extract_serp_date_text(ref),
                 "position": idx + 1,
             })
 
@@ -610,6 +613,7 @@ def load_feature_items(
                 "snippet": str(item.get("snippet") or item.get("answer") or ""),
                 "url": str(item.get("link") or item.get("source") or ""),
                 "source": str(item.get("source") or ""),
+                "published_date": extract_serp_date_text(item),
                 "position": idx + 1,
             })
 
@@ -624,6 +628,7 @@ def load_feature_items(
                 "snippet": str(item.get("snippet") or ""),
                 "url": str(item.get("link") or item.get("url") or ""),
                 "source": str(item.get("source") or ""),
+                "published_date": extract_serp_date_text(item),
                 "position": idx + 1,
             })
 
@@ -638,6 +643,7 @@ def load_feature_items(
                 "snippet": str(item.get("snippet") or ""),
                 "url": str(item.get("link") or ""),
                 "source": str(item.get("source") or ""),
+                "published_date": extract_serp_date_text(item),
                 "position": idx + 1,
             })
 
@@ -652,6 +658,7 @@ def load_feature_items(
                 "snippet": str(item.get("snippet") or ""),
                 "url": str(item.get("link") or ""),
                 "source": str(item.get("source") or ""),
+                "published_date": extract_serp_date_text(item),
                 "position": idx + 1,
             })
 
@@ -661,6 +668,7 @@ def load_feature_items(
             snippet = item.get("snippet", "")
             url = item.get("url", "")
             source = item.get("source", "")
+            published_date = item.get("published_date", "")
             position = int(item.get("position") or 0) or None
             feature = item.get("feature_type", "")
             item_type = item.get("item_type", "")
@@ -710,6 +718,7 @@ def load_feature_items(
                 "control_class": control_class,
                 "finance_routine": finance_routine,
                 "source": source,
+                "published_date": published_date,
                 "is_neg_top_story": is_neg_top_story,
             })
             if feature == "top_stories_items":
@@ -785,6 +794,7 @@ def load_feature_items(
             item["snippet"],
             item["url"],
             item["domain"],
+            item["published_date"],
             item["position"],
             item["url_hash"],
             item["sentiment_label"],
@@ -814,13 +824,13 @@ def upsert_feature_items(cur, rows, source: str):
         return 0
     deduped = {}
     for row in rows:
-        key = (row[0], row[1], row[3], row[4], row[11])
+        key = (row[0], row[1], row[3], row[4], row[12])
         deduped[key] = row
     rows = list(deduped.values())
     sql = """
         insert into serp_feature_items
           (date, entity_type, entity_id, entity_name, feature_type, item_type,
-           title, snippet, url, domain, position, url_hash,
+           title, snippet, url, domain, published_date, position, url_hash,
            sentiment_label, control_class, finance_routine, source,
            narrative_primary_tag, narrative_primary_group, narrative_tags, narrative_is_crisis,
            narrative_rule_version, narrative_tagged_at)
@@ -830,6 +840,7 @@ def upsert_feature_items(cur, rows, source: str):
           snippet = excluded.snippet,
           url = excluded.url,
           domain = excluded.domain,
+          published_date = coalesce(excluded.published_date, serp_feature_items.published_date),
           position = excluded.position,
           sentiment_label = excluded.sentiment_label,
           control_class = excluded.control_class,

@@ -27,6 +27,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from storage_utils import CloudStorageManager
 from llm_utils import is_uncertain
 from db_writer import upsert_serp_results
+from serp_date_utils import extract_serp_date_text
 from url_utils import resolve_url
 from risk_rules import (
     classify_control,
@@ -189,6 +190,7 @@ def fetch_parquet_with_metrics(path_or_url: str) -> Tuple[pd.DataFrame | None, D
                 "title": item.get("title") or "",
                 "link": item.get("link") or "",
                 "snippet": item.get("snippet") or "",
+                "published_date": extract_serp_date_text(item),
             })
     metrics["raw_queries"] = len(all_queries)
     metrics["raw_queries_with_payload"] = len(payload_queries)
@@ -477,7 +479,7 @@ def process_for_date(
         )
         time.sleep(max(1, source_check_interval_seconds))
 
-    expected = ["company", "position", "title", "link", "snippet"]
+    expected = ["company", "position", "title", "link", "snippet", "published_date"]
     for col in expected:
         if col not in raw.columns:
             raw[col] = ""
@@ -507,6 +509,7 @@ def process_for_date(
         url = str(row.get("link", "") or "").strip()
         snippet = str(row.get("snippet", "") or "").strip()
         source = str(row.get("source", "") or "").strip()
+        published_date = str(row.get("published_date", "") or "").strip()
 
         pos_val = row.get("position", 0)
         try:
@@ -581,6 +584,7 @@ def process_for_date(
             "url": url,
             "position": position,
             "snippet": snippet,
+            "published_date": published_date,
             "sentiment": label,
             "controlled": controlled,
             "finance_routine": finance_routine,

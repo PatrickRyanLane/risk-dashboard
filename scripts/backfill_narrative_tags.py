@@ -36,6 +36,7 @@ def get_conn():
 
 
 def ensure_narrative_columns(cur) -> None:
+    cur.execute("alter table if exists serp_feature_items add column if not exists published_date text")
     cur.execute("alter table if exists serp_feature_items add column if not exists narrative_primary_tag text")
     cur.execute("alter table if exists serp_feature_items add column if not exists narrative_primary_group text")
     cur.execute("alter table if exists serp_feature_items add column if not exists narrative_tags text[]")
