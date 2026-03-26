@@ -1,6 +1,9 @@
-# Slack -> Salesforce Outreach Button (MVP)
+# Slack -> Salesforce Outreach Buttons (MVP)
 
-This wiring adds a button to crisis Slack alerts:
+This wiring adds Salesforce action buttons to crisis Slack alerts:
+- Button label: `Create SF Lead`
+- Action ID: `create_sf_outreach_lead`
+- Behavior: creates a Salesforce `Lead` for human review, prefilling the matched outreach contact last name when available
 - Button label: `Create SF Outreach Draft`
 - Action ID: `create_sf_outreach_draft`
 - Behavior: creates a Salesforce `Task` for human review (no auto-send)
@@ -13,7 +16,7 @@ This wiring adds a button to crisis Slack alerts:
   - `POST /slack/interactions`
   - Signature verification (Slack signing secret)
   - Idempotent click tracking in Postgres table `slack_action_history`
-  - Salesforce Task creation
+  - Salesforce Task and Lead creation
 
 ## Required env vars
 
@@ -31,6 +34,8 @@ Optional:
 - `OUTREACH_TASK_PRIORITY` (default `High`)
 - `OUTREACH_TASK_OWNER_ID` (fallback owner if account owner not found)
 - `OUTREACH_TASK_DUE_DAYS` (default `1`)
+- `OUTREACH_LEAD_OWNER_ID` (fallback owner if account owner not found)
+- `OUTREACH_LEAD_LAST_NAME_FALLBACK` (default `Communications` when no ideal contact last name is found)
 - `SLACK_ALLOWED_TEAM_IDS` (comma-separated Slack workspace IDs)
 - `SLACK_ALLOWED_APP_IDS` (comma-separated Slack app IDs)
 - `SLACK_ALLOWED_CHANNEL_IDS` (comma-separated channel IDs)

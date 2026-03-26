@@ -52,6 +52,9 @@ ALERT_FAIL_FAST_ON_EMPTY_WINDOW = os.getenv("ALERT_FAIL_FAST_ON_EMPTY_WINDOW", "
 ALERT_TIMEZONE = os.getenv("ALERT_TIMEZONE", "America/New_York")
 SLACK_ENABLE_ACTION_BUTTON = os.getenv("SLACK_ENABLE_ACTION_BUTTON", "1") == "1"
 SLACK_ACTION_VALUE_SIGNING_SECRET = os.getenv("SLACK_ACTION_VALUE_SIGNING_SECRET", "").strip()
+SLACK_ACTION_BLOCK_ID = "crisis_alert_actions_v1"
+SF_OUTREACH_TASK_ACTION_ID = "create_sf_outreach_draft"
+SF_OUTREACH_LEAD_ACTION_ID = "create_sf_outreach_lead"
 
 # Configurable Floors
 MIN_NEGATIVE_ARTICLES = 13
@@ -597,17 +600,27 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
         blocks.append(
             {
                 "type": "actions",
-                "block_id": "crisis_alert_actions_v1",
+                "block_id": SLACK_ACTION_BLOCK_ID,
                 "elements": [
                     {
                         "type": "button",
-                        "action_id": "create_sf_outreach_draft",
+                        "action_id": SF_OUTREACH_LEAD_ACTION_ID,
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Create SF Lead",
+                            "emoji": True,
+                        },
+                        "style": "primary",
+                        "value": action_value,
+                    },
+                    {
+                        "type": "button",
+                        "action_id": SF_OUTREACH_TASK_ACTION_ID,
                         "text": {
                             "type": "plain_text",
                             "text": "Create SF Outreach Draft",
                             "emoji": True,
                         },
-                        "style": "primary",
                         "value": action_value,
                     }
                 ],
@@ -619,7 +632,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": "Creates a Salesforce review task only (no auto-send).",
+                        "text": "Creates a Salesforce lead or review task only (no auto-send).",
                     }
                 ],
             }

@@ -4,8 +4,8 @@ Slack interactivity webhook for crisis-alert action buttons.
 
 MVP behavior:
 - Verify Slack request signatures.
-- Handle `create_sf_outreach_draft` button clicks.
-- Create a Salesforce Task for human review (no auto-send).
+- Handle task and lead action button clicks from crisis alerts.
+- Create a Salesforce Task or Lead for human review (no auto-send).
 - Record idempotent processing in Postgres.
 """
 
@@ -46,6 +46,8 @@ SLACK_ALLOWED_USER_IDS = _csv_env_set("SLACK_ALLOWED_USER_IDS")
 SLACK_EXPECTED_BOT_ID = os.getenv("SLACK_EXPECTED_BOT_ID", "").strip()
 MAX_SLACK_BODY_BYTES = max(10_000, int(os.getenv("MAX_SLACK_BODY_BYTES", "200000")))
 EXPECTED_ACTION_BLOCK_ID = os.getenv("EXPECTED_ACTION_BLOCK_ID", "crisis_alert_actions_v1")
+OUTREACH_TASK_ACTION_ID = "create_sf_outreach_draft"
+OUTREACH_LEAD_ACTION_ID = "create_sf_outreach_lead"
 
 SF_USERNAME = os.getenv("SF_USERNAME", "")
 SF_PASSWORD = os.getenv("SF_PASSWORD", "")
@@ -56,6 +58,10 @@ OUTREACH_TASK_STATUS = os.getenv("OUTREACH_TASK_STATUS", "Open")
 OUTREACH_TASK_PRIORITY = os.getenv("OUTREACH_TASK_PRIORITY", "High")
 OUTREACH_TASK_OWNER_ID = os.getenv("OUTREACH_TASK_OWNER_ID", "").strip()
 OUTREACH_TASK_DUE_DAYS = max(0, int(os.getenv("OUTREACH_TASK_DUE_DAYS", "1")))
+OUTREACH_LEAD_OWNER_ID = os.getenv("OUTREACH_LEAD_OWNER_ID", "").strip()
+OUTREACH_LEAD_LAST_NAME_FALLBACK = (
+    os.getenv("OUTREACH_LEAD_LAST_NAME_FALLBACK", "Communications").strip() or "Communications"
+)
 SF_ACCOUNT_MATCH_MIN_SCORE = int(os.getenv("SF_ACCOUNT_MATCH_MIN_SCORE", "78"))
 
 _COMPANY_SUFFIXES = {
@@ -73,6 +79,17 @@ _COMPANY_SUFFIXES = {
     "holding",
     "group",
 }
+
+
+def _empty_contact() -> dict[str, str]:
+    return {
+        "id": "",
+        "name": "",
+        "first_name": "",
+        "last_name": "",
+        "email": "",
+        "title": "",
+    }
 
 
 def _sf_escape(value: str) -> str:
@@ -240,6 +257,18 @@ def _ensure_action_table(conn):
                 )
                 """
             )
+            cur.execute(
+                """
+                alter table slack_action_history
+                add column if not exists salesforce_record_id text
+                """
+            )
+            cur.execute(
+                """
+                alter table slack_action_history
+                add column if not exists salesforce_record_type text
+                """
+            )
 
 
 def _claim_interaction(
@@ -279,11 +308,19 @@ def _claim_interaction(
             return cur.rowcount > 0
 
 
-def _get_existing_result(conn, interaction_key: str) -> tuple[str, str, str]:
+def _get_existing_result(conn, interaction_key: str) -> tuple[str, str, str, str]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            select status, coalesce(salesforce_task_id, ''), coalesce(error, '')
+            select
+                status,
+                coalesce(
+                    salesforce_record_type,
+                    case when nullif(salesforce_task_id, '') is not null then 'task' else '' end,
+                    ''
+                ),
+                coalesce(salesforce_record_id, salesforce_task_id, ''),
+                coalesce(error, '')
             from slack_action_history
             where interaction_key = %s
             """,
@@ -291,23 +328,35 @@ def _get_existing_result(conn, interaction_key: str) -> tuple[str, str, str]:
         )
         row = cur.fetchone()
         if not row:
-            return "", "", ""
-        return row[0] or "", row[1] or "", row[2] or ""
+            return "", "", "", ""
+        return row[0] or "", row[1] or "", row[2] or "", row[3] or ""
 
 
-def _set_action_result(conn, interaction_key: str, status: str, task_id: str = "", error: str = ""):
+def _set_action_result(
+    conn,
+    interaction_key: str,
+    status: str,
+    record_type: str = "",
+    record_id: str = "",
+    error: str = "",
+):
     with conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 update slack_action_history
                 set status = %s,
-                    salesforce_task_id = nullif(%s, ''),
+                    salesforce_record_type = nullif(%s, ''),
+                    salesforce_record_id = nullif(%s, ''),
+                    salesforce_task_id = case
+                        when %s = 'task' then nullif(%s, '')
+                        else salesforce_task_id
+                    end,
                     error = nullif(%s, ''),
                     updated_at = now()
                 where interaction_key = %s
                 """,
-                (status, task_id, error, interaction_key),
+                (status, record_type, record_id, record_type, record_id, error, interaction_key),
             )
 
 
@@ -393,39 +442,82 @@ def _find_account(sf: Salesforce, brand: str) -> tuple[str, str, str]:
     return "", brand, ""
 
 
-def _find_comms_contact(sf: Salesforce, account_id: str) -> tuple[str, str, str, str]:
+def _contact_title_score(title: str) -> int:
+    title_norm = re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).strip()
+    if not title_norm:
+        return -1
+
+    score = 0
+
+    # Prefer the most relevant outward-facing crisis contacts first.
+    if re.search(r"\b(communications?|comms|corporate affairs?|public affairs?|public relations?|pr|external affairs?|media relations?|cco)\b", title_norm):
+        score += 120
+    if re.search(r"\b(marketing|brand|reputation|cmo)\b", title_norm):
+        score += 80
+    if re.search(r"\b(chief executive officer|ceo|president|founder|co founder|cofounder)\b", title_norm):
+        score += 55
+
+    if re.search(r"\bchief\b", title_norm):
+        score += 35
+    elif re.search(r"\b(executive vice president|senior vice president|evp|svp|vice president|vp|head|president)\b", title_norm):
+        score += 24
+    elif re.search(r"\bdirector\b", title_norm):
+        score += 14
+
+    if re.search(r"\b(manager|specialist|coordinator|assistant|associate|intern)\b", title_norm):
+        score -= 35
+    if re.search(r"\b(legal|finance|accounting|human resources|hr|operations|sales|customer support)\b", title_norm):
+        score -= 25
+
+    return score
+
+
+def _find_comms_contact(sf: Salesforce, account_id: str) -> dict[str, str]:
     if not account_id:
-        return "", "", "", ""
+        return _empty_contact()
     soql = (
-        "SELECT Id, Name, Email, Title FROM Contact "
-        f"WHERE AccountId = '{_sf_escape(account_id)}' AND ("
-        "Title LIKE '%Communications%' OR "
-        "Title LIKE '%Corporate Affairs%' OR "
-        "Title LIKE '%Public Relations%' OR "
-        "Title LIKE '%PR%' OR "
-        "Title LIKE '%External Affairs%') "
-        "ORDER BY LastModifiedDate DESC LIMIT 1"
+        "SELECT Id, Name, FirstName, LastName, Email, Title, LastModifiedDate FROM Contact "
+        f"WHERE AccountId = '{_sf_escape(account_id)}' AND Title != null "
+        "ORDER BY LastModifiedDate DESC LIMIT 100"
     )
     result = sf.query(soql)
     if result.get("totalSize", 0) <= 0:
-        return "", "", "", ""
-    rec = result["records"][0]
-    return (
-        rec.get("Id", ""),
-        rec.get("Name", ""),
-        rec.get("Email", ""),
-        rec.get("Title", ""),
-    )
+        return _empty_contact()
+
+    candidates = []
+    for rec in result.get("records") or []:
+        title = rec.get("Title", "") or ""
+        score = _contact_title_score(title)
+        if score < 60:
+            continue
+        has_email = 1 if (rec.get("Email") or "").strip() else 0
+        candidates.append((score, has_email, rec.get("LastModifiedDate", "") or "", rec))
+
+    if not candidates:
+        return _empty_contact()
+
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    rec = candidates[0][3]
+    return {
+        "id": rec.get("Id", "") or "",
+        "name": rec.get("Name", "") or "",
+        "first_name": rec.get("FirstName", "") or "",
+        "last_name": rec.get("LastName", "") or "",
+        "email": rec.get("Email", "") or "",
+        "title": rec.get("Title", "") or "",
+    }
 
 
-def _build_description(ctx: dict, contact: tuple[str, str, str, str], slack_user_name: str) -> str:
+def _build_description(ctx: dict, contact: dict[str, str], slack_user_name: str) -> str:
     brand = (ctx.get("brand") or "").strip()
     ceo = (ctx.get("ceo") or "").strip()
     article_type = (ctx.get("article_type") or "brand").strip().lower()
     alert_date = (ctx.get("alert_date") or "").strip()
     top_neg = int(ctx.get("top_stories_neg") or 0)
     dashboard_url = (ctx.get("dashboard_url") or "").strip()
-    contact_name, contact_email, contact_title = contact[1], contact[2], contact[3]
+    contact_name = (contact.get("name") or "").strip()
+    contact_email = (contact.get("email") or "").strip()
+    contact_title = (contact.get("title") or "").strip()
 
     lines = [
         "Generated from Slack crisis alert button click.",
@@ -441,7 +533,7 @@ def _build_description(ctx: dict, contact: tuple[str, str, str, str], slack_user
         lines.extend(
             [
                 "",
-                "Suggested comms contact:",
+                "Suggested outreach contact:",
                 f"- Name: {contact_name or '(missing)'}",
                 f"- Title: {contact_title or '(missing)'}",
                 f"- Email: {contact_email or '(missing)'}",
@@ -459,6 +551,46 @@ def _build_description(ctx: dict, contact: tuple[str, str, str, str], slack_user
     return "\n".join(lines)
 
 
+def _create_with_owner_fallback(
+    sf_object,
+    payload: dict,
+    preferred_owner_id: str,
+    fallback_owner_id: str,
+) -> tuple[dict, str]:
+    owner_candidates = []
+    if preferred_owner_id:
+        owner_candidates.append(preferred_owner_id)
+    if fallback_owner_id and fallback_owner_id not in owner_candidates:
+        owner_candidates.append(fallback_owner_id)
+    owner_candidates.append("")
+
+    result = None
+    last_err = None
+    owner_used = ""
+    for candidate in owner_candidates:
+        candidate_payload = dict(payload)
+        if candidate:
+            candidate_payload["OwnerId"] = candidate
+        else:
+            candidate_payload.pop("OwnerId", None)
+        try:
+            result = sf_object.create(candidate_payload)
+            owner_used = candidate
+            break
+        except SalesforceMalformedRequest as exc:
+            last_err = exc
+            if "INACTIVE_OWNER_OR_USER" in str(exc) and candidate:
+                print(f"[WARN] Inactive owner {candidate}; trying next fallback owner")
+                continue
+            raise
+
+    if result is None and last_err is not None:
+        raise last_err
+    if not result.get("success"):
+        raise RuntimeError(f"Salesforce create failed: {result}")
+    return result, owner_used
+
+
 def _create_salesforce_task(ctx: dict, slack_user_name: str) -> tuple[str, str]:
     brand = (ctx.get("brand") or "").strip()
     if not brand:
@@ -466,14 +598,12 @@ def _create_salesforce_task(ctx: dict, slack_user_name: str) -> tuple[str, str]:
 
     sf = _sf_client()
     account_id, account_name, account_owner_id = _find_account(sf, brand)
-    contact_id, contact_name, contact_email, contact_title = _find_comms_contact(sf, account_id)
+    contact = _find_comms_contact(sf, account_id)
+    contact_id = (contact.get("id") or "").strip()
+    contact_name = (contact.get("name") or "").strip()
 
     due_date = (datetime.now(timezone.utc).date() + timedelta(days=OUTREACH_TASK_DUE_DAYS)).isoformat()
-    description = _build_description(
-        ctx,
-        ("", contact_name, contact_email, contact_title),
-        slack_user_name,
-    )
+    description = _build_description(ctx, contact, slack_user_name)
 
     task_payload = {
         "Subject": OUTREACH_TASK_SUBJECT,
@@ -487,38 +617,12 @@ def _create_salesforce_task(ctx: dict, slack_user_name: str) -> tuple[str, str]:
     if contact_id:
         task_payload["WhoId"] = contact_id
 
-    owner_candidates = []
-    if account_owner_id:
-        owner_candidates.append(account_owner_id)
-    if OUTREACH_TASK_OWNER_ID and OUTREACH_TASK_OWNER_ID not in owner_candidates:
-        owner_candidates.append(OUTREACH_TASK_OWNER_ID)
-    # Final fallback: no explicit OwnerId (integration user/default owner).
-    owner_candidates.append("")
-
-    result = None
-    last_err = None
-    owner_used = ""
-    for candidate in owner_candidates:
-        payload = dict(task_payload)
-        if candidate:
-            payload["OwnerId"] = candidate
-        else:
-            payload.pop("OwnerId", None)
-        try:
-            result = sf.Task.create(payload)
-            owner_used = candidate
-            break
-        except SalesforceMalformedRequest as exc:
-            last_err = exc
-            if "INACTIVE_OWNER_OR_USER" in str(exc) and candidate:
-                print(f"[WARN] Inactive task owner {candidate}; trying next fallback owner")
-                continue
-            raise
-
-    if result is None and last_err is not None:
-        raise last_err
-    if not result.get("success"):
-        raise RuntimeError(f"Salesforce task create failed: {result}")
+    result, owner_used = _create_with_owner_fallback(
+        sf.Task,
+        task_payload,
+        preferred_owner_id=account_owner_id,
+        fallback_owner_id=OUTREACH_TASK_OWNER_ID,
+    )
     task_id = result.get("id", "")
     extra = f"account={account_name}" if account_name else "account=(none)"
     if contact_name:
@@ -528,6 +632,58 @@ def _create_salesforce_task(ctx: dict, slack_user_name: str) -> tuple[str, str]:
     else:
         extra += ", owner=(integration/default)"
     return task_id, extra
+
+
+def _lead_last_name(contact: dict[str, str]) -> str:
+    last_name = (contact.get("last_name") or "").strip()
+    if last_name:
+        return last_name
+    name = (contact.get("name") or "").strip()
+    if name:
+        return name.split()[-1]
+    return OUTREACH_LEAD_LAST_NAME_FALLBACK
+
+
+def _create_salesforce_lead(ctx: dict, slack_user_name: str) -> tuple[str, str]:
+    brand = (ctx.get("brand") or "").strip()
+    if not brand:
+        raise RuntimeError("Missing company/brand in button payload")
+
+    sf = _sf_client()
+    account_id, account_name, account_owner_id = _find_account(sf, brand)
+    contact = _find_comms_contact(sf, account_id)
+
+    lead_company = account_name or brand
+    lead_last_name = _lead_last_name(contact)
+    description = _build_description(ctx, contact, slack_user_name)
+
+    lead_payload = {
+        "Company": lead_company,
+        "LastName": lead_last_name,
+        "Description": description[:32000],
+    }
+    if (contact.get("first_name") or "").strip():
+        lead_payload["FirstName"] = contact["first_name"].strip()
+    if (contact.get("email") or "").strip():
+        lead_payload["Email"] = contact["email"].strip()
+    if (contact.get("title") or "").strip():
+        lead_payload["Title"] = contact["title"].strip()
+
+    result, owner_used = _create_with_owner_fallback(
+        sf.Lead,
+        lead_payload,
+        preferred_owner_id=account_owner_id,
+        fallback_owner_id=OUTREACH_LEAD_OWNER_ID,
+    )
+    lead_id = result.get("id", "")
+    extra = f"company={lead_company}, last_name={lead_last_name}"
+    if (contact.get("name") or "").strip():
+        extra += f", source_contact={contact['name'].strip()}"
+    if owner_used:
+        extra += f", owner={owner_used}"
+    else:
+        extra += ", owner=(integration/default)"
+    return lead_id, extra
 
 
 def _interaction_key(payload: dict, action: dict) -> str:
@@ -540,21 +696,48 @@ def _interaction_key(payload: dict, action: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _process_action_background(interaction_key: str, ctx: dict, slack_user_name: str, response_url: str):
+ACTION_CONFIG = {
+    OUTREACH_TASK_ACTION_ID: {
+        "label": "Salesforce review task",
+        "record_type": "task",
+        "creator": _create_salesforce_task,
+    },
+    OUTREACH_LEAD_ACTION_ID: {
+        "label": "Salesforce lead",
+        "record_type": "lead",
+        "creator": _create_salesforce_lead,
+    },
+}
+
+
+def _process_action_background(
+    interaction_key: str,
+    action_id: str,
+    ctx: dict,
+    slack_user_name: str,
+    response_url: str,
+):
+    action_cfg = ACTION_CONFIG[action_id]
     conn = _db_conn()
     if conn is None:
-        _post_slack_followup(response_url, "Could not create Salesforce task: database connection unavailable.")
+        _post_slack_followup(response_url, f"Could not create {action_cfg['label']}: database connection unavailable.")
         return
     try:
         try:
-            task_id, extra = _create_salesforce_task(ctx, slack_user_name)
-            _set_action_result(conn, interaction_key, "success", task_id=task_id)
-            _post_slack_followup(response_url, f"Created Salesforce review task `{task_id}` ({extra}).")
+            record_id, extra = action_cfg["creator"](ctx, slack_user_name)
+            _set_action_result(
+                conn,
+                interaction_key,
+                "success",
+                record_type=action_cfg["record_type"],
+                record_id=record_id,
+            )
+            _post_slack_followup(response_url, f"Created {action_cfg['label']} `{record_id}` ({extra}).")
         except Exception as exc:
             error_ref = interaction_key[:12]
             print(f"[ERROR] slack_interaction_failed ref={error_ref} error={exc}")
             _set_action_result(conn, interaction_key, "failed", error=str(exc)[:1000])
-            _post_slack_followup(response_url, f"Could not create Salesforce task. Ref: `{error_ref}`")
+            _post_slack_followup(response_url, f"Could not create {action_cfg['label']}. Ref: `{error_ref}`")
     finally:
         conn.close()
 
@@ -592,7 +775,7 @@ def slack_interactions():
     if EXPECTED_ACTION_BLOCK_ID and block_id != EXPECTED_ACTION_BLOCK_ID:
         return jsonify({"ok": False, "error": "unexpected action block"}), 403
     action_id = (action.get("action_id") or "").strip()
-    if action_id != "create_sf_outreach_draft":
+    if action_id not in ACTION_CONFIG:
         return jsonify({"response_type": "ephemeral", "text": f"Unsupported action: {action_id}"}), 200
 
     ctx, ctx_error = _decode_action_context(action.get("value") or "")
@@ -629,9 +812,10 @@ def slack_interactions():
             message_ts=message_ts,
         )
         if not claimed:
-            status, task_id, prior_error = _get_existing_result(conn, interaction_key)
+            status, record_type, record_id, prior_error = _get_existing_result(conn, interaction_key)
+            record_label = "Salesforce lead" if record_type == "lead" else "Salesforce task"
             if status == "success":
-                msg = f"Already processed. Salesforce task: {task_id or '(created)'}"
+                msg = f"Already processed. {record_label}: {record_id or '(created)'}"
             elif status == "failed":
                 msg = f"This click already failed earlier: {prior_error or 'unknown error'}"
             else:
@@ -640,7 +824,7 @@ def slack_interactions():
 
         worker = threading.Thread(
             target=_process_action_background,
-            args=(interaction_key, ctx, slack_user_name, response_url),
+            args=(interaction_key, action_id, ctx, slack_user_name, response_url),
             daemon=True,
         )
         worker.start()
