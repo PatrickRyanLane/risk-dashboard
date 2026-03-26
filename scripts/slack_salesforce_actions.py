@@ -59,6 +59,7 @@ OUTREACH_TASK_PRIORITY = os.getenv("OUTREACH_TASK_PRIORITY", "High")
 OUTREACH_TASK_OWNER_ID = os.getenv("OUTREACH_TASK_OWNER_ID", "").strip()
 OUTREACH_TASK_DUE_DAYS = max(0, int(os.getenv("OUTREACH_TASK_DUE_DAYS", "1")))
 OUTREACH_LEAD_OWNER_ID = os.getenv("OUTREACH_LEAD_OWNER_ID", "").strip()
+OUTREACH_LEAD_STATUS = os.getenv("OUTREACH_LEAD_STATUS", "Cold Outreach").strip()
 OUTREACH_LEAD_LAST_NAME_FALLBACK = (
     os.getenv("OUTREACH_LEAD_LAST_NAME_FALLBACK", "Communications").strip() or "Communications"
 )
@@ -662,6 +663,8 @@ def _create_salesforce_lead(ctx: dict, slack_user_name: str) -> tuple[str, str]:
         "LastName": lead_last_name,
         "Description": description[:32000],
     }
+    if OUTREACH_LEAD_STATUS:
+        lead_payload["Status"] = OUTREACH_LEAD_STATUS
     if (contact.get("first_name") or "").strip():
         lead_payload["FirstName"] = contact["first_name"].strip()
     if (contact.get("email") or "").strip():
@@ -714,7 +717,10 @@ def _process_action_background(
     interaction_key: str,
     action_id: str,
     ctx: dict,
+    slack_user_id: str,
     slack_user_name: str,
+    channel_id: str,
+    message_ts: str,
     response_url: str,
 ):
     action_cfg = ACTION_CONFIG[action_id]
@@ -723,6 +729,28 @@ def _process_action_background(
         _post_slack_followup(response_url, f"Could not create {action_cfg['label']}: database connection unavailable.")
         return
     try:
+        _ensure_action_table(conn)
+        claimed = _claim_interaction(
+            conn,
+            interaction_key=interaction_key,
+            action_id=action_id,
+            ctx=ctx,
+            slack_user_id=slack_user_id,
+            slack_user_name=slack_user_name,
+            channel_id=channel_id,
+            message_ts=message_ts,
+        )
+        if not claimed:
+            status, record_type, record_id, prior_error = _get_existing_result(conn, interaction_key)
+            record_label = "Salesforce lead" if record_type == "lead" else "Salesforce task"
+            if status == "success":
+                msg = f"Already processed. {record_label}: {record_id or '(created)'}"
+            elif status == "failed":
+                msg = f"This click already failed earlier: {prior_error or 'unknown error'}"
+            else:
+                msg = "This click is already being processed."
+            _post_slack_followup(response_url, msg)
+            return
         try:
             record_id, extra = action_cfg["creator"](ctx, slack_user_name)
             _set_action_result(
@@ -736,8 +764,13 @@ def _process_action_background(
         except Exception as exc:
             error_ref = interaction_key[:12]
             print(f"[ERROR] slack_interaction_failed ref={error_ref} error={exc}")
-            _set_action_result(conn, interaction_key, "failed", error=str(exc)[:1000])
-            _post_slack_followup(response_url, f"Could not create {action_cfg['label']}. Ref: `{error_ref}`")
+            error_text = str(exc).replace("\n", " ").strip()
+            _set_action_result(conn, interaction_key, "failed", error=error_text[:1000])
+            detail = f" {error_text[:200]}" if error_text else ""
+            _post_slack_followup(
+                response_url,
+                f"Could not create {action_cfg['label']}. Ref: `{error_ref}`.{detail}",
+            )
     finally:
         conn.close()
 
@@ -789,53 +822,18 @@ def slack_interactions():
     message_ts = ((payload.get("container") or {}).get("message_ts") or "").strip()
     response_url = (payload.get("response_url") or "").strip()
     interaction_key = _interaction_key(payload, action)
-
-    conn = _db_conn()
-    if conn is None:
-        return jsonify(
-            {
-                "response_type": "ephemeral",
-                "text": "DATABASE_URL is not configured for action tracking.",
-            }
-        ), 500
-
-    try:
-        _ensure_action_table(conn)
-        claimed = _claim_interaction(
-            conn,
-            interaction_key=interaction_key,
-            action_id=action_id,
-            ctx=ctx,
-            slack_user_id=slack_user_id,
-            slack_user_name=slack_user_name,
-            channel_id=channel_id,
-            message_ts=message_ts,
-        )
-        if not claimed:
-            status, record_type, record_id, prior_error = _get_existing_result(conn, interaction_key)
-            record_label = "Salesforce lead" if record_type == "lead" else "Salesforce task"
-            if status == "success":
-                msg = f"Already processed. {record_label}: {record_id or '(created)'}"
-            elif status == "failed":
-                msg = f"This click already failed earlier: {prior_error or 'unknown error'}"
-            else:
-                msg = "This click is already being processed."
-            return jsonify({"response_type": "ephemeral", "text": msg}), 200
-
-        worker = threading.Thread(
-            target=_process_action_background,
-            args=(interaction_key, action_id, ctx, slack_user_name, response_url),
-            daemon=True,
-        )
-        worker.start()
-        return jsonify(
-            {
-                "response_type": "ephemeral",
-                "text": "Processing request... I will post a follow-up here shortly.",
-            }
-        ), 200
-    finally:
-        conn.close()
+    worker = threading.Thread(
+        target=_process_action_background,
+        args=(interaction_key, action_id, ctx, slack_user_id, slack_user_name, channel_id, message_ts, response_url),
+        daemon=True,
+    )
+    worker.start()
+    return jsonify(
+        {
+            "response_type": "ephemeral",
+            "text": "Processing request... I will post a follow-up here shortly.",
+        }
+    ), 200
 
 
 if __name__ == "__main__":

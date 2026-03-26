@@ -35,6 +35,7 @@ Optional:
 - `OUTREACH_TASK_OWNER_ID` (fallback owner if account owner not found)
 - `OUTREACH_TASK_DUE_DAYS` (default `1`)
 - `OUTREACH_LEAD_OWNER_ID` (fallback owner if account owner not found)
+- `OUTREACH_LEAD_STATUS` (default `Cold Outreach`)
 - `OUTREACH_LEAD_LAST_NAME_FALLBACK` (default `Communications` when no ideal contact last name is found)
 - `SLACK_ALLOWED_TEAM_IDS` (comma-separated Slack workspace IDs)
 - `SLACK_ALLOWED_APP_IDS` (comma-separated Slack app IDs)
