@@ -14,6 +14,8 @@ SERVICE="${SERVICE:-risk-slack-actions}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 IMAGE="gcr.io/${PROJECT_ID}/${SERVICE}:${IMAGE_TAG}"
 DOCKERFILE="${DOCKERFILE:-Dockerfile.slack-actions}"
+CLOUD_TASKS_LOCATION="${CLOUD_TASKS_LOCATION:-${REGION}}"
+CLOUD_TASKS_QUEUE="${CLOUD_TASKS_QUEUE:-${SERVICE}}"
 
 # Secret names in Secret Manager (not secret values).
 SECRET_SLACK_SIGNING="${SECRET_SLACK_SIGNING:-SLACK_SIGNING_SECRET}"
@@ -80,6 +82,7 @@ echo "Project: ${PROJECT_ID}"
 echo "Region: ${REGION}"
 echo "Service: ${SERVICE}"
 echo "Image: ${IMAGE}"
+echo "Cloud Tasks queue: ${CLOUD_TASKS_QUEUE} (${CLOUD_TASKS_LOCATION})"
 
 require_secret "$SECRET_SLACK_SIGNING"
 require_secret "$SECRET_SLACK_ACTION_VALUE_SIGNING"
@@ -89,6 +92,11 @@ require_secret "$SECRET_SF_PASSWORD"
 require_secret "$SECRET_SF_SECURITY_TOKEN"
 
 gcloud config set project "$PROJECT_ID" >/dev/null
+
+echo "Ensuring Cloud Tasks queue exists..."
+if ! gcloud tasks queues describe "$CLOUD_TASKS_QUEUE" --location "$CLOUD_TASKS_LOCATION" >/dev/null 2>&1; then
+  gcloud tasks queues create "$CLOUD_TASKS_QUEUE" --location "$CLOUD_TASKS_LOCATION" >/dev/null
+fi
 
 echo "Building container image..."
 TMP_CLOUDBUILD="$(mktemp)"
@@ -122,6 +130,9 @@ ENV_KVS=(
   "OUTREACH_TASK_DUE_DAYS=${OUTREACH_TASK_DUE_DAYS}"
   "OUTREACH_LEAD_STATUS=${OUTREACH_LEAD_STATUS}"
   "OUTREACH_LEAD_LAST_NAME_FALLBACK=${OUTREACH_LEAD_LAST_NAME_FALLBACK}"
+  "CLOUD_TASKS_PROJECT=${PROJECT_ID}"
+  "CLOUD_TASKS_LOCATION=${CLOUD_TASKS_LOCATION}"
+  "CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE}"
 )
 
 if [[ -n "$SLACK_ALLOWED_TEAM_IDS" ]]; then

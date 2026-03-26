@@ -13,6 +13,7 @@ tqdm==4.66.5
 yfinance~=0.2.50
 pytrends==4.9.2
 google-cloud-storage==2.18.2
+google-cloud-tasks==2.16.5
 flask==3.0.3
 gunicorn==23.0.0
 boto3==1.35.0

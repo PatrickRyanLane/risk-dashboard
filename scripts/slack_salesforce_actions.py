@@ -23,6 +23,10 @@ from datetime import datetime, timedelta, timezone
 import psycopg2
 import requests
 from flask import Flask, jsonify, request
+try:
+    from google.cloud import tasks_v2
+except Exception:
+    tasks_v2 = None
 from simple_salesforce import Salesforce
 from simple_salesforce.exceptions import SalesforceMalformedRequest
 
@@ -48,6 +52,14 @@ MAX_SLACK_BODY_BYTES = max(10_000, int(os.getenv("MAX_SLACK_BODY_BYTES", "200000
 EXPECTED_ACTION_BLOCK_ID = os.getenv("EXPECTED_ACTION_BLOCK_ID", "crisis_alert_actions_v1")
 OUTREACH_TASK_ACTION_ID = "create_sf_outreach_draft"
 OUTREACH_LEAD_ACTION_ID = "create_sf_outreach_lead"
+CLOUD_TASKS_PROJECT = (
+    os.getenv("CLOUD_TASKS_PROJECT")
+    or os.getenv("GOOGLE_CLOUD_PROJECT")
+    or os.getenv("GCP_PROJECT")
+    or ""
+).strip()
+CLOUD_TASKS_LOCATION = os.getenv("CLOUD_TASKS_LOCATION", "").strip()
+CLOUD_TASKS_QUEUE = os.getenv("CLOUD_TASKS_QUEUE", "").strip()
 
 SF_USERNAME = os.getenv("SF_USERNAME", "")
 SF_PASSWORD = os.getenv("SF_PASSWORD", "")
@@ -80,6 +92,8 @@ _COMPANY_SUFFIXES = {
     "holding",
     "group",
 }
+_ACTION_TABLE_LOCK = threading.Lock()
+_ACTION_TABLE_READY = False
 
 
 def _empty_contact() -> dict[str, str]:
@@ -195,6 +209,31 @@ def _verify_payload_origin(payload: dict) -> tuple[bool, str]:
     return True, ""
 
 
+def _task_signature(body_bytes: bytes) -> str:
+    if not SLACK_ACTION_VALUE_SIGNING_SECRET:
+        return ""
+    return hmac.new(
+        SLACK_ACTION_VALUE_SIGNING_SECRET.encode("utf-8"),
+        body_bytes,
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _verify_task_signature(body_bytes: bytes, signature: str) -> tuple[bool, str]:
+    if not SLACK_ACTION_VALUE_SIGNING_SECRET:
+        return True, ""
+    if not signature:
+        return False, "missing task signature"
+    expected = _task_signature(body_bytes)
+    if not hmac.compare_digest(expected, signature.strip()):
+        return False, "task signature mismatch"
+    return True, ""
+
+
+def _cloud_tasks_enabled() -> bool:
+    return bool(tasks_v2 and CLOUD_TASKS_PROJECT and CLOUD_TASKS_LOCATION and CLOUD_TASKS_QUEUE)
+
+
 def _decode_action_context(action_value: str) -> tuple[dict, str]:
     try:
         parsed = json.loads(action_value or "{}")
@@ -270,6 +309,47 @@ def _ensure_action_table(conn):
                 add column if not exists salesforce_record_type text
                 """
             )
+
+
+def _ensure_action_table_once(conn):
+    global _ACTION_TABLE_READY
+    if _ACTION_TABLE_READY:
+        return
+    with _ACTION_TABLE_LOCK:
+        if _ACTION_TABLE_READY:
+            return
+        _ensure_action_table(conn)
+        _ACTION_TABLE_READY = True
+
+
+def _cloud_tasks_queue_path() -> str:
+    if not _cloud_tasks_enabled():
+        return ""
+    client = tasks_v2.CloudTasksClient()
+    return client.queue_path(CLOUD_TASKS_PROJECT, CLOUD_TASKS_LOCATION, CLOUD_TASKS_QUEUE)
+
+
+def _enqueue_action_task(base_url: str, payload: dict):
+    if not _cloud_tasks_enabled():
+        raise RuntimeError("Cloud Tasks is not configured")
+
+    client = tasks_v2.CloudTasksClient()
+    queue_path = _cloud_tasks_queue_path()
+    body_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    signature = _task_signature(body_bytes)
+    if signature:
+        headers["X-Action-Task-Signature"] = signature
+
+    task = {
+        "http_request": {
+            "http_method": tasks_v2.HttpMethod.POST,
+            "url": f"{base_url.rstrip('/')}/internal/process-action",
+            "headers": headers,
+            "body": body_bytes,
+        }
+    }
+    client.create_task(parent=queue_path, task=task)
 
 
 def _claim_interaction(
@@ -713,7 +793,7 @@ ACTION_CONFIG = {
 }
 
 
-def _process_action_background(
+def _process_action(
     interaction_key: str,
     action_id: str,
     ctx: dict,
@@ -721,15 +801,19 @@ def _process_action_background(
     slack_user_name: str,
     channel_id: str,
     message_ts: str,
-    response_url: str,
 ):
     action_cfg = ACTION_CONFIG[action_id]
+    action_ref = interaction_key[:12]
+    brand = (ctx.get("brand") or "").strip()
+    print(
+        f"[INFO] slack_action_start ref={action_ref} action_id={action_id} "
+        f"user={slack_user_id or '(unknown)'} company={brand or '(unknown)'}"
+    )
     conn = _db_conn()
     if conn is None:
-        _post_slack_followup(response_url, f"Could not create {action_cfg['label']}: database connection unavailable.")
-        return
+        return f"Could not create {action_cfg['label']}: database connection unavailable."
     try:
-        _ensure_action_table(conn)
+        _ensure_action_table_once(conn)
         claimed = _claim_interaction(
             conn,
             interaction_key=interaction_key,
@@ -749,8 +833,7 @@ def _process_action_background(
                 msg = f"This click already failed earlier: {prior_error or 'unknown error'}"
             else:
                 msg = "This click is already being processed."
-            _post_slack_followup(response_url, msg)
-            return
+            return msg
         try:
             record_id, extra = action_cfg["creator"](ctx, slack_user_name)
             _set_action_result(
@@ -760,17 +843,17 @@ def _process_action_background(
                 record_type=action_cfg["record_type"],
                 record_id=record_id,
             )
-            _post_slack_followup(response_url, f"Created {action_cfg['label']} `{record_id}` ({extra}).")
+            print(
+                f"[INFO] slack_action_success ref={action_ref} action_id={action_id} "
+                f"record_id={record_id or '(missing)'}"
+            )
+            return f"Created {action_cfg['label']} `{record_id}` ({extra})."
         except Exception as exc:
-            error_ref = interaction_key[:12]
-            print(f"[ERROR] slack_interaction_failed ref={error_ref} error={exc}")
+            print(f"[ERROR] slack_interaction_failed ref={action_ref} error={exc}")
             error_text = str(exc).replace("\n", " ").strip()
             _set_action_result(conn, interaction_key, "failed", error=error_text[:1000])
             detail = f" {error_text[:200]}" if error_text else ""
-            _post_slack_followup(
-                response_url,
-                f"Could not create {action_cfg['label']}. Ref: `{error_ref}`.{detail}",
-            )
+            return f"Could not create {action_cfg['label']}. Ref: `{action_ref}`.{detail}"
     finally:
         conn.close()
 
@@ -778,6 +861,74 @@ def _process_action_background(
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "service": "slack-salesforce-actions"})
+
+
+@app.get("/debug/queue-health")
+def queue_health():
+    status = {
+        "ok": False,
+        "service": "slack-salesforce-actions",
+        "mode": "cloud_tasks" if _cloud_tasks_enabled() else "inline_fallback",
+        "tasks_library_loaded": bool(tasks_v2),
+        "cloud_tasks_configured": _cloud_tasks_enabled(),
+        "project": CLOUD_TASKS_PROJECT or "",
+        "location": CLOUD_TASKS_LOCATION or "",
+        "queue": CLOUD_TASKS_QUEUE or "",
+        "queue_path": "",
+        "queue_lookup_ok": False,
+        "queue_lookup_error": "",
+    }
+
+    if not _cloud_tasks_enabled():
+        return jsonify(status), 200
+
+    queue_path = ""
+    try:
+        queue_path = _cloud_tasks_queue_path()
+        client = tasks_v2.CloudTasksClient()
+        client.get_queue(name=queue_path)
+        status["ok"] = True
+        status["queue_path"] = queue_path
+        status["queue_lookup_ok"] = True
+    except Exception as exc:
+        status["queue_path"] = queue_path
+        status["queue_lookup_error"] = str(exc)
+
+    return jsonify(status), 200
+
+
+@app.post("/internal/process-action")
+def process_action_task():
+    raw_body = request.get_data(cache=True)
+    ok, err = _verify_task_signature(raw_body, request.headers.get("X-Action-Task-Signature", ""))
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 403
+
+    try:
+        payload = json.loads((raw_body or b"{}").decode("utf-8"))
+    except Exception:
+        return jsonify({"ok": False, "error": "invalid task payload"}), 400
+
+    action_id = (payload.get("action_id") or "").strip()
+    if action_id not in ACTION_CONFIG:
+        return jsonify({"ok": False, "error": f"unsupported action: {action_id}"}), 400
+
+    ctx = payload.get("ctx") or {}
+    if not isinstance(ctx, dict):
+        return jsonify({"ok": False, "error": "invalid task context"}), 400
+
+    message = _process_action(
+        interaction_key=(payload.get("interaction_key") or "").strip(),
+        action_id=action_id,
+        ctx=ctx,
+        slack_user_id=(payload.get("slack_user_id") or "").strip(),
+        slack_user_name=(payload.get("slack_user_name") or "").strip(),
+        channel_id=(payload.get("channel_id") or "").strip(),
+        message_ts=(payload.get("message_ts") or "").strip(),
+    )
+    response_url = (payload.get("response_url") or "").strip()
+    _post_slack_followup(response_url, message)
+    return jsonify({"ok": True, "message": message}), 200
 
 
 @app.post("/slack/interactions")
@@ -822,18 +973,45 @@ def slack_interactions():
     message_ts = ((payload.get("container") or {}).get("message_ts") or "").strip()
     response_url = (payload.get("response_url") or "").strip()
     interaction_key = _interaction_key(payload, action)
-    worker = threading.Thread(
-        target=_process_action_background,
-        args=(interaction_key, action_id, ctx, slack_user_id, slack_user_name, channel_id, message_ts, response_url),
-        daemon=True,
+    task_payload = {
+        "interaction_key": interaction_key,
+        "action_id": action_id,
+        "ctx": ctx,
+        "slack_user_id": slack_user_id,
+        "slack_user_name": slack_user_name,
+        "channel_id": channel_id,
+        "message_ts": message_ts,
+        "response_url": response_url,
+    }
+
+    if _cloud_tasks_enabled():
+        try:
+            _enqueue_action_task(request.url_root.rstrip("/"), task_payload)
+            return jsonify(
+                {
+                    "response_type": "ephemeral",
+                    "text": "Processing request... I will post a follow-up here shortly.",
+                }
+            ), 200
+        except Exception as exc:
+            print(f"[ERROR] slack_action_enqueue_failed ref={interaction_key[:12]} error={exc}")
+            return jsonify(
+                {
+                    "response_type": "ephemeral",
+                    "text": "Could not queue the Salesforce action. Please try again in a moment.",
+                }
+            ), 200
+
+    message = _process_action(
+        interaction_key=interaction_key,
+        action_id=action_id,
+        ctx=ctx,
+        slack_user_id=slack_user_id,
+        slack_user_name=slack_user_name,
+        channel_id=channel_id,
+        message_ts=message_ts,
     )
-    worker.start()
-    return jsonify(
-        {
-            "response_type": "ephemeral",
-            "text": "Processing request... I will post a follow-up here shortly.",
-        }
-    ), 200
+    return jsonify({"response_type": "ephemeral", "text": message}), 200
 
 
 if __name__ == "__main__":

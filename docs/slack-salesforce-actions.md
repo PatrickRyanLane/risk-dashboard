@@ -14,9 +14,12 @@ This wiring adds Salesforce action buttons to crisis Slack alerts:
   - Used by both `send_crisis_alerts.py` and `send_targeted_alerts.py`
 - Interactivity webhook in `scripts/slack_salesforce_actions.py`
   - `POST /slack/interactions`
+  - `POST /internal/process-action`
+  - `GET /debug/queue-health`
   - Signature verification (Slack signing secret)
   - Idempotent click tracking in Postgres table `slack_action_history`
   - Salesforce Task and Lead creation
+  - Cloud Tasks handoff in Cloud Run so Slack can be acknowledged immediately
 
 ## Required env vars
 
@@ -37,6 +40,9 @@ Optional:
 - `OUTREACH_LEAD_OWNER_ID` (fallback owner if account owner not found)
 - `OUTREACH_LEAD_STATUS` (default `Cold Outreach`)
 - `OUTREACH_LEAD_LAST_NAME_FALLBACK` (default `Communications` when no ideal contact last name is found)
+- `CLOUD_TASKS_PROJECT` (set automatically by deploy script)
+- `CLOUD_TASKS_LOCATION` (defaults to the Cloud Run region in deploy script)
+- `CLOUD_TASKS_QUEUE` (defaults to the Cloud Run service name in deploy script)
 - `SLACK_ALLOWED_TEAM_IDS` (comma-separated Slack workspace IDs)
 - `SLACK_ALLOWED_APP_IDS` (comma-separated Slack app IDs)
 - `SLACK_ALLOWED_CHANNEL_IDS` (comma-separated channel IDs)
@@ -64,6 +70,12 @@ Health check:
 curl http://localhost:8080/health
 ```
 
+Queue debug:
+
+```bash
+curl http://localhost:8080/debug/queue-health
+```
+
 ## Deploy script
 
 A ready deploy script is included:
@@ -88,5 +100,5 @@ SLACK_ALLOWED_CHANNEL_IDS=CXXXX \
 - Clicks are idempotent by action/message/user tuple hash.
 - Requests are rejected unless Slack signature + timestamp checks pass.
 - Additional origin allowlists are available via `SLACK_ALLOWED_*` env vars.
-- The webhook currently responds synchronously (simple MVP).
-- Next step for scale: enqueue click payload and process async.
+- In Cloud Run, the Slack interaction request is acknowledged immediately and the real work is processed via Cloud Tasks.
+- Local fallback runs inline when Cloud Tasks env vars are not configured.
