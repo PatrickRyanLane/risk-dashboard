@@ -329,6 +329,15 @@ def _cloud_tasks_queue_path() -> str:
     return client.queue_path(CLOUD_TASKS_PROJECT, CLOUD_TASKS_LOCATION, CLOUD_TASKS_QUEUE)
 
 
+def _external_base_url() -> str:
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "https").split(",")[0].strip()
+    scheme = forwarded_proto or "https"
+    host = (request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or "").split(",")[0].strip()
+    if host:
+        return f"{scheme}://{host}".rstrip("/")
+    return request.url_root.rstrip("/").replace("http://", "https://", 1)
+
+
 def _enqueue_action_task(base_url: str, payload: dict):
     if not _cloud_tasks_enabled():
         raise RuntimeError("Cloud Tasks is not configured")
@@ -341,14 +350,14 @@ def _enqueue_action_task(base_url: str, payload: dict):
     if signature:
         headers["X-Action-Task-Signature"] = signature
 
-    task = {
-        "http_request": {
-            "http_method": tasks_v2.HttpMethod.POST,
-            "url": f"{base_url.rstrip('/')}/internal/process-action",
-            "headers": headers,
-            "body": body_bytes,
-        }
-    }
+    task = tasks_v2.Task(
+        http_request=tasks_v2.HttpRequest(
+            http_method=tasks_v2.HttpMethod.POST,
+            url=f"{base_url.rstrip('/')}/internal/process-action",
+            headers=headers,
+            body=body_bytes,
+        )
+    )
     client.create_task(parent=queue_path, task=task)
 
 
@@ -897,12 +906,17 @@ def queue_health():
     return jsonify(status), 200
 
 
-@app.post("/internal/process-action")
+@app.route("/internal/process-action", methods=["GET", "POST"])
 def process_action_task():
     raw_body = request.get_data(cache=True)
     ok, err = _verify_task_signature(raw_body, request.headers.get("X-Action-Task-Signature", ""))
     if not ok:
         return jsonify({"ok": False, "error": err}), 403
+
+    print(
+        f"[INFO] task_dispatch method={request.method} "
+        f"content_length={request.content_length or 0}"
+    )
 
     try:
         payload = json.loads((raw_body or b"{}").decode("utf-8"))
@@ -986,7 +1000,7 @@ def slack_interactions():
 
     if _cloud_tasks_enabled():
         try:
-            _enqueue_action_task(request.url_root.rstrip("/"), task_payload)
+            _enqueue_action_task(_external_base_url(), task_payload)
             return jsonify(
                 {
                     "response_type": "ephemeral",
