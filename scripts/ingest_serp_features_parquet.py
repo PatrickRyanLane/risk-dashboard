@@ -58,7 +58,6 @@ FEATURES = [
     "videos",
     "social",
     "perspectives",
-    "top_stories",
     # "knowledge_graph",
 ]
 
@@ -884,7 +883,6 @@ def build_feature_rows(df, date_str: str, entity_type: str, company_map, ceo_map
             "videos": int(r.get("videos_count", 0) or 0),
             "social": int(r.get("social_count", 0) or 0),
             "perspectives": int(r.get("perspectives_count", 0) or 0),
-            "top_stories": int(r.get("top_stories_count", 0) or 0),
             # "knowledge_graph": int(r.get("knowledge_graph_count", 0) or 0),
         }
         for feature, count in counts.items():
