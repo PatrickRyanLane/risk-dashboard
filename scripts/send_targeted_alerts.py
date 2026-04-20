@@ -142,6 +142,8 @@ def main():
         "serp": set(),
         "cooldown": set(),
     }
+    skip_sample_limit = int(os.getenv("TARGET_SKIP_SAMPLE_LIMIT", str(sca.ALERT_SKIP_SAMPLE_LIMIT)))
+    skip_sample_limit = max(1, skip_sample_limit)
 
     skip_cooldown = _env_truthy("TARGET_SKIP_COOLDOWN", "1")
     for _, row in df.iterrows():
@@ -246,8 +248,9 @@ def main():
         summary_text = ""
         llm_key = f"{brand}|{ceo_name}|{article_type}|{date_str}"
         if sca.LLM_API_KEY and llm_calls < sca.LLM_SUMMARY_MAX_CALLS:
-            if llm_key in llm_cache:
-                summary_text = llm_cache.get(llm_key, "")
+            cached_summary = (llm_cache.get(llm_key, "") or "").strip()
+            if cached_summary:
+                summary_text = cached_summary
             else:
                 if article_type == "ceo":
                     top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
@@ -269,8 +272,11 @@ def main():
                     ceo_name if article_type == "ceo" else brand,
                     top_titles[:5],
                 )
-                summary_text = sca.call_llm_text(prompt, sca.LLM_API_KEY, sca.LLM_MODEL)
-                llm_cache[llm_key] = summary_text
+                summary_text = (sca.call_llm_text(prompt, sca.LLM_API_KEY, sca.LLM_MODEL) or "").strip()
+                if summary_text:
+                    llm_cache[llm_key] = summary_text
+                else:
+                    llm_cache.pop(llm_key, None)
                 llm_calls += 1
 
         if article_type == "ceo":
@@ -312,6 +318,21 @@ def main():
     conn.close()
     print("🧾 Targeted alerts summary:")
     print(f"   Rows scanned: {stats['rows']}")
+    print(
+        "   Totals:"
+        f" sent={stats['sent']}"
+        f" skipped_date={stats['skipped_date']}"
+        f" skipped_top_missing={stats['skipped_gate_top']}"
+        f" skipped_top_neg={stats['skipped_gate_top_neg']}"
+        f" skipped_serp={stats['skipped_gate_serp']}"
+        f" skipped_cooldown={stats['skipped_cooldown']}"
+        f" skipped_missing_target={stats['skipped_missing_target']}"
+    )
+    for reason, names in skip_details.items():
+        if not names:
+            continue
+        preview = ", ".join(sorted(list(names))[:skip_sample_limit])
+        print(f"   Skip sample [{reason}] count={len(names)} shown={min(len(names), skip_sample_limit)}: {preview}")
     for brand, bstats in sorted(
         per_brand.items(),
         key=lambda kv: per_brand_top_neg.get(kv[0], 0),
@@ -329,6 +350,21 @@ def main():
         if bstats["skipped_cooldown"]:
             parts.append(f"skipped cooldown {bstats['skipped_cooldown']}")
         print(f"   {brand}: " + ", ".join(parts))
+    structured_summary = {
+        "run_date": str(alert_today),
+        "timezone": sca.ALERT_TIMEZONE,
+        "targets_count": len(targets),
+        "targeted_serp_gate_enabled": bool(targeted_serp_gate),
+        "targeted_top_stories_gate_enabled": bool(targeted_top_stories_gate),
+        "targeted_top_stories_neg_gate_enabled": bool(targeted_top_stories_neg_gate),
+        "skip_cooldown": bool(skip_cooldown),
+        "stats": stats,
+        "skip_detail_counts": {k: len(v) for k, v in skip_details.items()},
+        "skip_detail_samples": {
+            k: sorted(list(v))[:skip_sample_limit] for k, v in skip_details.items() if v
+        },
+    }
+    print("[TARGETED_ALERT_SUMMARY_JSON] " + json.dumps(structured_summary, sort_keys=True))
     return 0
 
 

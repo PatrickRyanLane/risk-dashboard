@@ -408,6 +408,8 @@ def ingest_article_mentions_rows(conn, rows, entity_type, date_str):
                     publisher=publisher,
                     snippet=snippet,
                 ) else "uncontrolled"
+            if control_class == "controlled":
+                sentiment = "positive"
             mentions.append((
                 company_id, canonical, sentiment, control_class, finance_routine, uncertain, uncertain_reason,
                 llm_label, llm_sentiment_label, llm_risk_label, llm_control_class, llm_severity, llm_reason, date_str
@@ -431,6 +433,8 @@ def ingest_article_mentions_rows(conn, rows, entity_type, date_str):
                     publisher=publisher,
                     snippet=snippet,
                 ) else "uncontrolled"
+            if control_class == "controlled":
+                sentiment = "positive"
             mentions.append((
                 ceo_id, canonical, sentiment, control_class, finance_routine, uncertain, uncertain_reason,
                 llm_label, llm_sentiment_label, llm_risk_label, llm_control_class, llm_severity, llm_reason, date_str
@@ -657,6 +661,8 @@ def ingest_serp_results_rows(conn, rows, entity_type, date_str):
             llm_reason,
         ) = parse_llm_fields(row)
         control_class = parse_control_class(row.get('controlled'))
+        if control_class == "controlled":
+            sentiment = "positive"
         domain = ''
         try:
             domain = (urlparse(canonical).hostname or '').replace('www.', '')

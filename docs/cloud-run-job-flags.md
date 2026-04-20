@@ -206,6 +206,9 @@ Advanced:
 - `ALERT_LOOKBACK_DAYS`, `TOP_STORIES_TODAY_ONLY`
 - `ALERT_TIMEZONE`
 - `LLM_PROVIDER`, `LLM_MODEL`, `LLM_SUMMARY_MAX_CALLS`
+- `SF_AUTH_MODE` (`auto` | `jwt` | `password`)
+- `SF_LOGIN_URL` (default: `https://login.salesforce.com`)
+- `SF_API_VERSION` (default: `59.0`)
 
 Example:
 
@@ -238,6 +241,9 @@ Advanced:
 - `SERP_GATE_MIN`, `SERP_GATE_DAYS`, `SERP_GATE_DEBUG`
 - `ALERT_TIMEZONE`
 - `LLM_PROVIDER`, `LLM_MODEL`, `LLM_SUMMARY_MAX_CALLS`
+- `SF_AUTH_MODE` (`auto` | `jwt` | `password`)
+- `SF_LOGIN_URL` (default: `https://login.salesforce.com`)
+- `SF_API_VERSION` (default: `59.0`)
 
 Example:
 

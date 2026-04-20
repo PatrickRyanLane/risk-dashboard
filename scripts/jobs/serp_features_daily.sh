@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_job_summary.sh"
+job_summary_init "serp_features_daily"
+
 RUN_DATE="${RUN_DATE:-$(date -u +%F)}"
 RUN_DAYS="${RUN_DAYS:-1}"
 
@@ -11,8 +15,8 @@ fi
 
 for i in $(seq 0 $((RUN_DAYS - 1))); do
   DSTR="$(date -u -d "${RUN_DATE} -${i} day" +%F)"
-  python -u scripts/ingest_serp_features_parquet.py --date "${DSTR}" --entity-type brand
-  python -u scripts/ingest_serp_features_parquet.py --date "${DSTR}" --entity-type ceo
+  run_step "ingest_serp_features_brand_${DSTR}" python -u scripts/ingest_serp_features_parquet.py --date "${DSTR}" --entity-type brand
+  run_step "ingest_serp_features_ceo_${DSTR}" python -u scripts/ingest_serp_features_parquet.py --date "${DSTR}" --entity-type ceo
 done
 
-python -u scripts/refresh_negative_summary_view.py --serp-features
+run_step "refresh_negative_summary_serp_features" python -u scripts/refresh_negative_summary_view.py --serp-features

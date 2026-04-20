@@ -226,6 +226,7 @@ BRAND_NEUTRALIZE_TITLE_TERMS = [
     r"\bamerican\s+cancer\s+society\b",
     r"\bthe\s+block\b",
     r"\bblock\s+by\s+jack\s+dorsey\b",
+    r"\bturnaround\b",
 ]
 BRAND_NEUTRALIZE_TITLE_RE = re.compile("|".join(BRAND_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
@@ -242,16 +243,26 @@ BRAND_LEGAL_TROUBLE_TERMS = [
     r"\bunder\s+fire\b",
     # Broad legal-context terms: keep for now; remove/narrow if false positives increase.
     r"\bsettlement(s)?\b", r"\bsettl(?:e|es|ed|ing)\b", r"\bfine(d)?\b", r"\bfine(?:d|s|ing)?\b", r"\bclass[- ]action\b",
-    r"\bftc\b", r"\bsec\b", r"\bdoj\b", r"\bcfpb\b",
+    r"\bftc\b", r"\bdoj\b", r"\bcfpb\b",
     r"\battorney\s+general\b",
     r"\bregulator(?:s|y)\b",
     r"\bdeceptive(?:ly)?\b",
     r"\bantitrust\b", r"\bban(s|ned)?\b",
     r"\bstrike(?:s|d|ing)?\b",
     # Broad terms intentionally enabled for recall; remove/narrow if they over-force negatives.
-    r"\border(?:s|ed)?\b", r"\bclos(?:e|ed|ure|ures|ing)\b",
+    r"\bcourt[- ]order(?:s|ed)?\b", r"\bconsent\s+order(?:s)?\b", r"\bordered\s+to\b",
+    r"\bcease[- ]and[- ]desist\s+order(?:s)?\b", r"\bclos(?:e|ed|ure|ures|ing)\b",
     r"\btone[- ]deaf\b",
     r"\binvestigat(?:e|es|ed|ing|ion|ions)\b",
+    r"\bviolat(?:e|ed|es|ing|ion|ions)\b",
+    r"\bcritic(?:is|iz)(?:e|ed|es|ing|m)\b",
+    r"\bcharged\s+(?:with|in|over)\b",
+    r"\bconspir(?:e|ed|es|ing|acy)\b",
+    r"\btestif(?:y|ies)\b", r"\btestimony\b",
+    r"\bsmuggl(?:e|ed|es|ing|ers?)\b",
+    r"\bhackers?\b",
+    r"\b(?:fraud|ponzi)\s+scheme(?:s)?\b",
+    r"\bactivist\s+investors?\b",
     r"\bdata leaks?\b", r"\bdata breach(es)?\b", r"\bsecurity breach(es)?\b", r"\bbreach(es)?\b",
     # Broad cyber terms: keep for recall; remove/narrow if they over-force negatives.
     r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bexpos(?:e|es|ed|ing)\b", r"\bransomware\b",
@@ -321,6 +332,7 @@ CEO_NEUTRALIZE_TITLE_TERMS = [
     r"\bamerican\s+cancer\s+society\b",
     r"\bthe\s+block\b",
     r"\bblock\s+by\s+jack\s+dorsey\b",
+    r"\bturnaround\b",
 ]
 CEO_NEUTRALIZE_TITLE_RE = re.compile("|".join(CEO_NEUTRALIZE_TITLE_TERMS), flags=re.IGNORECASE)
 
@@ -331,7 +343,7 @@ CEO_ALWAYS_NEGATIVE_TERMS = [
     r"\bstep\s+down\b", r"\bsteps\s+down\b", r"\bstep(?:s|ped|ping)?\s+down\b",
     r"\bstep(?:s|ped|ping)?\s+aside\b",
     r"\bremoved\b",
-    r"\bstill\b", r"\bturnaround\b",
+    r"\bstill\b",
     r"\bface\b", r"\bcontroversy\b", r"\baccused\b", r"\bcommitted\b",
     r"\bapologizes\b", r"\bapology\b", r"\baware\b", r"\bepstein\b",
     r"\billegal(?:ly)?\b", r"\bdefendant(?:s)?\b", r"\bcourt(?:s)?\b",
@@ -344,7 +356,17 @@ CEO_ALWAYS_NEGATIVE_TERMS = [
     r"\bunion\s+buster\b",
     r"\bstrike(?:s|d|ing)?\b",
     # Broad terms intentionally enabled for recall; remove/narrow if they over-force negatives.
-    r"\border(?:s|ed)?\b", r"\bclos(?:e|ed|ure|ures|ing)\b",
+    r"\bcourt[- ]order(?:s|ed)?\b", r"\bconsent\s+order(?:s)?\b", r"\bordered\s+to\b",
+    r"\bcease[- ]and[- ]desist\s+order(?:s)?\b", r"\bclos(?:e|ed|ure|ures|ing)\b",
+    r"\bviolat(?:e|ed|es|ing|ion|ions)\b",
+    r"\bcritic(?:is|iz)(?:e|ed|es|ing|m)\b",
+    r"\bcharged\s+(?:with|in|over)\b",
+    r"\bconspir(?:e|ed|es|ing|acy)\b",
+    r"\btestif(?:y|ies)\b", r"\btestimony\b",
+    r"\bsmuggl(?:e|ed|es|ing|ers?)\b",
+    r"\bhackers?\b",
+    r"\b(?:fraud|ponzi)\s+scheme(?:s)?\b",
+    r"\bactivist\s+investors?\b",
     r"\bfired\b", r"\bfiring\b", r"\bfires\b",
     r"(?<!t)\bax(e|ed|es)?\b", r"\bsack(ed|s)?\b", r"\boust(ed)?\b",
     r"\bplummeting\b",
@@ -366,6 +388,11 @@ CEO_ALWAYS_NEGATIVE_RE = re.compile("|".join(CEO_ALWAYS_NEGATIVE_TERMS), flags=r
 # vocabulary (lawsuit, court, defendant, etc.). Keep clearly non-legal crisis
 # signals (breach, ransomware, fraud, bankruptcy, etc.) enabled.
 LEGAL_INDUSTRY_RE = re.compile(r"\blegal\b", flags=re.IGNORECASE)
+PHARMA_INDUSTRY_RE = re.compile(
+    r"\b(pharma(?:ceutical)?s?|biotech|life\s+sciences?)\b",
+    flags=re.IGNORECASE,
+)
+PHARMA_TRIAL_TERMS_RE = re.compile(r"\btrials?\b", flags=re.IGNORECASE)
 LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_TERMS = [
     r"\bdata leaks?\b", r"\bdata breach(?:es)?\b", r"\bsecurity breach(?:es)?\b", r"\bbreach(?:es)?\b",
     r"\bhack(?:ed|s|ing)?\b", r"\bcyber[- ]?attack(?:s)?\b", r"\bransomware\b",
@@ -544,13 +571,23 @@ def _is_legal_industry(industry: str = "") -> bool:
     return bool(LEGAL_INDUSTRY_RE.search(str(industry or "")))
 
 
+def _is_pharma_industry(industry: str = "") -> bool:
+    return bool(PHARMA_INDUSTRY_RE.search(str(industry or "")))
+
+
+def _strip_pharma_trial_terms(text: str = "") -> str:
+    cleaned = PHARMA_TRIAL_TERMS_RE.sub(" ", str(text or ""))
+    return " ".join(cleaned.split())
+
+
 def _low_priority_haystack(
     title: str = "",
     snippet: str = "",
     url: str = "",
     source: str = "",
 ) -> str:
-    return " ".join(part for part in [title or "", snippet or "", source or "", url or ""] if part).strip()
+    # Avoid URL-token false positives (e.g., "sec.gov") in sentiment forcing.
+    return " ".join(part for part in [title or "", snippet or "", source or ""] if part).strip()
 
 
 def _matches_low_priority_tariff_story(hay: str) -> bool:
@@ -589,10 +626,10 @@ def _matches_low_priority_fee_story(hay: str) -> bool:
 
 def _matches_low_priority_debt_story(hay: str) -> bool:
     return bool(
-        LOW_PRIORITY_DEBT_ACTION_RE.search(hay)
-        and LOW_PRIORITY_DEBT_CONTEXT_RE.search(hay)
+        LOW_PRIORITY_DEBT_CONTEXT_RE.search(hay)
         and not LOW_PRIORITY_DEBT_BLOCKER_RE.search(hay)
         and not LOW_PRIORITY_CRISIS_BLOCKER_RE.search(hay)
+        and not LOW_PRIORITY_LEGAL_ENFORCEMENT_RE.search(hay)
     )
 
 
@@ -636,10 +673,11 @@ def title_mentions_legal_trouble(
     hay = _low_priority_haystack(title, snippet, url, source)
     if is_low_priority_business_story(title, snippet, url=url, source=source):
         return False
-    if not BRAND_LEGAL_TROUBLE_RE.search(hay):
+    hay_for_match = _strip_pharma_trial_terms(hay) if _is_pharma_industry(industry) else hay
+    if not BRAND_LEGAL_TROUBLE_RE.search(hay_for_match):
         return False
     if _is_legal_industry(industry):
-        return bool(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE.search(hay))
+        return bool(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE.search(hay_for_match))
     return True
 
 
@@ -666,10 +704,11 @@ def should_force_negative_ceo(
     hay = _low_priority_haystack(title, snippet, url, source)
     if is_low_priority_business_story(title, snippet, url=url, source=source):
         return False
-    if not CEO_ALWAYS_NEGATIVE_RE.search(hay):
+    hay_for_match = _strip_pharma_trial_terms(hay) if _is_pharma_industry(industry) else hay
+    if not CEO_ALWAYS_NEGATIVE_RE.search(hay_for_match):
         return False
     if _is_legal_industry(industry):
-        return bool(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE.search(hay))
+        return bool(LEGAL_INDUSTRY_FORCE_NEGATIVE_NONLEGAL_RE.search(hay_for_match))
     return True
 
 
@@ -1067,17 +1106,17 @@ def classify_control(
     snippet: str | None = None,
 ) -> bool:
     url = resolve_url(url or "")
-    if _publisher_matches_company(company, publisher or ""):
-        return True
     host = hostname(url)
     if not host:
         return False
+    is_facebook = _host_matches_social("facebook.com", host)
+    if not is_facebook and _publisher_matches_company(company, publisher or ""):
+        return True
     try:
         path = (urlparse(url).path or "").lower()
     except Exception:
         path = ""
     social_byline_controlled = _social_byline_matches_company(company, snippet or "", host)
-    is_facebook = _host_matches_social("facebook.com", host)
     is_instagram = _host_matches_social("instagram.com", host)
     is_threads = _host_matches_social("threads.net", host)
     is_x = _host_matches_social("x.com", host) or _host_matches_social("twitter.com", host)
@@ -1097,8 +1136,8 @@ def classify_control(
             return True
         if entity_type == "ceo" and person_name and _is_facebook_person_handle(person_name, url):
             return True
-        if any(seg in path for seg in ("/posts/", "/photos/", "/videos/")):
-            return social_byline_controlled
+        # Strict mode: Facebook URLs are controlled only when the page/profile
+        # handle matches the company (or CEO handle for CEO entities).
         return False
     if is_instagram:
         if "/reels/" in path or "/reel/" in path:

@@ -24,7 +24,10 @@ def backfill_company(cur, date_str: str) -> None:
           scored_at::date,
           company_id,
           article_id,
-          coalesce(llm_sentiment_label, sentiment_label),
+          case
+            when control_class = 'controlled' then 'positive'
+            else coalesce(llm_sentiment_label, sentiment_label)
+          end,
           control_class,
           finance_routine,
           uncertain
@@ -55,7 +58,10 @@ def backfill_ceo(cur, date_str: str) -> None:
           scored_at::date,
           ceo_id,
           article_id,
-          coalesce(llm_sentiment_label, sentiment_label),
+          case
+            when control_class = 'controlled' then 'positive'
+            else coalesce(llm_sentiment_label, sentiment_label)
+          end,
           control_class,
           finance_routine,
           uncertain

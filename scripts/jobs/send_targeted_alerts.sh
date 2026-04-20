@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_job_summary.sh"
+job_summary_init "send_targeted_alerts"
+
 # Keep defaults aligned with current GitHub Actions workflow vars.
 export TARGET_DEFAULT_CHANNEL="${TARGET_DEFAULT_CHANNEL:-#crisis-alerts-test}"
 export BRAND_CHANNEL_MAP="${BRAND_CHANNEL_MAP:-{\"Fanatics\":\"#fanatics-alerts-test\"}}"
@@ -16,4 +20,4 @@ export SERP_GATE_DAYS="${SERP_GATE_DAYS:-2}"
 export SERP_GATE_DEBUG="${SERP_GATE_DEBUG:-1}"
 export ALERT_TIMEZONE="${ALERT_TIMEZONE:-America/New_York}"
 
-python scripts/send_targeted_alerts.py
+run_step "send_targeted_alerts" python scripts/send_targeted_alerts.py

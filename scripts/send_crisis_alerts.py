@@ -10,6 +10,7 @@ import requests
 import urllib.parse
 import re
 import time
+import base64
 import hashlib
 import hmac
 import random
@@ -18,6 +19,7 @@ from difflib import get_close_matches
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from simple_salesforce import Salesforce
+import jwt
 import psycopg2
 import pandas as pd
 from llm_utils import build_summary_prompt, call_llm_text
@@ -28,6 +30,12 @@ SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SF_USERNAME = os.getenv('SF_USERNAME')
 SF_PASSWORD = os.getenv('SF_PASSWORD')
 SF_TOKEN = os.getenv('SF_SECURITY_TOKEN')
+SF_AUTH_MODE = os.getenv("SF_AUTH_MODE", "auto").strip().lower()
+SF_LOGIN_URL = os.getenv("SF_LOGIN_URL", "https://login.salesforce.com").strip().rstrip("/")
+SF_CLIENT_ID = os.getenv("SF_CLIENT_ID", "").strip()
+SF_API_VERSION = os.getenv("SF_API_VERSION", "59.0").strip()
+SF_JWT_PRIVATE_KEY = os.getenv("SF_JWT_PRIVATE_KEY", "")
+SF_JWT_PRIVATE_KEY_B64 = os.getenv("SF_JWT_PRIVATE_KEY_B64", "")
 SLACK_CHANNEL = "#crisis-alerts-test" 
 FALLBACK_SLACK_ID = "UT1EC3ENR" 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -50,6 +58,8 @@ SERP_TOP_STORIES_NEG_MIN = int(os.getenv("SERP_TOP_STORIES_NEG_MIN", "3"))
 ALERT_LOOKBACK_DAYS = max(1, int(os.getenv("ALERT_LOOKBACK_DAYS", "1")))
 ALERT_FAIL_FAST_ON_EMPTY_WINDOW = os.getenv("ALERT_FAIL_FAST_ON_EMPTY_WINDOW", "1") == "1"
 ALERT_TIMEZONE = os.getenv("ALERT_TIMEZONE", "America/New_York")
+ALERT_SKIP_SAMPLE_LIMIT = max(1, int(os.getenv("ALERT_SKIP_SAMPLE_LIMIT", "8")))
+ALERT_DATE_COUNT_PREVIEW = max(1, int(os.getenv("ALERT_DATE_COUNT_PREVIEW", "7")))
 SLACK_ENABLE_ACTION_BUTTON = os.getenv("SLACK_ENABLE_ACTION_BUTTON", "1") == "1"
 SLACK_ACTION_VALUE_SIGNING_SECRET = os.getenv("SLACK_ACTION_VALUE_SIGNING_SECRET", "").strip()
 SLACK_ACTION_BLOCK_ID = "crisis_alert_actions_v1"
@@ -81,6 +91,9 @@ try:
 except Exception:
     print(f"⚠️ Invalid ALERT_TIMEZONE={ALERT_TIMEZONE}; defaulting to UTC")
     ALERT_TZ = timezone.utc
+
+_SF_CLIENT = None
+_SF_CLIENT_INITIALIZED = False
 
 
 def get_alert_today_date():
@@ -420,47 +433,189 @@ def load_top_stories_items_db(days: int, today_only: bool = False, anchor_date=N
         conn.close()
     return brand_items, ceo_items
 
-def get_salesforce_owner(brand_name):
-    if not brand_name: return None, None
+def _salesforce_auth_modes():
+    if SF_AUTH_MODE == "jwt":
+        return ["jwt"]
+    if SF_AUTH_MODE == "password":
+        return ["password"]
+    return ["jwt", "password"]
+
+
+def _normalize_sf_private_key() -> str:
+    raw = (SF_JWT_PRIVATE_KEY or "").strip()
+    if (not raw) and SF_JWT_PRIVATE_KEY_B64.strip():
+        try:
+            raw = base64.b64decode(SF_JWT_PRIVATE_KEY_B64).decode("utf-8")
+        except Exception as exc:
+            print(f"⚠️ Salesforce JWT key decode failed: {exc}")
+            return ""
+    if not raw:
+        return ""
+    return raw.replace("\\n", "\n")
+
+
+def _build_salesforce_client_jwt():
+    if not SF_USERNAME:
+        return None, "missing SF_USERNAME"
+    if not SF_CLIENT_ID:
+        return None, "missing SF_CLIENT_ID"
+    private_key = _normalize_sf_private_key()
+    if not private_key:
+        return None, "missing SF_JWT_PRIVATE_KEY/SF_JWT_PRIVATE_KEY_B64"
+
+    login_url = SF_LOGIN_URL or "https://login.salesforce.com"
+    token_url = f"{login_url}/services/oauth2/token"
+    now = int(time.time())
+    payload = {
+        "iss": SF_CLIENT_ID,
+        "sub": SF_USERNAME,
+        "aud": login_url,
+        "exp": now + 300,
+    }
     try:
-        sf = Salesforce(username=SF_USERNAME, password=SF_PASSWORD, security_token=SF_TOKEN)
-        
-        # 1. Exact Match
-        safe_name = brand_name.replace("'", "\\'")
-        query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name = '{safe_name}' LIMIT 1"
-        result = sf.query(query)
-        if result['totalSize'] > 0:
-            return result['records'][0]['Owner']['Email'], result['records'][0]['Owner']['Name']
+        assertion = jwt.encode(payload, private_key, algorithm="RS256")
+    except Exception as exc:
+        return None, f"JWT signing failed: {exc}"
 
-        # 2. Token/Prefix Match
-        core_name = normalize_name(brand_name)
-        if len(core_name) < 2: return None, None
-        
-        safe_core = core_name.replace("'", "\\'")
-        fuzzy_query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name LIKE '%{safe_core}%' LIMIT 10"
-        fuzzy_result = sf.query(fuzzy_query)
-        if fuzzy_result['totalSize'] == 0: return None, None
-            
-        candidates = fuzzy_result['records']
-        core_lower = core_name.lower()
-        
-        for rec in candidates:
-            sf_lower = rec['Name'].lower()
-            if sf_lower == core_lower or sf_lower.startswith(core_lower + " "):
-                return rec['Owner']['Email'], rec['Owner']['Name']
-            if f" {core_lower} " in f" {sf_lower} ":
-                return rec['Owner']['Email'], rec['Owner']['Name']
+    try:
+        resp = requests.post(
+            token_url,
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+            },
+            timeout=20,
+        )
+    except Exception as exc:
+        return None, f"JWT token request failed: {exc}"
+    if resp.status_code != 200:
+        body = (resp.text or "").strip()
+        if len(body) > 500:
+            body = body[:500] + "..."
+        return None, f"JWT token exchange failed ({resp.status_code}): {body}"
 
-        # 3. Fuzzy Fallback
-        candidate_names = [r['Name'] for r in candidates]
-        best_matches = get_close_matches(brand_name, candidate_names, n=1, cutoff=0.6)
-        if best_matches:
-            match_rec = next(r for r in candidates if r['Name'] == best_matches[0])
-            return match_rec['Owner']['Email'], match_rec['Owner']['Name']
+    try:
+        data = resp.json()
+    except Exception:
+        return None, "JWT token exchange returned non-JSON response"
 
+    access_token = data.get("access_token")
+    instance_url = data.get("instance_url")
+    if not access_token or not instance_url:
+        return None, "JWT token exchange missing access_token/instance_url"
+
+    try:
+        sf = Salesforce(instance_url=instance_url, session_id=access_token, version=SF_API_VERSION)
+    except Exception as exc:
+        return None, f"Salesforce client bootstrap failed (jwt): {exc}"
+    return sf, None
+
+
+def _build_salesforce_client_password():
+    if not SF_USERNAME or not SF_PASSWORD:
+        return None, "missing SF_USERNAME/SF_PASSWORD"
+    try:
+        sf = Salesforce(
+            username=SF_USERNAME,
+            password=SF_PASSWORD,
+            security_token=SF_TOKEN,
+            version=SF_API_VERSION,
+        )
+    except Exception as exc:
+        return None, str(exc)
+    return sf, None
+
+
+def _reset_salesforce_client():
+    global _SF_CLIENT, _SF_CLIENT_INITIALIZED
+    _SF_CLIENT = None
+    _SF_CLIENT_INITIALIZED = False
+
+
+def _get_salesforce_client():
+    global _SF_CLIENT, _SF_CLIENT_INITIALIZED
+    if _SF_CLIENT_INITIALIZED:
+        return _SF_CLIENT
+
+    _SF_CLIENT_INITIALIZED = True
+    errors = []
+    for mode in _salesforce_auth_modes():
+        if mode == "jwt":
+            sf, err = _build_salesforce_client_jwt()
+        else:
+            sf, err = _build_salesforce_client_password()
+        if sf is not None:
+            _SF_CLIENT = sf
+            print(f"🔐 Salesforce auth mode: {mode}")
+            return _SF_CLIENT
+        errors.append(f"{mode}: {err}")
+
+    print("⚠️ Salesforce auth unavailable: " + " | ".join(errors))
+    return None
+
+
+def _query_salesforce_owner(sf, brand_name):
+    # 1. Exact Match
+    safe_name = brand_name.replace("'", "\\'")
+    query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name = '{safe_name}' LIMIT 1"
+    result = sf.query(query)
+    if result['totalSize'] > 0:
+        return result['records'][0]['Owner']['Email'], result['records'][0]['Owner']['Name']
+
+    # 2. Token/Prefix Match
+    core_name = normalize_name(brand_name)
+    if len(core_name) < 2:
         return None, None
-    except Exception as e:
-        print(f"⚠️ Salesforce lookup failed for {brand_name}: {e}")
+
+    safe_core = core_name.replace("'", "\\'")
+    fuzzy_query = f"SELECT Name, Owner.Email, Owner.Name FROM Account WHERE Name LIKE '%{safe_core}%' LIMIT 10"
+    fuzzy_result = sf.query(fuzzy_query)
+    if fuzzy_result['totalSize'] == 0:
+        return None, None
+
+    candidates = fuzzy_result['records']
+    core_lower = core_name.lower()
+
+    for rec in candidates:
+        sf_lower = rec['Name'].lower()
+        if sf_lower == core_lower or sf_lower.startswith(core_lower + " "):
+            return rec['Owner']['Email'], rec['Owner']['Name']
+        if f" {core_lower} " in f" {sf_lower} ":
+            return rec['Owner']['Email'], rec['Owner']['Name']
+
+    # 3. Fuzzy Fallback
+    candidate_names = [r['Name'] for r in candidates]
+    best_matches = get_close_matches(brand_name, candidate_names, n=1, cutoff=0.6)
+    if best_matches:
+        match_rec = next(r for r in candidates if r['Name'] == best_matches[0])
+        return match_rec['Owner']['Email'], match_rec['Owner']['Name']
+
+    return None, None
+
+
+def get_salesforce_owner(brand_name):
+    if not brand_name:
+        return None, None
+
+    sf = _get_salesforce_client()
+    if sf is None:
+        return None, None
+
+    try:
+        return _query_salesforce_owner(sf, brand_name)
+    except Exception as exc:
+        # If the auth session is stale, refresh once and retry.
+        msg = str(exc)
+        if "INVALID_SESSION_ID" in msg or "Expired session" in msg:
+            _reset_salesforce_client()
+            sf_retry = _get_salesforce_client()
+            if sf_retry is not None:
+                try:
+                    return _query_salesforce_owner(sf_retry, brand_name)
+                except Exception as retry_exc:
+                    print(f"⚠️ Salesforce lookup failed for {brand_name}: {retry_exc}")
+                    return None, None
+        print(f"⚠️ Salesforce lookup failed for {brand_name}: {exc}")
         return None, None
 
 def get_slack_user_id(email):
@@ -735,6 +890,7 @@ def main():
             print(f"🧭 SERP gate: enabled (min={SERP_GATE_MIN}, days={SERP_GATE_DAYS})")
         else:
             print("🧭 SERP gate: disabled")
+        print(f"🔐 Salesforce auth preference: {SF_AUTH_MODE} (login_url={SF_LOGIN_URL})")
         print(f"🌎 Alert timezone: {ALERT_TIMEZONE}")
         print(f"🗓️ Alert lookback: last {ALERT_LOOKBACK_DAYS} day(s)")
         if forced_brand_norms:
@@ -838,17 +994,37 @@ def main():
         window_start = server_now - timedelta(days=ALERT_LOOKBACK_DAYS - 1)
         parsed_dates = pd.to_datetime(df.get("date"), errors="coerce").dt.date if "date" in df.columns else None
         latest_data_date = parsed_dates.max() if parsed_dates is not None and not parsed_dates.empty else None
-        in_window_rows = int(((parsed_dates >= window_start) & (parsed_dates <= server_now)).sum()) if parsed_dates is not None else 0
+        in_window_mask = (parsed_dates >= window_start) & (parsed_dates <= server_now) if parsed_dates is not None else None
+        in_window_rows = int(in_window_mask.sum()) if in_window_mask is not None else 0
+        in_window_unique_companies = 0
+        in_window_type_counts = {}
+        if in_window_mask is not None and "company" in df.columns:
+            in_window_unique_companies = int(df.loc[in_window_mask, "company"].nunique())
+        if "article_type" in df.columns:
+            in_window_series = df.loc[in_window_mask, "article_type"] if in_window_mask is not None else df["article_type"]
+            in_window_type_counts = {
+                str(k): int(v)
+                for k, v in in_window_series.astype(str).str.lower().str.strip().value_counts().items()
+            }
         print(f"🗓️ Date gate window: {window_start} → {server_now} (inclusive)")
         print(f"📅 Rows in candidates: {len(df)} | in-window rows: {in_window_rows} | latest data date: {latest_data_date}")
+        print(f"🏷️ In-window unique companies: {in_window_unique_companies}")
+        if in_window_type_counts:
+            type_preview = ", ".join(f"{k}:{v}" for k, v in sorted(in_window_type_counts.items()))
+            print(f"🧭 In-window rows by article_type: {type_preview}")
+        recent_date_preview = []
         if parsed_dates is not None:
             recent_dates = (
                 pd.Series(parsed_dates.dropna())
                 .value_counts()
                 .sort_index(ascending=False)
-                .head(3)
+                .head(ALERT_DATE_COUNT_PREVIEW)
             )
             if not recent_dates.empty:
+                recent_date_preview = [
+                    {"date": str(idx), "rows": int(val)}
+                    for idx, val in recent_dates.items()
+                ]
                 preview = ", ".join(f"{idx}:{int(val)}" for idx, val in recent_dates.items())
                 print(f"📆 Latest summary date counts: {preview}")
 
@@ -874,6 +1050,36 @@ def main():
             "skipped_cooldown": 0,
             "stopped_budget": 0,
         }
+        stats_by_type = {
+            "brand": {k: 0 for k in stats.keys()},
+            "ceo": {k: 0 for k in stats.keys()},
+        }
+        in_window_company_keys = set()
+        in_window_ceo_keys = set()
+        skip_samples = {
+            "type_disabled": [],
+            "bad_date": [],
+            "out_of_window": [],
+            "top_stories_missing": [],
+            "top_stories_neg_below_min": [],
+            "serp_below_min": [],
+            "cooldown": [],
+        }
+
+        def add_skip_sample(reason: str, row_data, article_type: str, ceo: str = "", extra: dict | None = None):
+            bucket = skip_samples.get(reason)
+            if bucket is None or len(bucket) >= ALERT_SKIP_SAMPLE_LIMIT:
+                return
+            sample = {
+                "company": str(row_data.get("company", "")),
+                "article_type": article_type,
+                "ceo": ceo,
+                "date": str(row_data.get("date", "")),
+                "negative_count": int(row_data.get("negative_count", 0) or 0),
+            }
+            if extra:
+                sample.update(extra)
+            bucket.append(sample)
 
         for _, row in df.iterrows():
             stats["rows_scanned"] += 1
@@ -889,11 +1095,19 @@ def main():
 
             article_type = str(row.get('article_type', 'brand')).lower().strip()
             ceo_name = str(row.get('ceo', '')).strip()
+            if article_type in stats_by_type:
+                stats_by_type[article_type]["rows_scanned"] += 1
             if article_type == "brand" and not ALERT_BRANDS:
                 stats["skipped_type"] += 1
+                if article_type in stats_by_type:
+                    stats_by_type[article_type]["skipped_type"] += 1
+                add_skip_sample("type_disabled", row, article_type, ceo_name)
                 continue
             if article_type == "ceo" and not ALERT_CEOS:
                 stats["skipped_type"] += 1
+                if article_type in stats_by_type:
+                    stats_by_type[article_type]["skipped_type"] += 1
+                add_skip_sample("type_disabled", row, article_type, ceo_name)
                 continue
 
             # A. DATE FILTER (configurable lookback window)
@@ -902,13 +1116,30 @@ def main():
                 row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             except Exception:
                 stats["skipped_bad_date"] += 1
+                if article_type in stats_by_type:
+                    stats_by_type[article_type]["skipped_bad_date"] += 1
+                add_skip_sample("bad_date", row, article_type, ceo_name, {"raw_date": date_str})
                 continue
 
             if not force_send:
                 if row_date < window_start or row_date > server_now:
                     stats["skipped_date"] += 1
+                    if article_type in stats_by_type:
+                        stats_by_type[article_type]["skipped_date"] += 1
+                    add_skip_sample(
+                        "out_of_window",
+                        row,
+                        article_type,
+                        ceo_name,
+                        {"window_start": str(window_start), "window_end": str(server_now)},
+                    )
                     continue
             stats["rows_in_window"] += 1
+            if article_type in stats_by_type:
+                stats_by_type[article_type]["rows_in_window"] += 1
+            in_window_company_keys.add(str(brand))
+            if article_type == "ceo":
+                in_window_ceo_keys.add(f"{brand}|{ceo_name}")
 
             # B. DYNAMIC THRESHOLD CHECK (disabled)
             # stats_lookup = ceo_stats if article_type == 'ceo' else brand_stats
@@ -944,11 +1175,29 @@ def main():
                     if SERP_GATE_DEBUG:
                         print(f"   [Gate] Skipping {brand} ({article_type}) - no Top Stories")
                     stats["skipped_gate_top"] += 1
+                    if article_type in stats_by_type:
+                        stats_by_type[article_type]["skipped_gate_top"] += 1
+                    add_skip_sample(
+                        "top_stories_missing",
+                        row,
+                        article_type,
+                        ceo_name,
+                        {"top_total": top_total, "top_neg": top_neg},
+                    )
                     continue
                 if top_neg < SERP_TOP_STORIES_NEG_MIN:
                     if SERP_GATE_DEBUG:
                         print(f"   [Gate] Skipping {brand} ({article_type}) - Top Stories neg={top_neg}")
                     stats["skipped_gate_top_neg"] += 1
+                    if article_type in stats_by_type:
+                        stats_by_type[article_type]["skipped_gate_top_neg"] += 1
+                    add_skip_sample(
+                        "top_stories_neg_below_min",
+                        row,
+                        article_type,
+                        ceo_name,
+                        {"top_total": top_total, "top_neg": top_neg, "required_min": SERP_TOP_STORIES_NEG_MIN},
+                    )
                     continue
 
                 if SERP_GATE_ENABLED:
@@ -962,6 +1211,15 @@ def main():
                         if SERP_GATE_DEBUG:
                             print(f"   [Gate] Skipping {brand} ({article_type}) - SERP neg+uncontrolled={serp_count}")
                         stats["skipped_gate_serp"] += 1
+                        if article_type in stats_by_type:
+                            stats_by_type[article_type]["skipped_gate_serp"] += 1
+                        add_skip_sample(
+                            "serp_below_min",
+                            row,
+                            article_type,
+                            ceo_name,
+                            {"serp_uncontrolled": serp_count, "required_min": SERP_GATE_MIN},
+                        )
                         continue
 
             # C. COOLDOWN CHECK
@@ -976,6 +1234,18 @@ def main():
                 if current_time - last_date < timedelta(hours=ALERT_COOLDOWN_HOURS):
                     # Silent skip
                     stats["skipped_cooldown"] += 1
+                    if article_type in stats_by_type:
+                        stats_by_type[article_type]["skipped_cooldown"] += 1
+                    add_skip_sample(
+                        "cooldown",
+                        row,
+                        article_type,
+                        ceo_name,
+                        {
+                            "last_alert": last_date.isoformat(),
+                            "cooldown_hours": ALERT_COOLDOWN_HOURS,
+                        },
+                    )
                     continue
 
             # --- TRIGGER ALERT ---
@@ -988,8 +1258,9 @@ def main():
             summary_text = ""
             llm_key = f"{brand}|{ceo_name}|{article_type}|{date_str}"
             if LLM_API_KEY and llm_calls < LLM_SUMMARY_MAX_CALLS:
-                if llm_key in llm_cache:
-                    summary_text = llm_cache.get(llm_key, "")
+                cached_summary = (llm_cache.get(llm_key, "") or "").strip()
+                if cached_summary:
+                    summary_text = cached_summary
                 else:
                     if article_type == "ceo":
                         top_items = top_stories_ceo_items.get((date_str, ceo_name), [])
@@ -1011,8 +1282,11 @@ def main():
                         ceo_name if article_type == "ceo" else brand,
                         top_titles[:5]
                     )
-                    summary_text = call_llm_text(prompt, LLM_API_KEY, LLM_MODEL)
-                    llm_cache[llm_key] = summary_text
+                    summary_text = (call_llm_text(prompt, LLM_API_KEY, LLM_MODEL) or "").strip()
+                    if summary_text:
+                        llm_cache[llm_key] = summary_text
+                    else:
+                        llm_cache.pop(llm_key, None)
                     llm_calls += 1
 
             if article_type == "ceo":
@@ -1038,6 +1312,8 @@ def main():
 
             updates_made = True
             stats["sent"] += 1
+            if article_type in stats_by_type:
+                stats_by_type[article_type]["sent"] += 1
 
             # Decrement Budget
             if not force_send:
@@ -1061,10 +1337,53 @@ def main():
         print(f"   scanned={stats['rows_scanned']} in_window={stats['rows_in_window']} sent={stats['sent']}")
         print(f"   skipped_type={stats['skipped_type']} skipped_bad_date={stats['skipped_bad_date']} skipped_date={stats['skipped_date']}")
         print(f"   skipped_no_top_stories={stats['skipped_gate_top']} skipped_top_stories_neg={stats['skipped_gate_top_neg']} skipped_serp={stats['skipped_gate_serp']} skipped_cooldown={stats['skipped_cooldown']}")
+        print(
+            f"   in_window_unique_companies={len(in_window_company_keys)} "
+            f"in_window_unique_ceo_pairs={len(in_window_ceo_keys)}"
+        )
+        print(
+            f"   by_type_brand: scanned={stats_by_type['brand']['rows_scanned']} "
+            f"in_window={stats_by_type['brand']['rows_in_window']} sent={stats_by_type['brand']['sent']}"
+        )
+        print(
+            f"   by_type_ceo: scanned={stats_by_type['ceo']['rows_scanned']} "
+            f"in_window={stats_by_type['ceo']['rows_in_window']} sent={stats_by_type['ceo']['sent']}"
+        )
         if stats["stopped_budget"]:
             print("   budget_stop=1")
         if stats["sent"] == 0:
             print("ℹ️ No alerts sent this run. Use the skip counts above to identify the blocking gate.")
+        for reason, samples in skip_samples.items():
+            if not samples:
+                continue
+            print(f"🔎 Skip sample [{reason}] ({len(samples)} shown, cap={ALERT_SKIP_SAMPLE_LIMIT})")
+            for sample in samples:
+                print("   " + json.dumps(sample, sort_keys=True))
+        structured_summary = {
+            "run_date": str(server_now),
+            "timezone": ALERT_TIMEZONE,
+            "force_send": bool(force_send),
+            "window_start": str(window_start),
+            "window_end": str(server_now),
+            "lookback_days": ALERT_LOOKBACK_DAYS,
+            "candidate_rows": int(len(df)),
+            "candidate_in_window_rows": int(in_window_rows),
+            "candidate_in_window_unique_companies": int(in_window_unique_companies),
+            "candidate_in_window_by_type": in_window_type_counts,
+            "latest_data_date": str(latest_data_date) if latest_data_date else None,
+            "latest_date_counts": recent_date_preview,
+            "stats": stats,
+            "stats_by_type": stats_by_type,
+            "in_window_unique_companies": len(in_window_company_keys),
+            "in_window_unique_ceo_pairs": len(in_window_ceo_keys),
+            "skip_samples": skip_samples,
+            "serp_gate_enabled": bool(SERP_GATE_ENABLED),
+            "serp_gate_min": SERP_GATE_MIN,
+            "top_stories_required": bool(SERP_TOP_STORIES_REQUIRED),
+            "top_stories_neg_min": SERP_TOP_STORIES_NEG_MIN,
+            "top_stories_today_only": bool(top_stories_today_only),
+        }
+        print("[ALERT_SUMMARY_JSON] " + json.dumps(structured_summary, sort_keys=True))
     finally:
         conn.close()
 

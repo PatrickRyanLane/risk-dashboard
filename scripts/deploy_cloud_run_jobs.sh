@@ -14,10 +14,13 @@ DEPLOY_ALERT_JOBS="${DEPLOY_ALERT_JOBS:-true}"
 DEPLOY_REFRESH_MVS_JOB="${DEPLOY_REFRESH_MVS_JOB:-true}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
 
-LLM_PROVIDER="${LLM_PROVIDER:-openai}"
-LLM_MODEL="${LLM_MODEL:-gpt-4o-mini}"
+LLM_PROVIDER="${LLM_PROVIDER:-gemini}"
+LLM_MODEL="${LLM_MODEL:-gemini-2.5-flash}"
 LLM_MAX_CALLS="${LLM_MAX_CALLS:-200}"
 LLM_SUMMARY_MAX_CALLS="${LLM_SUMMARY_MAX_CALLS:-20}"
+SF_AUTH_MODE="${SF_AUTH_MODE:-auto}"
+SF_LOGIN_URL="${SF_LOGIN_URL:-https://login.salesforce.com}"
+SF_API_VERSION="${SF_API_VERSION:-59.0}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_URI="${AR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
@@ -39,6 +42,24 @@ is_true() {
     1|true|yes|y|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+secret_exists() {
+  local name="$1"
+  gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1
+}
+
+append_optional_secret() {
+  local current="$1"
+  local secret_name="$2"
+  local env_name="$3"
+  if secret_exists "$secret_name"; then
+    if [[ -n "$current" ]]; then
+      current+=","
+    fi
+    current+="${env_name}=${secret_name}:latest"
+  fi
+  printf '%s' "$current"
 }
 
 require_var "PROJECT_ID" "$PROJECT_ID"
@@ -125,6 +146,11 @@ upsert_job() {
 
 COMMON_ENV="GCS_BUCKET=${GCS_BUCKET}"
 DB_SECRET="DATABASE_URL=DATABASE_URL:latest"
+ALERT_BASE_ENV="${COMMON_ENV},SF_AUTH_MODE=${SF_AUTH_MODE},SF_LOGIN_URL=${SF_LOGIN_URL},SF_API_VERSION=${SF_API_VERSION}"
+ALERT_SECRETS="${DB_SECRET},SF_USERNAME=SF_USERNAME:latest,SF_PASSWORD=SF_PASSWORD:latest,SF_SECURITY_TOKEN=SF_SECURITY_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_ACTION_VALUE_SIGNING_SECRET=SLACK_ACTION_VALUE_SIGNING_SECRET:latest,LLM_API_KEY=LLM_API_KEY:latest"
+ALERT_SECRETS="$(append_optional_secret "$ALERT_SECRETS" "SF_CLIENT_ID" "SF_CLIENT_ID")"
+ALERT_SECRETS="$(append_optional_secret "$ALERT_SECRETS" "SF_JWT_PRIVATE_KEY" "SF_JWT_PRIVATE_KEY")"
+ALERT_SECRETS="$(append_optional_secret "$ALERT_SECRETS" "SF_JWT_PRIVATE_KEY_B64" "SF_JWT_PRIVATE_KEY_B64")"
 
 upsert_job "rd-daily-brands" \
   "1" "2Gi" "7200s" "1" "/app/scripts/jobs/daily_brands.sh" \
@@ -178,13 +204,13 @@ fi
 if is_true "$DEPLOY_ALERT_JOBS"; then
   upsert_job "rd-send-crisis-alerts" \
     "1" "1Gi" "1800s" "0" "/app/scripts/jobs/send_crisis_alerts.sh" \
-    "${COMMON_ENV},LLM_PROVIDER=${LLM_PROVIDER},LLM_MODEL=${LLM_MODEL},LLM_MAX_CALLS=${LLM_MAX_CALLS},LLM_SUMMARY_MAX_CALLS=${LLM_SUMMARY_MAX_CALLS}" \
-    "${DB_SECRET},SF_USERNAME=SF_USERNAME:latest,SF_PASSWORD=SF_PASSWORD:latest,SF_SECURITY_TOKEN=SF_SECURITY_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_ACTION_VALUE_SIGNING_SECRET=SLACK_ACTION_VALUE_SIGNING_SECRET:latest,LLM_API_KEY=LLM_API_KEY:latest"
+    "${ALERT_BASE_ENV},LLM_PROVIDER=${LLM_PROVIDER},LLM_MODEL=${LLM_MODEL},LLM_MAX_CALLS=${LLM_MAX_CALLS},LLM_SUMMARY_MAX_CALLS=${LLM_SUMMARY_MAX_CALLS}" \
+    "${ALERT_SECRETS}"
 
   upsert_job "rd-send-targeted-alerts" \
     "1" "1Gi" "1200s" "0" "/app/scripts/jobs/send_targeted_alerts.sh" \
-    "${COMMON_ENV},LLM_PROVIDER=${LLM_PROVIDER},LLM_MODEL=${LLM_MODEL},LLM_SUMMARY_MAX_CALLS=${LLM_SUMMARY_MAX_CALLS}" \
-    "${DB_SECRET},SF_USERNAME=SF_USERNAME:latest,SF_PASSWORD=SF_PASSWORD:latest,SF_SECURITY_TOKEN=SF_SECURITY_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_ACTION_VALUE_SIGNING_SECRET=SLACK_ACTION_VALUE_SIGNING_SECRET:latest,LLM_API_KEY=LLM_API_KEY:latest"
+    "${ALERT_BASE_ENV},LLM_PROVIDER=${LLM_PROVIDER},LLM_MODEL=${LLM_MODEL},LLM_SUMMARY_MAX_CALLS=${LLM_SUMMARY_MAX_CALLS}" \
+    "${ALERT_SECRETS}"
 else
   echo "[INFO] Skipping alert jobs deployment (DEPLOY_ALERT_JOBS=${DEPLOY_ALERT_JOBS})"
 fi

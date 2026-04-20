@@ -45,6 +45,11 @@ For alert jobs:
 - `SLACK_BOT_TOKEN`
 - `SLACK_ACTION_VALUE_SIGNING_SECRET`
 
+Optional (recommended for Okta/SSO orgs, JWT auth):
+
+- `SF_CLIENT_ID` (Salesforce Connected App consumer key)
+- `SF_JWT_PRIVATE_KEY` (PEM private key) or `SF_JWT_PRIVATE_KEY_B64` (base64 PEM)
+
 ## Required IAM
 
 Job runtime service account (`JOB_SERVICE_ACCOUNT`) should be able to:
@@ -121,5 +126,73 @@ Start with the current defaults in `scripts/deploy_cloud_run_jobs.sh`, then tune
 
 - Schedules are created in `America/New_York` timezone.
 - Alert wrappers include defaults to match current GitHub Actions behavior.
+- Salesforce auth supports both:
+  - password mode (`SF_USERNAME` + `SF_PASSWORD` + `SF_SECURITY_TOKEN`)
+  - JWT mode (`SF_AUTH_MODE=jwt` with `SF_CLIENT_ID` + JWT key secret)
+  - `SF_AUTH_MODE=auto` tries JWT first, then password fallback
 - `db-ingest` is intentionally not scheduled (manual/backfill path).
 - `send-alerts` is intentionally not deployed.
+
+## Log summaries in Cloud Console
+
+All Cloud Run job wrappers now emit standardized summary lines:
+
+- `[JOB_START]` when a job begins
+- `[STEP_START]`, `[STEP_DONE]`, `[STEP_FAIL]` around each pipeline step
+- `[JOB_SUMMARY]` key-value final summary
+- `[JOB_SUMMARY_JSON]` structured final summary
+
+Alert jobs additionally emit:
+
+- `[ALERT_SUMMARY_JSON]` from `send_crisis_alerts.py`
+- `[TARGETED_ALERT_SUMMARY_JSON]` from `send_targeted_alerts.py`
+
+Suggested Logs Explorer filter:
+
+```text
+resource.type="cloud_run_job"
+("JOB_SUMMARY_JSON" OR "ALERT_SUMMARY_JSON" OR "TARGETED_ALERT_SUMMARY_JSON")
+```
+
+Set up logs-based metrics + dashboard:
+
+```bash
+cd /Users/plane/Documents/GitHub/risk-dashboard
+PROJECT_ID="your-gcp-project" ./scripts/setup_job_observability.sh
+```
+
+This creates/updates:
+
+- logs-based metric `rd_job_runs_total` (labels: `job`, `status`)
+- logs-based metric `rd_job_duration_sec` (distribution, labels: `job`, `status`)
+- dashboard `Risk Dashboard Jobs Observability`
+
+Notes:
+
+- Logs Explorer saved queries are UI-managed; there is no direct `gcloud` command in this environment to create them.
+- After opening Logs Explorer with the filter above, click `Save query` in the UI for a persistent shortcut.
+
+## Salesforce JWT Cutover (Okta/SSO-Friendly)
+
+Use this to avoid password-expiration failures in scheduled jobs.
+
+1. Create Salesforce Connected App for JWT bearer auth and capture the consumer key.
+2. Generate an RSA private key (`.pem`) and upload cert/public key in the Connected App.
+3. Create secrets:
+
+```bash
+echo -n 'YOUR_CONNECTED_APP_CONSUMER_KEY' | gcloud secrets versions add SF_CLIENT_ID --project "$PROJECT_ID" --data-file=-
+gcloud secrets create SF_JWT_PRIVATE_KEY --project "$PROJECT_ID" || true
+gcloud secrets versions add SF_JWT_PRIVATE_KEY --project "$PROJECT_ID" --data-file=/path/to/private_key.pem
+```
+
+4. Redeploy with JWT mode:
+
+```bash
+SF_AUTH_MODE=jwt ./scripts/deploy_cloud_run_jobs.sh
+```
+
+Notes:
+
+- `SF_AUTH_MODE=auto` tries JWT first, then password fallback.
+- `SF_AUTH_MODE=jwt` enforces JWT-only auth (recommended after cutover).
