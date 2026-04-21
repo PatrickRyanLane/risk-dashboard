@@ -53,6 +53,7 @@ Common convenience flags:
   --force-send 0|1            FORCE_SEND
   --target-brands CSV         TARGET_BRANDS
   --target-dry-run 0|1        DRY_RUN
+  --dashboard-base-url URL    DASHBOARD_BASE_URL
 
 Examples:
   scripts/run_cloud_job.sh daily-brands --date 2026-04-17 --wait
@@ -94,6 +95,7 @@ FORCE_BRANDS_OVERRIDE=""
 FORCE_SEND_OVERRIDE=""
 TARGET_BRANDS_OVERRIDE=""
 TARGET_DRY_RUN_OVERRIDE=""
+DASHBOARD_BASE_URL_OVERRIDE=""
 
 ENV_OVERRIDES=()
 
@@ -243,6 +245,10 @@ while [[ $# -gt 0 ]]; do
       TARGET_DRY_RUN_OVERRIDE="$2"
       shift 2
       ;;
+    --dashboard-base-url)
+      DASHBOARD_BASE_URL_OVERRIDE="$2"
+      shift 2
+      ;;
     -*)
       die "Unknown option: $1"
       ;;
@@ -315,6 +321,7 @@ JOB_NAME="$(normalize_job "$JOB_INPUT")"
 [[ -n "$FORCE_SEND_OVERRIDE" ]] && add_env_override "FORCE_SEND=${FORCE_SEND_OVERRIDE}"
 [[ -n "$TARGET_BRANDS_OVERRIDE" ]] && add_env_override "TARGET_BRANDS=${TARGET_BRANDS_OVERRIDE}"
 [[ -n "$TARGET_DRY_RUN_OVERRIDE" ]] && add_env_override "DRY_RUN=${TARGET_DRY_RUN_OVERRIDE}"
+[[ -n "$DASHBOARD_BASE_URL_OVERRIDE" ]] && add_env_override "DASHBOARD_BASE_URL=${DASHBOARD_BASE_URL_OVERRIDE}"
 
 build_env_update_arg() {
   local delim="__ENV__"

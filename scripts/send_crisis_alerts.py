@@ -47,6 +47,10 @@ NEGATIVE_HISTORY_DAYS = int(os.getenv("NEGATIVE_HISTORY_DAYS", "180"))
 RISK_LABEL_WEIGHT = float(os.getenv("RISK_LABEL_WEIGHT", "3"))
 ALERT_BRANDS = os.getenv("ALERT_BRANDS", "1") == "1"
 ALERT_CEOS = os.getenv("ALERT_CEOS", "1") == "1"
+DASHBOARD_BASE_URL = os.getenv(
+    "DASHBOARD_BASE_URL",
+    "https://risk-dashboard-168007850529.us-west1.run.app",
+).strip().rstrip("/")
 
 # SERP gating (negative + uncontrolled: same URL must be negative AND uncontrolled)
 SERP_GATE_ENABLED = os.getenv("SERP_GATE_ENABLED", "0") == "1"
@@ -675,17 +679,12 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
     
     if article_type == 'ceo' and ceo_name and ceo_name != 'nan':
         alert_title = f"🧑🏻‍💼 CEO Crisis: {ceo_name}"
-        sub_context = f"Company: {brand}"
         safe_filter = urllib.parse.quote(ceo_name)
-        dashboard_url = f"https://news-sentiment-dashboard-yelv2pxzuq-uc.a.run.app/?tab=ceos&company={safe_filter}"
+        dashboard_url = f"{DASHBOARD_BASE_URL}/?tab=ceos&company={safe_filter}"
     else:
         alert_title = f"🏢 Brand Crisis: {brand}"
-        if ceo_name and ceo_name.lower() != 'nan':
-             sub_context = f"CEO: {ceo_name}"
-        else:
-             sub_context = "Category: Corporate Brand"
         safe_filter = urllib.parse.quote(brand)
-        dashboard_url = f"https://risk-dashboard-168007850529.us-west1.run.app/?tab=brands&company={safe_filter}"
+        dashboard_url = f"{DASHBOARD_BASE_URL}/?tab=brands&company={safe_filter}"
 
     if owner_slack_id:
         mention_text = f"<@{owner_slack_id}>"
@@ -726,7 +725,7 @@ def send_slack_alert(brand, ceo_name, article_type, count, p97_val, headlines, t
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Attention:* {mention_text}\n*Context:* {sub_context} (View on <{dashboard_url}|Risk Dashboard>)"
+                "text": f"*Attention:* {mention_text}\n<{dashboard_url}|View on Crisis Dashboard>"
             }
         },
         { "type": "divider" },
