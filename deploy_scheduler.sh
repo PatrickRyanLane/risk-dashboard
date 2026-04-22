@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID}"
+SCHEDULER_SERVICE_ACCOUNT="${SCHEDULER_SERVICE_ACCOUNT:?Set SCHEDULER_SERVICE_ACCOUNT to risk-dashboard-scheduler@<PROJECT_ID>.iam.gserviceaccount.com}"
+
+REGION="${REGION:-us-east1}"
+TIME_ZONE="${TIME_ZONE:-America/New_York}"
+
+DEPLOY_ALERT_JOBS="${DEPLOY_ALERT_JOBS:-true}"
+DEPLOY_REFRESH_MVS_SCHEDULE="${DEPLOY_REFRESH_MVS_SCHEDULE:-true}"
+
+export PROJECT_ID SCHEDULER_SERVICE_ACCOUNT REGION TIME_ZONE
+export DEPLOY_ALERT_JOBS DEPLOY_REFRESH_MVS_SCHEDULE
+
+bash scripts/deploy_cloud_scheduler_jobs.sh

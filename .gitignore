@@ -25,5 +25,37 @@ lerna-debug.log*
 __pycache__/
 *.py[cod]
 
+# Python tooling caches / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv-merge/
+venv/
+env/
+
 # Local parquet cache/output
 parquet/
+output/
+
+# Local env/secrets
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# Local app/tooling state
+.conductor/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
